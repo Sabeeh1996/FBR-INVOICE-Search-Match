@@ -44,6 +44,18 @@ class FBRChecker:
             chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
             chrome_options.add_experimental_option('useAutomationExtension', False)
             
+            # Fix SSL handshake errors
+            chrome_options.add_argument('--ignore-certificate-errors')
+            chrome_options.add_argument('--ignore-ssl-errors')
+            chrome_options.add_argument('--allow-insecure-localhost')
+            chrome_options.add_argument('--disable-web-security')
+            chrome_options.add_argument('--no-sandbox')
+            chrome_options.add_argument('--disable-dev-shm-usage')
+            
+            # Suppress console logging
+            chrome_options.add_argument('--log-level=3')
+            chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
+            
             # Initialize Chrome driver with auto-install using webdriver-manager
             service = Service(ChromeDriverManager().install())
             self.driver = webdriver.Chrome(service=service, options=chrome_options)
