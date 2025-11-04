@@ -1,0 +1,11 @@
+# FBR Invoice Checker Bot - Dependencies
+
+# Web Automation
+selenium==4.15.2
+webdriver-manager==4.0.1
+
+# Excel Operations
+openpyxl==3.1.2
+
+# GUI is built-in with Python (tkinter)
+# threading, time, logging, os are built-in modules
