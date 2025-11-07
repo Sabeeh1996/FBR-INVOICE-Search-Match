@@ -27,8 +27,10 @@ class FBRInvoiceCheckerGUI:
         """
         self.root = root
         self.root.title("🧾 FBR Invoice Checker Bot")
-        self.root.geometry("800x650")
-        self.root.resizable(False, False)
+        # Start with a reasonable default size but allow resizing for responsiveness
+        self.root.geometry("900x650")
+        self.root.minsize(720, 480)
+        self.root.resizable(True, True)
         
         # Variables
         self.excel_file_path = tk.StringVar()
@@ -71,7 +73,7 @@ class FBRInvoiceCheckerGUI:
         
         ttk.Label(file_frame, text="Excel File:").grid(row=0, column=0, sticky=tk.W, padx=(0, 10))
         
-        file_entry = ttk.Entry(file_frame, textvariable=self.excel_file_path, width=50, state='readonly')
+        file_entry = ttk.Entry(file_frame, textvariable=self.excel_file_path, state='readonly')
         file_entry.grid(row=0, column=1, sticky=(tk.W, tk.E), padx=(0, 10))
         
         browse_btn = ttk.Button(file_frame, text="Browse...", command=self.browse_file)
@@ -121,9 +123,9 @@ class FBRInvoiceCheckerGUI:
         progress_frame = ttk.LabelFrame(main_frame, text="Progress", padding="10")
         progress_frame.grid(row=3, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 15))
         
+        # Let progress bar expand horizontally with the window
         self.progress_bar = ttk.Progressbar(
-            progress_frame, 
-            length=700, 
+            progress_frame,
             mode='determinate'
         )
         self.progress_bar.grid(row=0, column=0, columnspan=4, sticky=(tk.W, tk.E), pady=(0, 10))
@@ -158,10 +160,10 @@ class FBRInvoiceCheckerGUI:
         log_frame = ttk.LabelFrame(main_frame, text="Live Logs", padding="10")
         log_frame.grid(row=4, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
         
+        # Make log expand with the window; set a reasonable height but allow width to grow
         self.log_text = scrolledtext.ScrolledText(
-            log_frame, 
-            width=90, 
-            height=15, 
+            log_frame,
+            height=15,
             wrap=tk.WORD,
             font=("Consolas", 9)
         )
@@ -172,6 +174,8 @@ class FBRInvoiceCheckerGUI:
         
         # Configure main frame to expand
         main_frame.columnconfigure(0, weight=1)
+        main_frame.columnconfigure(1, weight=1)
+        main_frame.columnconfigure(2, weight=1)
         main_frame.rowconfigure(4, weight=1)
         
         self.root.columnconfigure(0, weight=1)
