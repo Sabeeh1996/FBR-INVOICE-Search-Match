@@ -9,6 +9,7 @@ import threading
 import logging
 from excel_handler import ExcelHandler
 from fbr_checker import FBRChecker
+from macro_recorder import MacroRecorder, MacroPlayer, MacroLibrary
 import time
 
 
@@ -37,6 +38,13 @@ class FBRInvoiceCheckerGUI:
         self.is_running = False
         self.is_paused = False
         self.worker_thread = None
+        
+        # Macro recording variables
+        self.recorder = MacroRecorder()
+        self.macro_library = MacroLibrary()
+        self.is_recording = False
+        self.selected_macro_path = None
+        self.use_macro_mode = False
         
         # Statistics
         self.total_invoices = 0
@@ -81,9 +89,74 @@ class FBRInvoiceCheckerGUI:
         
         file_frame.columnconfigure(1, weight=1)
         
+        # Macro controls section
+        macro_frame = ttk.LabelFrame(main_frame, text="🎬 Macro Recording & Playback", padding="10")
+        macro_frame.grid(row=2, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 15))
+        
+        # Row 1: Mode selection
+        ttk.Label(macro_frame, text="Mode:").grid(row=0, column=0, sticky=tk.W, padx=(0, 10))
+        self.macro_mode_var = tk.StringVar(value="normal")
+        ttk.Radiobutton(macro_frame, text="Normal Mode", variable=self.macro_mode_var, 
+                       value="normal").grid(row=0, column=1, sticky=tk.W)
+        ttk.Radiobutton(macro_frame, text="Macro Mode", variable=self.macro_mode_var, 
+                       value="macro").grid(row=0, column=2, sticky=tk.W)
+        
+        # Row 2: Macro selection
+        ttk.Label(macro_frame, text="Macro:").grid(row=1, column=0, sticky=tk.W, padx=(0, 10), pady=(5, 0))
+        self.macro_select_combo = ttk.Combobox(macro_frame, state='readonly', width=30)
+        self.macro_select_combo.grid(row=1, column=1, columnspan=2, sticky=(tk.W, tk.E), pady=(5, 0))
+        self.refresh_macro_list()
+        
+        ttk.Button(macro_frame, text="⟳ Refresh", command=self.refresh_macro_list, 
+                  width=10).grid(row=1, column=3, padx=(5, 0), pady=(5, 0))
+        
+        # Row 3: Macro action buttons
+        macro_btn_frame = ttk.Frame(macro_frame)
+        macro_btn_frame.grid(row=2, column=0, columnspan=4, pady=(10, 0))
+        
+        self.record_btn = ttk.Button(
+            macro_btn_frame,
+            text="⏺ Record",
+            command=self.start_recording,
+            width=12
+        )
+        self.record_btn.grid(row=0, column=0, padx=3)
+        
+        self.stop_record_btn = ttk.Button(
+            macro_btn_frame,
+            text="⏹ Stop",
+            command=self.stop_recording,
+            width=12,
+            state='disabled'
+        )
+        self.stop_record_btn.grid(row=0, column=1, padx=3)
+        
+        ttk.Button(
+            macro_btn_frame,
+            text="📂 Load",
+            command=self.load_macro,
+            width=12
+        ).grid(row=0, column=2, padx=3)
+        
+        ttk.Button(
+            macro_btn_frame,
+            text="✏️ Edit",
+            command=self.edit_macro,
+            width=12
+        ).grid(row=0, column=3, padx=3)
+        
+        ttk.Button(
+            macro_btn_frame,
+            text="🗑️ Delete",
+            command=self.delete_macro,
+            width=12
+        ).grid(row=0, column=4, padx=3)
+        
+        macro_frame.columnconfigure(1, weight=1)
+        
         # Control buttons
         button_frame = ttk.Frame(main_frame)
-        button_frame.grid(row=2, column=0, columnspan=3, pady=(0, 15))
+        button_frame.grid(row=3, column=0, columnspan=3, pady=(0, 15))
         
         self.start_btn = ttk.Button(
             button_frame, 
@@ -195,13 +268,21 @@ class FBRInvoiceCheckerGUI:
         Step 1: Click 'Browse' to select your Excel file
                 (Must contain 'InvoiceNumber' column)
         
-        Step 2: Click 'Start' to begin verification
+        Step 2: Choose Normal Mode or Macro Mode
+                - Normal Mode: Standard automated verification
+                - Macro Mode: Use recorded workflows
         
-        Step 3: Watch the progress and logs in real-time
+        Step 3: Click 'Start' to begin verification
         
-        Step 4: Results will be saved automatically to Excel
+        Step 4: Watch the progress and logs in real-time
         
-        Step 5: Review the summary when complete
+        Step 5: Results will be saved automatically to Excel
+        
+        🎬 Macro Features:
+        - Record: Record your workflow for reuse
+        - Load: Import existing macros
+        - Edit: Modify macro JSON files
+        - Delete: Remove unwanted macros
         
         ⚠️ Important:
         - Chrome browser will open automatically
@@ -281,6 +362,7 @@ class FBRInvoiceCheckerGUI:
         """
         excel_handler = None
         fbr_checker = None
+        macro_player = None
         
         try:
             # Initialize Excel handler
@@ -304,23 +386,51 @@ class FBRInvoiceCheckerGUI:
             self.update_statistics()
             self.log_message(f"📋 Found {self.total_invoices} invoices to verify")
             
+            # Check if macro mode is enabled
+            use_macro = self.macro_mode_var.get() == "macro"
+            selected_macro = self.macro_select_combo.get()
+            
+            if use_macro and not selected_macro:
+                self.log_message("❌ Error: Macro mode enabled but no macro selected")
+                messagebox.showerror("Error", "Please select a macro or switch to Normal Mode.")
+                return
+            
             # Initialize browser
             self.log_message("🌐 Initializing Chrome browser...")
-            fbr_checker = FBRChecker()
+            
+            # Pass recorder to FBRChecker if recording
+            recorder_to_use = self.recorder if self.is_recording else None
+            fbr_checker = FBRChecker(recorder=recorder_to_use)
             
             if not fbr_checker.initialize_browser():
                 self.log_message("❌ Error: Failed to initialize Chrome browser")
                 messagebox.showerror("Error", "ChromeDriver not found or failed to initialize.\n\nPlease ensure Chrome browser is installed.")
                 return
             
-            # Navigate to FBR portal
-            self.log_message("🔗 Navigating to FBR portal...")
-            if not fbr_checker.navigate_to_fbr():
-                self.log_message("❌ Error: Failed to navigate to FBR portal")
-                messagebox.showerror("Error", "Failed to connect to FBR website. Check your internet connection.")
-                return
+            # Initialize macro player if macro mode
+            if use_macro:
+                self.log_message(f"🎬 Loading macro: {selected_macro}")
+                macro_path = self.macro_library.get_macro_path(selected_macro)
+                
+                temp_recorder = MacroRecorder()
+                if not temp_recorder.load(macro_path):
+                    self.log_message("❌ Error: Failed to load macro")
+                    messagebox.showerror("Error", f"Failed to load macro: {selected_macro}")
+                    return
+                
+                macro_player = MacroPlayer(fbr_checker.driver, logger=self.log_message)
+                macro_actions = temp_recorder.get_actions()
+                self.log_message(f"✅ Loaded macro with {len(macro_actions)} actions")
+            else:
+                # Navigate to FBR portal in normal mode
+                self.log_message("🔗 Navigating to FBR portal...")
+                if not fbr_checker.navigate_to_fbr():
+                    self.log_message("❌ Error: Failed to navigate to FBR portal")
+                    messagebox.showerror("Error", "Failed to connect to FBR website. Check your internet connection.")
+                    return
+                
+                self.log_message("✅ Connected to FBR portal successfully")
             
-            self.log_message("✅ Connected to FBR portal successfully")
             self.log_message("=" * 80)
             
             # Process each invoice
@@ -334,9 +444,37 @@ class FBRInvoiceCheckerGUI:
                     self.log_message("⏹ Processing stopped by user")
                     break
                 
-                # Verify invoice
                 self.log_message(f"🔍 Checking invoice: {invoice_number}...")
-                status = fbr_checker.verify_invoice(invoice_number)
+                
+                if use_macro:
+                    # Use macro playback
+                    context = {
+                        "invoice_number": str(invoice_number),
+                        "row_number": str(row_number)
+                    }
+                    
+                    try:
+                        result = macro_player.play(macro_actions, context=context, step_delay=0.5)
+                        
+                        if result["success"]:
+                            # Try to determine status from page
+                            page_source = fbr_checker.driver.page_source.lower()
+                            
+                            if "no records found" in page_source or "no record found" in page_source:
+                                status = "❌ Not Claimed"
+                            elif "record" in page_source or str(invoice_number) in page_source:
+                                status = "✅ Claimed"
+                            else:
+                                status = "✅ Checked (Macro)"
+                        else:
+                            status = f"⚠️ Error - Macro failed ({result['failed_actions']} actions)"
+                        
+                    except Exception as e:
+                        self.log_message(f"   ❌ Macro error: {str(e)}")
+                        status = "⚠️ Error - Macro exception"
+                else:
+                    # Use normal verification
+                    status = fbr_checker.verify_invoice(invoice_number)
                 
                 # Update Excel
                 excel_handler.update_invoice_status(row_number, status)
@@ -345,8 +483,6 @@ class FBRInvoiceCheckerGUI:
                 self.processed_count += 1
                 
                 # Check 'Not Claimed' first because it contains the substring 'Claimed'
-                # (e.g. "Not Claimed" contains "Claimed") which would otherwise
-                # incorrectly increment the claimed_count.
                 if "Not Claimed" in status:
                     self.not_claimed_count += 1
                 elif "Claimed" in status:
@@ -454,6 +590,187 @@ class FBRInvoiceCheckerGUI:
         self.root.after(0, lambda: messagebox.showinfo("Completion Summary", summary_text))
         self.log_message("=" * 80)
         self.log_message("✅ All invoices processed successfully!")
+    
+    def refresh_macro_list(self):
+        """
+        Refresh the list of available macros in the combobox.
+        """
+        macros = self.macro_library.list_macros()
+        macro_names = [m['name'] for m in macros]
+        
+        self.macro_select_combo['values'] = macro_names
+        
+        if macro_names and not self.macro_select_combo.get():
+            self.macro_select_combo.current(0)
+    
+    def start_recording(self):
+        """
+        Start recording a new macro.
+        """
+        # Ask for macro name
+        name_dialog = tk.Toplevel(self.root)
+        name_dialog.title("New Macro")
+        name_dialog.geometry("400x150")
+        name_dialog.transient(self.root)
+        name_dialog.grab_set()
+        
+        ttk.Label(name_dialog, text="Enter a name for the new macro:", 
+                 font=("Arial", 10)).pack(pady=(20, 10))
+        
+        name_var = tk.StringVar(value="my_macro")
+        name_entry = ttk.Entry(name_dialog, textvariable=name_var, width=40)
+        name_entry.pack(pady=10)
+        name_entry.focus()
+        
+        def on_ok():
+            macro_name = name_var.get().strip()
+            if not macro_name:
+                messagebox.showerror("Error", "Please enter a macro name!")
+                return
+            
+            self.recorder.start(macro_name)
+            self.is_recording = True
+            self.record_btn.config(state='disabled')
+            self.stop_record_btn.config(state='normal')
+            self.log_message(f"🔴 Started recording macro: {macro_name}")
+            name_dialog.destroy()
+        
+        def on_cancel():
+            name_dialog.destroy()
+        
+        btn_frame = ttk.Frame(name_dialog)
+        btn_frame.pack(pady=10)
+        
+        ttk.Button(btn_frame, text="OK", command=on_ok, width=10).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="Cancel", command=on_cancel, width=10).pack(side=tk.LEFT, padx=5)
+        
+        name_entry.bind('<Return>', lambda e: on_ok())
+    
+    def stop_recording(self):
+        """
+        Stop recording the current macro and save it.
+        """
+        if not self.is_recording:
+            return
+        
+        action_count = self.recorder.stop()
+        self.is_recording = False
+        
+        # Ask user to save
+        if messagebox.askyesno("Save Macro", 
+                               f"Recording stopped ({action_count} actions).\n\nDo you want to save this macro?"):
+            try:
+                macro_path = self.macro_library.get_macro_path(self.recorder.macro_name)
+                self.recorder.save(macro_path, metadata={"source": "GUI Recording"})
+                self.log_message(f"💾 Macro saved: {self.recorder.macro_name}")
+                self.refresh_macro_list()
+                
+                # Select the newly saved macro
+                self.macro_select_combo.set(self.recorder.macro_name)
+            except Exception as e:
+                self.log_message(f"❌ Error saving macro: {str(e)}")
+                messagebox.showerror("Error", f"Failed to save macro:\n{str(e)}")
+        else:
+            self.log_message("⚠️ Macro discarded")
+        
+        self.record_btn.config(state='normal')
+        self.stop_record_btn.config(state='disabled')
+    
+    def load_macro(self):
+        """
+        Load a macro from file.
+        """
+        file_path = filedialog.askopenfilename(
+            title="Load Macro",
+            filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")],
+            initialdir="macros"
+        )
+        
+        if file_path:
+            if self.recorder.load(file_path):
+                self.log_message(f"📂 Loaded macro: {self.recorder.macro_name}")
+                self.refresh_macro_list()
+                self.macro_select_combo.set(self.recorder.macro_name)
+            else:
+                messagebox.showerror("Error", "Failed to load macro file!")
+    
+    def edit_macro(self):
+        """
+        Open macro editor dialog.
+        """
+        selected = self.macro_select_combo.get()
+        
+        if not selected:
+            messagebox.showinfo("Info", "Please select a macro to edit")
+            return
+        
+        macro_path = self.macro_library.get_macro_path(selected)
+        
+        try:
+            import json
+            with open(macro_path, 'r', encoding='utf-8') as f:
+                macro_content = f.read()
+            
+            # Create editor dialog
+            editor = tk.Toplevel(self.root)
+            editor.title(f"Edit Macro: {selected}")
+            editor.geometry("800x600")
+            
+            ttk.Label(editor, text=f"Editing: {selected}", 
+                     font=("Arial", 12, "bold")).pack(pady=10)
+            
+            # Text editor
+            text_frame = ttk.Frame(editor)
+            text_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+            
+            text_editor = scrolledtext.ScrolledText(text_frame, wrap=tk.WORD, 
+                                                    font=("Consolas", 10))
+            text_editor.pack(fill=tk.BOTH, expand=True)
+            text_editor.insert(1.0, macro_content)
+            
+            # Buttons
+            btn_frame = ttk.Frame(editor)
+            btn_frame.pack(pady=10)
+            
+            def save_changes():
+                try:
+                    new_content = text_editor.get(1.0, tk.END)
+                    # Validate JSON
+                    json.loads(new_content)
+                    
+                    with open(macro_path, 'w', encoding='utf-8') as f:
+                        f.write(new_content)
+                    
+                    self.log_message(f"✅ Macro updated: {selected}")
+                    messagebox.showinfo("Success", "Macro saved successfully!")
+                    editor.destroy()
+                except json.JSONDecodeError as e:
+                    messagebox.showerror("JSON Error", f"Invalid JSON format:\n{str(e)}")
+                except Exception as e:
+                    messagebox.showerror("Error", f"Failed to save macro:\n{str(e)}")
+            
+            ttk.Button(btn_frame, text="💾 Save", command=save_changes, width=12).pack(side=tk.LEFT, padx=5)
+            ttk.Button(btn_frame, text="✖ Cancel", command=editor.destroy, width=12).pack(side=tk.LEFT, padx=5)
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to open macro:\n{str(e)}")
+    
+    def delete_macro(self):
+        """
+        Delete the selected macro.
+        """
+        selected = self.macro_select_combo.get()
+        
+        if not selected:
+            messagebox.showinfo("Info", "Please select a macro to delete")
+            return
+        
+        if messagebox.askyesno("Confirm Delete", f"Are you sure you want to delete macro:\n\n{selected}?"):
+            if self.macro_library.delete_macro(selected):
+                self.log_message(f"🗑️ Deleted macro: {selected}")
+                self.refresh_macro_list()
+            else:
+                messagebox.showerror("Error", "Failed to delete macro!")
     
     def exit_application(self):
         """

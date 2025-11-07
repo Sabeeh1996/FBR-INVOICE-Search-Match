@@ -12,6 +12,7 @@ A complete Python automation tool with an interactive GUI that verifies invoice 
 ✅ **Interactive GUI** - User-friendly Tkinter interface with real-time updates  
 ✅ **Excel Integration** - Read invoice numbers and write results automatically  
 ✅ **Web Automation** - Selenium-based FBR portal automation  
+✅ **🎬 Macro Recording** - Record and replay custom workflows  
 ✅ **Live Progress Tracking** - Progress bar and statistics display  
 ✅ **Pause/Resume Support** - Control processing at any time  
 ✅ **Error Handling** - Automatic retry with detailed error logging  
@@ -27,6 +28,9 @@ A complete Python automation tool with an interactive GUI that verifies invoice 
 |   🧾  FBR Invoice Checker Bot          |
 -----------------------------------------
 | Excel File: [Browse...]               |
+|---------------------------------------|
+| 🎬 Macro: [Normal Mode] [Macro Mode]  |
+| Select: [my_macro ▼] [⟳] [⏺][⏹]     |
 |---------------------------------------|
 | [Start] [Pause] [Resume] [Exit]       |
 |---------------------------------------|
@@ -49,11 +53,16 @@ FBR-INVOICE-STATUS-MATCHING/
 ├── gui.py                   # GUI layout and controls
 ├── excel_handler.py         # Excel read/write operations
 ├── fbr_checker.py          # Selenium automation for FBR
+├── macro_recorder.py       # Macro recording and playback engine
 ├── create_sample_excel.py  # Generate sample Excel file
 ├── requirements.txt        # Python dependencies
 ├── invoices.xlsx          # Sample/actual invoice data
+├── macros/                # Saved macro files
+│   └── sample_fbr_check.json
 ├── logs/
-│   └── fbr_check_log.txt  # Detailed logs
+│   ├── fbr_check_log.txt  # Detailed logs
+│   └── screenshots/       # Error screenshots
+├── MACRO_GUIDE.md         # Macro feature documentation
 └── README.md              # This file
 ```
 
@@ -130,19 +139,25 @@ python main.py
 **Steps:**
 1. Application launches with welcome popup
 2. Click **Browse** to select your Excel file
-3. Click **Start** to begin verification
-4. Chrome browser opens automatically
-5. Watch progress and logs in real-time
-6. Results are saved automatically to Excel
-7. Summary popup appears when complete
+3. Choose **Normal Mode** or **Macro Mode**
+   - Normal Mode: Built-in automation
+   - Macro Mode: Use recorded workflows (see [Macro Guide](MACRO_GUIDE.md))
+4. Click **Start** to begin verification
+5. Chrome browser opens automatically
+6. Watch progress and logs in real-time
+7. Results are saved automatically to Excel
+8. Summary popup appears when complete
 
-### Method 2: Modify and Run
+### Method 2: Using Macros
 
-1. Open `invoices.xlsx`
-2. Replace sample numbers with your actual invoice numbers
-3. Save the file
-4. Run `python main.py`
-5. Select the file and start processing
+For custom workflows, see the comprehensive **[Macro Recording Guide](MACRO_GUIDE.md)**.
+
+Quick overview:
+1. Click **⏺ Record** to start recording
+2. Perform your workflow manually
+3. Click **⏹ Stop** to save the macro
+4. Switch to **Macro Mode** and select your macro
+5. Process invoices using your recorded workflow
 
 ---
 
@@ -299,6 +314,16 @@ All activities are logged to `logs/fbr_check_log.txt`:
 
 ## 🧩 Advanced Usage
 
+### Macro Recording & Playback
+
+The bot now supports macro recording for complex workflows. See **[MACRO_GUIDE.md](MACRO_GUIDE.md)** for:
+- Recording custom workflows
+- Editing macro JSON files
+- Using template variables
+- Sharing macros with team members
+- Advanced error handling
+- Troubleshooting macro issues
+
 ### Running Headless (No Browser Window)
 
 In `fbr_checker.py`, add to `initialize_browser()`:
@@ -383,5 +408,6 @@ python main.py
 **Made with ❤️ for FBR invoice verification automation**
 
 Last Updated: October 26, 2025
-#   F B R - I N V O I C E - S e a r c h - M a t c h  
+#   F B R - I N V O I C E - S e a r c h - M a t c h 
+ 
  
