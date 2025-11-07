@@ -12,7 +12,6 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException,
 from webdriver_manager.chrome import ChromeDriverManager
 import logging
 import time
-from macro_recorder import MacroRecorder, MacroAction
 
 
 class FBRChecker:
@@ -21,18 +20,14 @@ class FBRChecker:
     """
     
     # FBR Sales Tax Invoice Management URL
-    FBR_URL = "https://irisv1.fbr.gov.pk/salesTax/invoices/index.xhtml?mode=3D2EAF95F000134C42962F48&task=270"
+    FBR_URL = "https://irisv1.fbr.gov.pk/salesTax/invoices/index.xhtml?mode=3D2EAF95F000134C2BD2036C42962F48&task=270"
     
-    def __init__(self, recorder: MacroRecorder = None):
+    def __init__(self):
         """
         Initialize the FBR Checker with Selenium WebDriver.
-        
-        Args:
-            recorder (MacroRecorder, optional): Macro recorder for recording actions
         """
         self.driver = None
         self.max_retries = 3
-        self.recorder = recorder
         
     def initialize_browser(self):
         """
@@ -87,16 +82,6 @@ class FBRChecker:
         """
         try:
             self.driver.get(self.FBR_URL)
-            
-            # Record action if recorder is active
-            if self.recorder and self.recorder.recording:
-                self.recorder.record_action(MacroAction(
-                    action="navigate",
-                    value=self.FBR_URL,
-                    description="Navigate to FBR portal",
-                    meta={"critical": True}
-                ))
-            
             logging.info(f"Navigated to FBR portal: {self.FBR_URL}")
             time.sleep(2)  # Wait for page to load
             return True
@@ -164,45 +149,10 @@ class FBRChecker:
                         logging.error("Could not find invoice input field")
                         return "⚠️ Error - Field not found"
                     
-                    # Record waiting for element if recorder is active
-                    if self.recorder and self.recorder.recording:
-                        # Determine which selector was used
-                        used_selector = None
-                        for by_type, selector in selectors_to_try:
-                            try:
-                                self.driver.find_element(by_type, selector)
-                                used_selector = selector
-                                break
-                            except:
-                                continue
-                        
-                        if used_selector:
-                            self.recorder.record_action(MacroAction(
-                                action="wait_for_element",
-                                selector=used_selector,
-                                selector_type="xpath" if by_type == By.XPATH else "id" if by_type == By.ID else "name",
-                                timeout=15.0,
-                                description="Wait for invoice input field to load",
-                                meta={"condition": "visible", "critical": True}
-                            ))
-                    
                     # Clear and enter invoice number
                     invoice_input.clear()
                     time.sleep(0.5)
                     invoice_input.send_keys(str(invoice_number))
-                    
-                    # Record send_keys action if recorder is active
-                    if self.recorder and self.recorder.recording:
-                        self.recorder.record_action(MacroAction(
-                            action="send_keys",
-                            selector=used_selector if 'used_selector' in locals() else "//input[@id='invoices_tabview:STform:invoiceNo']",
-                            selector_type="xpath",
-                            value="{invoice_number}",
-                            timeout=10.0,
-                            description="Enter invoice number",
-                            meta={"critical": True}
-                        ))
-                    
                     logging.info(f"Entered invoice number: {invoice_number}")
                     time.sleep(1)
                     
@@ -236,41 +186,8 @@ class FBRChecker:
                         logging.error("Could not find search button")
                         return "⚠️ Error - Search button not found"
                     
-                    # Record click action if recorder is active
-                    if self.recorder and self.recorder.recording:
-                        # Determine which selector was used for the button
-                        button_selector = None
-                        for by_type, selector in search_selectors:
-                            try:
-                                self.driver.find_element(by_type, selector)
-                                button_selector = selector
-                                break
-                            except:
-                                continue
-                        
-                        if button_selector:
-                            self.recorder.record_action(MacroAction(
-                                action="click",
-                                selector=button_selector,
-                                selector_type="xpath" if by_type == By.XPATH else "id" if by_type == By.ID else "name",
-                                timeout=10.0,
-                                description="Click search button",
-                                meta={"critical": True}
-                            ))
-                    
                     search_button.click()
                     logging.info("Clicked search button")
-                    
-                    # Record wait action if recorder is active
-                    if self.recorder and self.recorder.recording:
-                        self.recorder.record_action(MacroAction(
-                            action="wait",
-                            value="4",
-                            timeout=10.0,
-                            retries=1,
-                            description="Wait for results to load",
-                            meta={}
-                        ))
                     
                     # Wait for results to load
                     time.sleep(4)
