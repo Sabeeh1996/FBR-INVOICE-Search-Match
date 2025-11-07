@@ -340,10 +340,13 @@ class FBRInvoiceCheckerGUI:
                 # Update statistics
                 self.processed_count += 1
                 
-                if "Claimed" in status:
-                    self.claimed_count += 1
-                elif "Not Claimed" in status:
+                # Check 'Not Claimed' first because it contains the substring 'Claimed'
+                # (e.g. "Not Claimed" contains "Claimed") which would otherwise
+                # incorrectly increment the claimed_count.
+                if "Not Claimed" in status:
                     self.not_claimed_count += 1
+                elif "Claimed" in status:
+                    self.claimed_count += 1
                 else:
                     self.error_count += 1
                 
