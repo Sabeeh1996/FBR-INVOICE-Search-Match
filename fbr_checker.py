@@ -117,13 +117,26 @@ class FBRChecker:
                     # Try multiple selectors based on the FBR page structure
                     invoice_input = None
                     
+                    # selectors_to_try = [
+                    #     (By.XPATH, "//label[contains(text(), 'Invoice Ref No')]/following::input[1]"),
+                    #     (By.XPATH, "//input[contains(@id, 'invoiceRefNo')]"),
+                    #     (By.XPATH, "//input[contains(@name, 'invoiceRefNo')]"),
+                    #     (By.XPATH, "//input[@type='text'][1]"),  # First text input as fallback
+                    # ]
+                    
                     selectors_to_try = [
+                        # Exact id and name from the FBR page (most reliable)
+                        (By.ID, "invoices_tabview:STform:invoiceNo"),
+                        (By.NAME, "invoices_tabview:STform:invoiceNo"),
+                        # Explicit XPaths for the same attributes as fallback
+                        (By.XPATH, "//input[@id='invoices_tabview:STform:invoiceNo']"),
+                        (By.XPATH, "//input[@name='invoices_tabview:STform:invoiceNo']"),
+                        # Generic fallbacks (retain previous heuristics)
                         (By.XPATH, "//label[contains(text(), 'Invoice Ref No')]/following::input[1]"),
                         (By.XPATH, "//input[contains(@id, 'invoiceRefNo')]"),
                         (By.XPATH, "//input[contains(@name, 'invoiceRefNo')]"),
                         (By.XPATH, "//input[@type='text'][1]"),  # First text input as fallback
                     ]
-                    
                     for by_type, selector in selectors_to_try:
                         try:
                             invoice_input = wait.until(EC.presence_of_element_located((by_type, selector)))
@@ -146,7 +159,16 @@ class FBRChecker:
                     # Find and click the Search button
                     search_button = None
                     search_selectors = [
-                        (By.XPATH, "//button[contains(text(), 'Search')]"),
+                        # Exact id and name from the button element
+                        (By.ID, "invoices_tabview:STform:j_idt134"),
+                        (By.NAME, "invoices_tabview:STform:j_idt134"),
+                        (By.XPATH, "//button[@id='invoices_tabview:STform:j_idt134']"),
+                        # Button that contains a span with the visible text "Search"
+                        (By.XPATH, "//button[.//span[normalize-space(text())='Search']]"),
+                        (By.XPATH, "//button[@type='submit' and .//span[contains(normalize-space(.),'Search')]]"),
+                        # Generic fallbacks
+                        (By.XPATH, "//button[contains(@class,'ui-button') and .//span[contains(normalize-space(.),'Search')]]"),
+                        (By.XPATH, "//button[contains(normalize-space(.),'Search')]"),
                         (By.XPATH, "//input[@value='Search']"),
                         (By.XPATH, "//button[@type='submit']"),
                         (By.ID, "searchBtn"),
