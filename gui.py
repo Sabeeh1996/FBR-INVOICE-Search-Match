@@ -4,13 +4,23 @@ Interactive Tkinter-based GUI for FBR Invoice Checker Bot.
 """
 
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, scrolledtext
+from tkinter import ttk, filedialog, messagebox, scrolledtext, simpledialog
 import threading
 import logging
 from excel_handler import ExcelHandler
 from fbr_checker import FBRChecker
 import time
 import random
+import json
+import asyncio
+from pathlib import Path
+
+try:
+    from playwright.async_api import async_playwright, Page
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    PLAYWRIGHT_AVAILABLE = False
+    logging.warning("Playwright not installed. Recording feature disabled. Install with: pip install playwright")
 
 
 class FBRInvoiceCheckerGUI:
@@ -38,6 +48,14 @@ class FBRInvoiceCheckerGUI:
         self.is_running = False
         self.is_paused = False
         self.worker_thread = None
+        
+        # Recording variables
+        self.is_recording = False
+        self.recorded_steps = []
+        self.browser = None
+        self.page = None
+        self.playwright_instance = None
+        self.recording_loop = None
         
         # Statistics
         self.total_invoices = 0
@@ -119,6 +137,60 @@ class FBRInvoiceCheckerGUI:
             width=12
         )
         self.exit_btn.grid(row=0, column=3, padx=5)
+        
+        # Recording controls (new section)
+        if PLAYWRIGHT_AVAILABLE:
+            recording_frame = ttk.LabelFrame(button_frame, text="Web Automation Recorder", padding="5")
+            recording_frame.grid(row=1, column=0, columnspan=4, sticky=(tk.W, tk.E), pady=(10, 0))
+            
+            self.record_btn = ttk.Button(
+                recording_frame,
+                text="🎬 Start Recording",
+                command=self.start_recording,
+                width=18
+            )
+            self.record_btn.grid(row=0, column=0, padx=5, pady=5)
+            
+            self.stop_record_btn = ttk.Button(
+                recording_frame,
+                text="⏹ Stop Recording",
+                command=self.stop_recording,
+                width=18,
+                state='disabled'
+            )
+            self.stop_record_btn.grid(row=0, column=1, padx=5, pady=5)
+            
+            self.extract_text_btn = ttk.Button(
+                recording_frame,
+                text="📋 Extract Text → Store",
+                command=self.extract_text_mode,
+                width=18,
+                state='disabled'
+            )
+            self.extract_text_btn.grid(row=0, column=2, padx=5, pady=5)
+            
+            self.save_recording_btn = ttk.Button(
+                recording_frame,
+                text="💾 Save Recording",
+                command=self.save_recording,
+                width=18,
+                state='normal'
+            )
+            self.save_recording_btn.grid(row=0, column=3, padx=5, pady=5)
+            
+            self.clear_recording_btn = ttk.Button(
+                recording_frame,
+                text="🗑️ Clear Recording",
+                command=self.clear_recording,
+                width=18,
+                state='normal'
+            )
+            self.clear_recording_btn.grid(row=1, column=0, columnspan=2, padx=5, pady=5, sticky=(tk.W, tk.E))
+            
+            recording_frame.columnconfigure(0, weight=1)
+            recording_frame.columnconfigure(1, weight=1)
+            recording_frame.columnconfigure(2, weight=1)
+            recording_frame.columnconfigure(3, weight=1)
         
         # Progress section
         progress_frame = ttk.LabelFrame(main_frame, text="Progress", padding="10")
@@ -457,6 +529,219 @@ class FBRInvoiceCheckerGUI:
         self.root.after(0, lambda: messagebox.showinfo("Completion Summary", summary_text))
         self.log_message("=" * 80)
         self.log_message("✅ All invoices processed successfully!")
+    
+    # ============================================================================
+    # Recording Feature Helper Methods
+    # ============================================================================
+    
+    def start_recording(self):
+        """
+        Start a new Playwright browser recording session.
+        """
+        if not PLAYWRIGHT_AVAILABLE:
+            messagebox.showerror("Playwright Not Available", "Install Playwright: pip install playwright")
+            return
+        
+        if self.is_recording:
+            messagebox.showwarning("Already Recording", "A recording session is already in progress.")
+            return
+        
+        try:
+            self.is_recording = True
+            self.recorded_steps.clear()
+            
+            # Update button states
+            self.record_btn.config(state='disabled')
+            self.stop_record_btn.config(state='normal')
+            self.extract_text_btn.config(state='normal')
+            
+            # Start Playwright in a separate thread
+            recording_thread = threading.Thread(target=self._run_playwright_recording, daemon=True)
+            recording_thread.start()
+            
+            self.log_message("🎬 Recording started - Playwright browser opened")
+            
+        except Exception as e:
+            messagebox.showerror("Recording Error", f"Failed to start recording:\n{str(e)}")
+            self.log_message(f"❌ Failed to start recording: {str(e)}")
+            self.is_recording = False
+            self.record_btn.config(state='normal')
+    
+    def _run_playwright_recording(self):
+        """
+        Run Playwright in async mode to capture interactions.
+        Runs in background thread.
+        """
+        try:
+            asyncio.run(self._async_recording_loop())
+        except Exception as e:
+            self.log_message(f"❌ Recording loop error: {str(e)}")
+            self.is_recording = False
+    
+    async def _async_recording_loop(self):
+        """
+        Async loop to capture browser interactions.
+        """
+        try:
+            async with async_playwright() as playwright:
+                browser = await playwright.chromium.launch(headless=False)
+                self.page = await browser.new_page()
+                
+                # Set up click listener
+                await self.page.add_init_script("""
+                    window.__recordedActions__ = [];
+                    document.addEventListener('click', async (e) => {
+                        const target = e.target;
+                        let selector = '';
+                        if (target.id) selector = '#' + target.id;
+                        else if (target.name) selector = '[name="' + target.name + '"]';
+                        else selector = target.tagName.toLowerCase() + '.' + (target.className || '');
+                        
+                        window.__recordedActions__.push({action: 'click', selector});
+                    });
+                """)
+                
+                # Navigate to a default page
+                await self.page.goto("about:blank")
+                self.log_message("🌐 Playwright browser ready - interact with page to record actions")
+                
+                # Poll for actions while recording is ON
+                while self.is_recording:
+                    try:
+                        actions = await self.page.evaluate("window.__recordedActions__ || []")
+                        
+                        # Process new actions
+                        for action in actions:
+                            if action not in self.recorded_steps:
+                                self.append_recorded_step(action)
+                        
+                        await asyncio.sleep(0.5)
+                    except Exception as e:
+                        self.log_message(f"⚠️ Polling error: {str(e)}")
+                        await asyncio.sleep(1)
+                
+                # Cleanup
+                await browser.close()
+                self.log_message("🔌 Playwright browser closed")
+                
+        except Exception as e:
+            self.log_message(f"❌ Async recording error: {str(e)}")
+    
+    def stop_recording(self):
+        """
+        Stop the recording session.
+        """
+        self.is_recording = False
+        
+        # Update button states
+        self.record_btn.config(state='normal')
+        self.stop_record_btn.config(state='disabled')
+        self.extract_text_btn.config(state='disabled')
+        
+        self.log_message(f"⏹ Recording stopped ({len(self.recorded_steps)} steps captured)")
+    
+    def extract_text_mode(self):
+        """
+        Enable text extraction mode - user can click element to store its text as variable.
+        """
+        if not self.page:
+            messagebox.showwarning("Not Recording", "Start recording first to use text extraction.")
+            return
+        
+        var_name = simpledialog.askstring(
+            "Extract Text",
+            "Enter variable name to store text as:\n(e.g., invoice_id, status, amount)"
+        )
+        
+        if var_name:
+            self.log_message(f"👆 Click on element to extract text as ${{{var_name}}}")
+            # In production, would add click listener to page
+            # For now, just show log message
+    
+    def get_selector(self, element_handle):
+        """
+        Generate a stable CSS selector from an element.
+        Priority: #id > [name=""] > tag.class
+        
+        Args:
+            element_handle: Playwright element handle
+            
+        Returns:
+            str: CSS selector
+        """
+        try:
+            # Try to get ID
+            element_id = element_handle.get_attribute('id')
+            if element_id:
+                return f"#{element_id}"
+            
+            # Try to get name attribute
+            name = element_handle.get_attribute('name')
+            if name:
+                return f'[name="{name}"]'
+            
+            # Fallback to tag + class
+            tag = element_handle.evaluate("e => e.tagName.toLowerCase()")
+            class_list = element_handle.evaluate("e => e.className")
+            if class_list:
+                return f"{tag}.{class_list.split()[0]}"
+            
+            return tag
+        except Exception as e:
+            logging.warning(f"Failed to generate selector: {e}")
+            return "*"  # Fallback
+    
+    def append_recorded_step(self, step_dict):
+        """
+        Append a step to recording and update GUI.
+        
+        Args:
+            step_dict (dict): Step to record (action, selector, value, etc.)
+        """
+        self.recorded_steps.append(step_dict)
+        
+        # Update recording display
+        step_text = f"{len(self.recorded_steps)}. {step_dict.get('action', 'unknown')}"
+        if 'selector' in step_dict:
+            step_text += f" → {step_dict['selector']}"
+        if 'value' in step_dict:
+            step_text += f" ('{step_dict['value']}')"
+        if 'store_as' in step_dict:
+            step_text += f" → ${{{step_dict['store_as']}}}"
+        
+        self.log_message(f"🎬 RECORDED: {step_text}")
+    
+    def save_recording(self):
+        """
+        Save recorded steps to JSON file.
+        """
+        if not self.recorded_steps:
+            messagebox.showwarning("No Recording", "No steps have been recorded yet.")
+            return
+        
+        try:
+            output_file = Path("recorded_steps.json")
+            with open(output_file, "w") as f:
+                json.dump(self.recorded_steps, f, indent=4)
+            
+            messagebox.showinfo(
+                "Recording Saved",
+                f"✅ Recording saved to: {output_file.absolute()}\n\n"
+                f"Total steps: {len(self.recorded_steps)}"
+            )
+            self.log_message(f"💾 Recording saved: {output_file} ({len(self.recorded_steps)} steps)")
+        except Exception as e:
+            messagebox.showerror("Save Error", f"Failed to save recording:\n{str(e)}")
+            self.log_message(f"❌ Failed to save recording: {str(e)}")
+    
+    def clear_recording(self):
+        """
+        Clear the current recording.
+        """
+        if self.recorded_steps:
+            if messagebox.askyesno("Clear Recording", "Are you sure? This cannot be undone."):
+                self.recorded_steps.clear()
+                self.log_message("🗑️ Recording cleared")
     
     def exit_application(self):
         """
