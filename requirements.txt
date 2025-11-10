@@ -3,6 +3,7 @@
 # Web Automation
 selenium==4.15.2
 webdriver-manager==4.0.1
+undetected-chromedriver==3.5.4
 
 # Excel Operations
 openpyxl==3.1.2

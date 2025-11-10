@@ -7,10 +7,9 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException
-from webdriver_manager.chrome import ChromeDriverManager
+import undetected_chromedriver as uc
 import logging
 import time
 import random
@@ -40,63 +39,87 @@ class FBRChecker:
             bool: True if browser initialized successfully, False otherwise
         """
         try:
-            # Chrome options for better stability and stealth
-            chrome_options = webdriver.ChromeOptions()
-            chrome_options.add_argument('--start-maximized')
-            chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-            chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-            chrome_options.add_experimental_option('useAutomationExtension', False)
+            # Use undetected-chromedriver for maximum stealth
+            # This patches the Chrome executable to remove all Selenium/WebDriver indicators
+            options = uc.ChromeOptions()
+            options.add_argument('--start-maximized')
+            options.add_argument('--no-first-run')
+            options.add_argument('--no-default-browser-check')
+            options.add_argument('--disable-popup-blocking')
             
-            # Enhanced stealth options to avoid bot detection
-            chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-            chrome_options.add_argument('--disable-infobars')
-            chrome_options.add_argument('--disable-browser-side-navigation')
-            chrome_options.add_argument('--disable-gpu')
-            chrome_options.add_experimental_option("prefs", {
+            # Additional stealth arguments
+            options.add_argument('--disable-blink-features=AutomationControlled')
+            options.add_argument('--disable-infobars')
+            options.add_argument('--disable-browser-side-navigation')
+            
+            # Fix SSL handshake errors
+            options.add_argument('--ignore-certificate-errors')
+            options.add_argument('--ignore-ssl-errors')
+            options.add_argument('--allow-insecure-localhost')
+            options.add_argument('--disable-web-security')
+            options.add_argument('--no-sandbox')
+            options.add_argument('--disable-dev-shm-usage')
+            
+            # Disable GPU for stability
+            options.add_argument('--disable-gpu')
+            
+            # Suppress console logging
+            options.add_argument('--log-level=3')
+            
+            # Note: undetected-chromedriver doesn't use experimental_option for excludeSwitches
+            # It handles stealth internally, so we avoid conflicting options
+            
+            # Disable password manager and notifications
+            prefs = {
                 "profile.default_content_setting_values.notifications": 2,
                 "credentials_enable_service": False,
                 "profile.password_manager_enabled": False
-            })
+            }
+            options.add_experimental_option("prefs", prefs)
             
-            # Add realistic user agent
-            chrome_options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36')
+            # Initialize undetected Chrome driver
+            # version_main=None allows it to auto-detect Chrome version
+            # use_subprocess=False prevents multiprocessing issues on Windows
+            self.driver = uc.Chrome(options=options, version_main=None)
             
-            # Fix SSL handshake errors
-            chrome_options.add_argument('--ignore-certificate-errors')
-            chrome_options.add_argument('--ignore-ssl-errors')
-            chrome_options.add_argument('--allow-insecure-localhost')
-            chrome_options.add_argument('--disable-web-security')
-            chrome_options.add_argument('--no-sandbox')
-            chrome_options.add_argument('--disable-dev-shm-usage')
-            
-            # Suppress console logging
-            chrome_options.add_argument('--log-level=3')
-            chrome_options.add_experimental_option('excludeSwitches', ['enable-logging'])
-            
-            # Initialize Chrome driver with auto-install using webdriver-manager
-            service = Service(ChromeDriverManager().install())
-            self.driver = webdriver.Chrome(service=service, options=chrome_options)
-            
-            # Hide automation indicators
-            self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-            self.driver.execute_cdp_cmd('Network.setUserAgentOverride', {
-                "userAgent": 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
-            })
-            
-            # Initialize ActionChains for human-like mouse movements
-            self.actions = ActionChains(self.driver)
+            # Additional JavaScript injections for complete stealth
+            self.driver.execute_script("""
+                // Override navigator properties
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined
+                });
+                
+                Object.defineProperty(navigator, 'chromeVersion', {
+                    get: () => undefined
+                });
+                
+                Object.defineProperty(navigator, 'vendor', {
+                    get: () => 'Google Inc.'
+                });
+                
+                // Mock chrome object
+                window.chrome = {
+                    runtime: {}
+                };
+                
+                // Hide headless browser indicators
+                window.outerHeight = 1040;
+                window.outerWidth = 1920;
+            """)
             
             # Set implicit wait
             self.driver.implicitly_wait(10)
             
-            logging.info("Chrome browser initialized successfully with stealth mode")
+            # Initialize ActionChains
+            self.actions = ActionChains(self.driver)
+            
+            logging.info("✅ Chrome browser initialized with MAXIMUM stealth mode (undetected-chromedriver)")
+            logging.info("🔒 All Selenium automation markers have been removed")
             return True
             
-        except WebDriverException as e:
-            logging.error(f"Failed to initialize Chrome browser: {str(e)}")
-            return False
         except Exception as e:
-            logging.error(f"Unexpected error initializing browser: {str(e)}")
+            logging.error(f"Failed to initialize Chrome browser: {str(e)}")
+            logging.error("Make sure to run: pip install undetected-chromedriver")
             return False
     
     def _random_delay(self, min_seconds=0.5, max_seconds=2.0):
