@@ -8,10 +8,12 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.action_chains import ActionChains
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException
 from webdriver_manager.chrome import ChromeDriverManager
 import logging
 import time
+import random
 
 
 class FBRChecker:
@@ -28,6 +30,7 @@ class FBRChecker:
         """
         self.driver = None
         self.max_retries = 3
+        self.actions = None  # ActionChains for mouse movements
         
     def initialize_browser(self):
         """
@@ -37,12 +40,26 @@ class FBRChecker:
             bool: True if browser initialized successfully, False otherwise
         """
         try:
-            # Chrome options for better stability
+            # Chrome options for better stability and stealth
             chrome_options = webdriver.ChromeOptions()
             chrome_options.add_argument('--start-maximized')
             chrome_options.add_argument('--disable-blink-features=AutomationControlled')
             chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
             chrome_options.add_experimental_option('useAutomationExtension', False)
+            
+            # Enhanced stealth options to avoid bot detection
+            chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+            chrome_options.add_argument('--disable-infobars')
+            chrome_options.add_argument('--disable-browser-side-navigation')
+            chrome_options.add_argument('--disable-gpu')
+            chrome_options.add_experimental_option("prefs", {
+                "profile.default_content_setting_values.notifications": 2,
+                "credentials_enable_service": False,
+                "profile.password_manager_enabled": False
+            })
+            
+            # Add realistic user agent
+            chrome_options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36')
             
             # Fix SSL handshake errors
             chrome_options.add_argument('--ignore-certificate-errors')
@@ -60,10 +77,19 @@ class FBRChecker:
             service = Service(ChromeDriverManager().install())
             self.driver = webdriver.Chrome(service=service, options=chrome_options)
             
+            # Hide automation indicators
+            self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+            self.driver.execute_cdp_cmd('Network.setUserAgentOverride', {
+                "userAgent": 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
+            })
+            
+            # Initialize ActionChains for human-like mouse movements
+            self.actions = ActionChains(self.driver)
+            
             # Set implicit wait
             self.driver.implicitly_wait(10)
             
-            logging.info("Chrome browser initialized successfully")
+            logging.info("Chrome browser initialized successfully with stealth mode")
             return True
             
         except WebDriverException as e:
@@ -72,6 +98,76 @@ class FBRChecker:
         except Exception as e:
             logging.error(f"Unexpected error initializing browser: {str(e)}")
             return False
+    
+    def _random_delay(self, min_seconds=0.5, max_seconds=2.0):
+        """
+        Add a random human-like delay.
+        
+        Args:
+            min_seconds (float): Minimum delay in seconds
+            max_seconds (float): Maximum delay in seconds
+        """
+        delay = random.uniform(min_seconds, max_seconds)
+        time.sleep(delay)
+    
+    def _human_like_type(self, element, text):
+        """
+        Type text character by character with random delays to simulate human typing.
+        
+        Args:
+            element: WebElement to type into
+            text (str): Text to type
+        """
+        element.clear()
+        self._random_delay(0.3, 0.7)
+        
+        for char in str(text):
+            element.send_keys(char)
+            # Random typing speed between 50-150ms per character
+            time.sleep(random.uniform(0.05, 0.15))
+        
+        # Small pause after typing
+        self._random_delay(0.3, 0.8)
+    
+    def _human_like_click(self, element):
+        """
+        Click element with mouse movement to simulate human behavior.
+        
+        Args:
+            element: WebElement to click
+        """
+        try:
+            # Scroll element into view
+            self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", element)
+            self._random_delay(0.5, 1.0)
+            
+            # Move mouse to element with smooth movement
+            self.actions.move_to_element(element).perform()
+            self._random_delay(0.3, 0.7)
+            
+            # Click using ActionChains (more human-like than element.click())
+            self.actions.click(element).perform()
+            
+            logging.debug("Performed human-like click")
+            
+        except Exception as e:
+            # Fallback to regular click if ActionChains fails
+            logging.warning(f"ActionChains click failed, using fallback: {str(e)}")
+            element.click()
+    
+    def _simulate_mouse_movement(self):
+        """
+        Simulate random mouse movements to appear more human-like.
+        """
+        try:
+            # Random small mouse movements
+            for _ in range(random.randint(1, 3)):
+                x_offset = random.randint(-100, 100)
+                y_offset = random.randint(-100, 100)
+                self.actions.move_by_offset(x_offset, y_offset).perform()
+                time.sleep(random.uniform(0.1, 0.3))
+        except Exception:
+            pass  # Ignore errors in mouse simulation
     
     def navigate_to_fbr(self):
         """
@@ -83,7 +179,13 @@ class FBRChecker:
         try:
             self.driver.get(self.FBR_URL)
             logging.info(f"Navigated to FBR portal: {self.FBR_URL}")
-            time.sleep(2)  # Wait for page to load
+            
+            # Random delay to simulate page reading
+            self._random_delay(2.0, 4.0)
+            
+            # Simulate some mouse movement
+            self._simulate_mouse_movement()
+            
             return True
             
         except Exception as e:
@@ -108,8 +210,12 @@ class FBRChecker:
                 if self.driver.current_url != self.FBR_URL:
                     self.navigate_to_fbr()
                 
-                # Wait for page to fully load
-                time.sleep(3)
+                # Random delay to simulate human reading page
+                self._random_delay(2.0, 4.0)
+                
+                # Simulate mouse movement before interacting
+                self._simulate_mouse_movement()
+                
                 wait = WebDriverWait(self.driver, 15)
                 
                 try:
@@ -149,12 +255,13 @@ class FBRChecker:
                         logging.error("Could not find invoice input field")
                         return "⚠️ Error - Field not found"
                     
-                    # Clear and enter invoice number
-                    invoice_input.clear()
-                    time.sleep(0.5)
-                    invoice_input.send_keys(str(invoice_number))
-                    logging.info(f"Entered invoice number: {invoice_number}")
-                    time.sleep(1)
+                    # Human-like interaction: move to field and type naturally
+                    self._human_like_click(invoice_input)
+                    self._human_like_type(invoice_input, invoice_number)
+                    logging.info(f"Entered invoice number: {invoice_number} (human-like typing)")
+                    
+                    # Random pause as if user is reviewing input
+                    self._random_delay(0.8, 1.5)
                     
                     # Find and click the Search button
                     search_button = None
@@ -186,11 +293,12 @@ class FBRChecker:
                         logging.error("Could not find search button")
                         return "⚠️ Error - Search button not found"
                     
-                    search_button.click()
-                    logging.info("Clicked search button")
+                    # Human-like click on search button
+                    self._human_like_click(search_button)
+                    logging.info("Clicked search button (human-like)")
                     
-                    # Wait for results to load
-                    time.sleep(4)
+                    # Random delay while "waiting" for results (appears more human)
+                    self._random_delay(3.5, 5.0)
                     
                     # Check for results
                     page_source = self.driver.page_source.lower()
@@ -224,17 +332,20 @@ class FBRChecker:
                 except TimeoutException:
                     logging.warning(f"Timeout while checking invoice {invoice_number} (Attempt {retry_count + 1})")
                     retry_count += 1
-                    time.sleep(2)
+                    # Random retry delay
+                    self._random_delay(2.0, 4.0)
                     
                 except NoSuchElementException as e:
                     logging.warning(f"Element not found for invoice {invoice_number}: {str(e)} (Attempt {retry_count + 1})")
                     retry_count += 1
-                    time.sleep(2)
+                    # Random retry delay
+                    self._random_delay(2.0, 4.0)
                     
             except Exception as e:
                 logging.error(f"Error verifying invoice {invoice_number}: {str(e)}")
                 retry_count += 1
-                time.sleep(2)
+                # Random retry delay
+                self._random_delay(2.0, 4.0)
         
         # If all retries failed
         logging.error(f"Failed to verify invoice {invoice_number} after {self.max_retries} attempts")

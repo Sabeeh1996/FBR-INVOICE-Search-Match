@@ -10,6 +10,7 @@ import logging
 from excel_handler import ExcelHandler
 from fbr_checker import FBRChecker
 import time
+import random
 
 
 class FBRInvoiceCheckerGUI:
@@ -360,8 +361,10 @@ class FBRInvoiceCheckerGUI:
                 self.log_message(f"   → Result: {status}")
                 self.log_message("-" * 80)
                 
-                # Small delay between requests
-                time.sleep(1)
+                # Random delay between requests (human-like behavior)
+                delay = random.uniform(2.0, 5.0)
+                self.log_message(f"⏱️ Waiting {delay:.1f}s before next invoice...")
+                time.sleep(delay)
             
             # Close browser
             if fbr_checker:
