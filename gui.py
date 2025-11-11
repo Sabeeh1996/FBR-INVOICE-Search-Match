@@ -356,6 +356,7 @@ class FBRInvoiceCheckerGUI:
             self.log_message("=" * 80)
             
             # Process each invoice
+            
             for invoice_data in invoices:
                 # Check if paused
                 while self.is_paused and self.is_running:
@@ -384,7 +385,13 @@ class FBRInvoiceCheckerGUI:
                 
                 # Verify invoice with source authority, invoice number, and date from Excel
                 self.log_message(f"🔍 Verifying on FBR portal...")
-                status = fbr_checker.verify_invoice(registration_no, source_authority=source_auth, invoice_no_field=number, date_field=date)
+                try:
+                    status = fbr_checker.verify_invoice(registration_no, source_authority=source_auth, invoice_no_field=number, date_field=date)
+                except Exception as e:
+                    # If verify_invoice fails or hangs, catch it and allow loop to continue
+                    logging.exception(f"verify_invoice raised exception for row {row_number}: {str(e)}")
+                    self.log_message(f"❌ Exception during verification: {str(e)}")
+                    status = "⚠️ Error"
                 
                 # Update Excel
                 excel_handler.update_invoice_status(row_number, status)

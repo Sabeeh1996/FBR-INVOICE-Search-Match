@@ -160,23 +160,58 @@ class FBRChecker:
             element: WebElement to click
         """
         try:
-            # Scroll element into view
-            self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", element)
-            self._random_delay(0.5, 1.0)
-            
-            # Move mouse to element with smooth movement
-            self.actions.move_to_element(element).perform()
-            self._random_delay(0.3, 0.7)
-            
-            # Click using ActionChains (more human-like than element.click())
-            self.actions.click(element).perform()
-            
-            logging.debug("Performed human-like click")
-            
+            # Ensure element is in view first
+            try:
+                self.driver.execute_script(
+                    "arguments[0].scrollIntoView({behavior: 'auto', block: 'center', inline: 'center'});",
+                    element,
+                )
+            except Exception:
+                # ignore scroll failures
+                pass
+
+            self._random_delay(0.2, 0.6)
+
+            # Check visibility and size — some elements are present but have no size/location
+            try:
+                displayed = element.is_displayed()
+                size = element.size
+            except Exception:
+                displayed = True
+                size = {'width': 1, 'height': 1}
+
+            width = size.get('width', 0) if isinstance(size, dict) else getattr(size, 'get', lambda k, d: d)('width', 0)
+            height = size.get('height', 0) if isinstance(size, dict) else getattr(size, 'get', lambda k, d: d)('height', 0)
+
+            # If element is not visible or has no size, try JS click first
+            if not displayed or width == 0 or height == 0:
+                try:
+                    self.driver.execute_script("arguments[0].click();", element)
+                    logging.debug("Performed JS click on element (fallback for not-interactable element)")
+                    return
+                except Exception as js_e:
+                    logging.warning(f"JS click fallback failed: {js_e}")
+
+            # Try ActionChains move+click (preferred human-like interaction)
+            try:
+                self.actions.move_to_element(element).perform()
+                self._random_delay(0.15, 0.4)
+                self.actions.click(element).perform()
+                logging.debug("Performed human-like click via ActionChains")
+                return
+            except Exception as ac_e:
+                logging.warning(f"ActionChains click failed, trying direct click fallback: {ac_e}")
+
+            # Fallback to element.click()
+            try:
+                element.click()
+                logging.debug("Performed direct element.click() fallback")
+                return
+            except Exception as final_e:
+                logging.error(f"Final click fallback failed: {final_e}")
+
         except Exception as e:
-            # Fallback to regular click if ActionChains fails
-            logging.warning(f"ActionChains click failed, using fallback: {str(e)}")
-            element.click()
+            logging.error(f"Error in _human_like_click: {e}")
     
     def _simulate_mouse_movement(self):
         """
@@ -316,7 +351,7 @@ class FBRChecker:
             
             # Click the button
             self._human_like_click(claim_button)
-            self._random_delay(1.0, 2.0)
+            self._random_delay(0.5, 1.0)
             logging.info("✅ Clicked 'Claim Invoices' button")
             return True
             
@@ -359,7 +394,7 @@ class FBRChecker:
             
             # Click the menu item
             self._human_like_click(claim_fbr_item)
-            self._random_delay(2.0, 3.5)
+            self._random_delay(1.0, 2.0)
             logging.info("✅ Clicked 'Claim in FBR' menu item")
             return True
             
@@ -425,6 +460,7 @@ class FBRChecker:
             logging.error(f"Error navigating to FBR portal: {str(e)}")
             return False
         
+    
     def verify_invoice(self, invoice_number, source_authority=None, invoice_no_field=None, date_field=None):
         """
         Verify a single invoice number on the FBR portal.
@@ -439,7 +475,7 @@ class FBRChecker:
             str: Status - "Claimed", "Not Claimed", or "Error"
         """
          # Now process the claim workflow (Annex-A steps)
-        self._random_delay(1.0, 2.0)
+        self._random_delay(0.5, 1.0)
         self.process_claim_workflow()
         retry_count = 0
         
@@ -726,41 +762,8 @@ class FBRChecker:
                         logging.error("Annex-A Search button not found")
                         return "⚠️ Error - Search button not found"
                     
-                    # Step 7: Enter invoice number in the Seller Registration No. field
-                    invoice_input = None
-                    
-                    selectors_to_try = [
-                        # Exact id and name from the FBR page (most reliable)
-                        (By.ID, "invoices_tabview:STform:invoiceNo"),
-                        (By.NAME, "invoices_tabview:STform:invoiceNo"),
-                        # Explicit XPaths for the same attributes as fallback
-                        (By.XPATH, "//input[@id='invoices_tabview:STform:invoiceNo']"),
-                        (By.XPATH, "//input[@name='invoices_tabview:STform:invoiceNo']"),
-                        # Generic fallbacks (retain previous heuristics)
-                        (By.XPATH, "//label[contains(text(), 'Invoice Ref No')]/following::input[1]"),
-                        (By.XPATH, "//input[contains(@id, 'invoiceRefNo')]"),
-                        (By.XPATH, "//input[contains(@name, 'invoiceRefNo')]"),
-                        (By.XPATH, "//input[@type='text'][1]"),  # First text input as fallback
-                    ]
-                    for by_type, selector in selectors_to_try:
-                        try:
-                            invoice_input = wait.until(EC.presence_of_element_located((by_type, selector)))
-                            logging.info(f"Found invoice input using selector: {selector}")
-                            break
-                        except TimeoutException:
-                            continue
-                    
-                    if not invoice_input:
-                        logging.error("Could not find invoice input field")
-                        return "⚠️ Error - Field not found"
-                    
-                    # Human-like interaction: move to field and type naturally
-                    self._human_like_click(invoice_input)
-                    self._human_like_type(invoice_input, invoice_number)
-                    logging.info(f"Entered invoice number: {invoice_number} (human-like typing)")
-                    
-                    # Random pause as if user is reviewing input
-                    self._random_delay(0.8, 1.5)
+               
+                                  
                     
                     # Find and click the Search button
                     search_button = None
@@ -839,7 +842,7 @@ class FBRChecker:
                     logging.warning(f"Timeout while checking invoice {invoice_number} (Attempt {retry_count + 1})")
                     retry_count += 1
                     # Random retry delay
-                    self._random_delay(2.0, 4.0)
+                    self._random_delay(1.0, 2.0)
                     
                 except NoSuchElementException as e:
                     logging.warning(f"Element not found for invoice {invoice_number}: {str(e)} (Attempt {retry_count + 1})")
