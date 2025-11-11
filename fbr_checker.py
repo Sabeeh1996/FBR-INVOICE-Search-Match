@@ -765,78 +765,8 @@ class FBRChecker:
                
                                   
                     
-                    # Find and click the Search button
-                    search_button = None
-                    search_selectors = [
-                        # Exact id and name from the button element
-                        (By.ID, "invoices_tabview:STform:j_idt134"),
-                        (By.NAME, "invoices_tabview:STform:j_idt134"),
-                        (By.XPATH, "//button[@id='invoices_tabview:STform:j_idt134']"),
-                        # Button that contains a span with the visible text "Search"
-                        (By.XPATH, "//button[.//span[normalize-space(text())='Search']]"),
-                        (By.XPATH, "//button[@type='submit' and .//span[contains(normalize-space(.),'Search')]]"),
-                        # Generic fallbacks
-                        (By.XPATH, "//button[contains(@class,'ui-button') and .//span[contains(normalize-space(.),'Search')]]"),
-                        (By.XPATH, "//button[contains(normalize-space(.),'Search')]"),
-                        (By.XPATH, "//input[@value='Search']"),
-                        (By.XPATH, "//button[@type='submit']"),
-                        (By.ID, "searchBtn"),
-                    ]
-                    
-                    for by_type, selector in search_selectors:
-                        try:
-                            search_button = self.driver.find_element(by_type, selector)
-                            logging.info(f"Found search button using: {selector}")
-                            break
-                        except NoSuchElementException:
-                            continue
-                    
-                    if not search_button:
-                        logging.error("Could not find search button")
-                        return "⚠️ Error - Search button not found"
-                    
-                    # Human-like click on search button
-                    self._human_like_click(search_button)
-                    logging.info("Clicked search button (human-like)")
-                    
-                    # Random delay while "waiting" for results (appears more human)
-                    self._random_delay(3.5, 5.0)
-                    
-                    # Check for results
-                    page_source = self.driver.page_source.lower()
-                    
-                    # Check if "No records found" appears
-                    if "no records found" in page_source or "no record found" in page_source:
-                        logging.info(f"Invoice {invoice_number}: NOT CLAIMED (No records found)")
-                        return "❌ Not Claimed"
-                    
-                    # Check if there are result rows in the table
-                    try:
-                        # Look for table rows with results (PrimeFaces table structure)
-                        result_rows = self.driver.find_elements(By.XPATH, "//table//tr[contains(@class, 'ui-widget-content')]")
-                        
-                        if len(result_rows) > 0:
-                            logging.info(f"Invoice {invoice_number}: CLAIMED (Found {len(result_rows)} result(s))")
-                            
-                           
-                            
-                            return "✅ Claimed"
-                        else:
-                            # No rows found
-                            logging.info(f"Invoice {invoice_number}: NOT CLAIMED (No table rows)")
-                            return "❌ Not Claimed"
-                    except:
-                        # Fallback: check if invoice number appears in page
-                        if str(invoice_number) in page_source:
-                            logging.info(f"Invoice {invoice_number}: CLAIMED (Found in page)")
-                            
-                            # Now process the claim workflow (Annex-A steps)
-                           
-                            
-                            return "✅ Claimed"
-                        else:
-                            logging.info(f"Invoice {invoice_number}: NOT CLAIMED")
-                            return "❌ Not Claimed"
+
+       
                 
                 except TimeoutException:
                     logging.warning(f"Timeout while checking invoice {invoice_number} (Attempt {retry_count + 1})")
