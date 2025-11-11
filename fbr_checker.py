@@ -227,7 +227,7 @@ class FBRChecker:
                     'day': parsed_date.day,
                     'month': parsed_date.month,
                     'year': parsed_date.year,
-                    'formatted': parsed_date.strftime('%d/%m/%Y')
+                    'formatted': parsed_date.strftime('%d-%b-%Y')  # Format: 11-Nov-2025
                 }
             else:
                 logging.warning(f"Could not parse date: {date_string}")
