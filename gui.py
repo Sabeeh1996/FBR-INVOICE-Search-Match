@@ -56,6 +56,12 @@ class FBRInvoiceCheckerGUI:
         self.page = None
         self.playwright_instance = None
         self.recording_loop = None
+        # Recorder UI widget placeholders (removed from UI but kept to avoid attribute errors)
+        self.record_btn = None
+        self.stop_record_btn = None
+        self.extract_text_btn = None
+        self.save_recording_btn = None
+        self.clear_recording_btn = None
         
         # Statistics
         self.total_invoices = 0
@@ -138,59 +144,7 @@ class FBRInvoiceCheckerGUI:
         )
         self.exit_btn.grid(row=0, column=3, padx=5)
         
-        # Recording controls (new section)
-        if PLAYWRIGHT_AVAILABLE:
-            recording_frame = ttk.LabelFrame(button_frame, text="Web Automation Recorder", padding="5")
-            recording_frame.grid(row=1, column=0, columnspan=4, sticky=(tk.W, tk.E), pady=(10, 0))
-            
-            self.record_btn = ttk.Button(
-                recording_frame,
-                text="🎬 Start Recording",
-                command=self.start_recording,
-                width=18
-            )
-            self.record_btn.grid(row=0, column=0, padx=5, pady=5)
-            
-            self.stop_record_btn = ttk.Button(
-                recording_frame,
-                text="⏹ Stop Recording",
-                command=self.stop_recording,
-                width=18,
-                state='disabled'
-            )
-            self.stop_record_btn.grid(row=0, column=1, padx=5, pady=5)
-            
-            self.extract_text_btn = ttk.Button(
-                recording_frame,
-                text="📋 Extract Text → Store",
-                command=self.extract_text_mode,
-                width=18,
-                state='disabled'
-            )
-            self.extract_text_btn.grid(row=0, column=2, padx=5, pady=5)
-            
-            self.save_recording_btn = ttk.Button(
-                recording_frame,
-                text="💾 Save Recording",
-                command=self.save_recording,
-                width=18,
-                state='normal'
-            )
-            self.save_recording_btn.grid(row=0, column=3, padx=5, pady=5)
-            
-            self.clear_recording_btn = ttk.Button(
-                recording_frame,
-                text="🗑️ Clear Recording",
-                command=self.clear_recording,
-                width=18,
-                state='normal'
-            )
-            self.clear_recording_btn.grid(row=1, column=0, columnspan=2, padx=5, pady=5, sticky=(tk.W, tk.E))
-            
-            recording_frame.columnconfigure(0, weight=1)
-            recording_frame.columnconfigure(1, weight=1)
-            recording_frame.columnconfigure(2, weight=1)
-            recording_frame.columnconfigure(3, weight=1)
+        # Recording controls have been removed from the UI
         
         # Progress section
         progress_frame = ttk.LabelFrame(main_frame, text="Progress", padding="10")
