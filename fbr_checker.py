@@ -379,13 +379,14 @@ class FBRChecker:
         except Exception as e:
             logging.error(f"Error navigating to FBR portal: {str(e)}")
             return False
-    
-    def verify_invoice(self, invoice_number):
+        
+    def verify_invoice(self, invoice_number, source_authority=None):
         """
         Verify a single invoice number on the FBR portal.
         
         Args:
             invoice_number (str): The invoice number to verify
+            source_authority (str): Source Authority value (e.g., 'FBR', 'BRA', 'KPRA', 'PRA', 'SRB')
             
         Returns:
             str: Status - "Claimed", "Not Claimed", or "Error"
@@ -410,16 +411,74 @@ class FBRChecker:
                 wait = WebDriverWait(self.driver, 15)
                 
                 try:
-                    # Find the Invoice Ref No input field
-                    # Try multiple selectors based on the FBR page structure
-                    invoice_input = None
+                    # Step 1: Select Source Authority from dropdown if provided
+                    if source_authority:
+                        logging.info(f"Selecting Source Authority: {source_authority}")
+                        
+                        # Find the dropdown element
+                        dropdown_selectors = [
+                            (By.ID, "correspondenceTabs:loadAnnexAform:sourceAuthorityFilter"),
+                            (By.XPATH, "//div[@id='correspondenceTabs:loadAnnexAform:sourceAuthorityFilter']"),
+                            (By.XPATH, "//div[contains(@class, 'ui-selectonemenu') and contains(@id, 'sourceAuthorityFilter')]"),
+                        ]
+                        
+                        dropdown = None
+                        for by_type, selector in dropdown_selectors:
+                            try:
+                                dropdown = wait.until(EC.presence_of_element_located((by_type, selector)))
+                                logging.info(f"Found dropdown using selector: {selector}")
+                                break
+                            except TimeoutException:
+                                continue
+                        
+                        if dropdown:
+                            # Click the dropdown to open it
+                            self._human_like_click(dropdown)
+                            self._random_delay(0.5, 1.0)
+                            
+                            # Select the option by text (source_authority value from Excel)
+                            # Map option values: 7=BRA, 1=FBR, 6=KPRA, 5=PRA, 8=SRB
+                            authority_map = {
+                                'BRA': '7',
+                                'FBR': '1',
+                                'KPRA': '6',
+                                'PRA': '5',
+                                'SRB': '8'
+                            }
+                            
+                            # Normalize source_authority
+                            source_auth_normalized = str(source_authority).strip().upper()
+                            option_value = authority_map.get(source_auth_normalized)
+                            
+                            if option_value:
+                                # Find and click the option in the dropdown
+                                option_selectors = [
+                                    (By.XPATH, f"//div[@id='correspondenceTabs:loadAnnexAform:sourceAuthorityFilter_panel']//li[@data-label='{source_auth_normalized}']"),
+                                    (By.XPATH, f"//div[contains(@id, 'sourceAuthorityFilter_panel')]//li[contains(text(), '{source_auth_normalized}')]"),
+                                    (By.XPATH, f"//select[@id='correspondenceTabs:loadAnnexAform:sourceAuthorityFilter_input']/option[@value='{option_value}']"),
+                                ]
+                                
+                                option_selected = False
+                                for by_type, selector in option_selectors:
+                                    try:
+                                        option = wait.until(EC.element_to_be_clickable((by_type, selector)))
+                                        self._human_like_click(option)
+                                        logging.info(f"✓ Selected Source Authority: {source_auth_normalized}")
+                                        option_selected = True
+                                        self._random_delay(0.5, 1.0)
+                                        break
+                                    except TimeoutException:
+                                        continue
+                                
+                                if not option_selected:
+                                    logging.warning(f"Could not select option '{source_auth_normalized}' from dropdown, proceeding anyway")
+                            else:
+                                logging.warning(f"Unknown source authority '{source_authority}', valid values: {list(authority_map.keys())}")
+                        else:
+                            logging.warning("Source Authority dropdown not found, proceeding without selection")
                     
-                    # selectors_to_try = [
-                    #     (By.XPATH, "//label[contains(text(), 'Invoice Ref No')]/following::input[1]"),
-                    #     (By.XPATH, "//input[contains(@id, 'invoiceRefNo')]"),
-                    #     (By.XPATH, "//input[contains(@name, 'invoiceRefNo')]"),
-                    #     (By.XPATH, "//input[@type='text'][1]"),  # First text input as fallback
-                    # ]
+                    # Step 2: Enter invoice number in the Seller Registration No. field
+                    invoice_input = None
                     
                     selectors_to_try = [
                         # Exact id and name from the FBR page (most reliable)
@@ -520,8 +579,7 @@ class FBRChecker:
                             logging.info(f"Invoice {invoice_number}: CLAIMED (Found in page)")
                             
                             # Now process the claim workflow (Annex-A steps)
-                            self._random_delay(1.0, 2.0)
-                            self.process_claim_workflow()
+                           
                             
                             return "✅ Claimed"
                         else:

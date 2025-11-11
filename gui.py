@@ -220,7 +220,7 @@ class FBRInvoiceCheckerGUI:
         📋 How to use:
         
         Step 1: Click 'Browse' to select your Excel file
-                (Must contain 'InvoiceNumber' column)
+                (Must contain 'Seller Registration No.' column)
         
         Step 2: Click 'Start' to begin verification
         
@@ -316,7 +316,7 @@ class FBRInvoiceCheckerGUI:
             
             if not excel_handler.load_excel():
                 self.log_message("❌ Error: Failed to load Excel file")
-                messagebox.showerror("Error", "Failed to load Excel file. Check if 'InvoiceNumber' column exists.")
+                messagebox.showerror("Error", "Failed to load Excel file. Check if 'Seller Registration No.' column exists.")
                 return
             
             # Get invoice list
@@ -330,6 +330,11 @@ class FBRInvoiceCheckerGUI:
             self.total_invoices = len(invoices)
             self.update_statistics()
             self.log_message(f"📋 Found {self.total_invoices} invoices to verify")
+            
+            # Show column headers for upcoming records
+            self.log_message("=" * 80)
+            self.log_message("EXCEL COLUMNS: Sr.No | Source | Name | Registration No | Number | Date")
+            self.log_message("=" * 80)
             
             # Initialize browser
             self.log_message("🌐 Initializing Chrome browser...")
@@ -351,7 +356,7 @@ class FBRInvoiceCheckerGUI:
             self.log_message("=" * 80)
             
             # Process each invoice
-            for row_number, invoice_number in invoices:
+            for invoice_data in invoices:
                 # Check if paused
                 while self.is_paused and self.is_running:
                     time.sleep(0.5)
@@ -361,9 +366,25 @@ class FBRInvoiceCheckerGUI:
                     self.log_message("⏹ Processing stopped by user")
                     break
                 
-                # Verify invoice
-                self.log_message(f"🔍 Checking invoice: {invoice_number}...")
-                status = fbr_checker.verify_invoice(invoice_number)
+                # Extract data from invoice_data dictionary
+                row_number = invoice_data['row']
+                sr_no = invoice_data.get('sr_no', 'N/A')
+                source_auth = invoice_data.get('source_authority', 'N/A')
+                registration_no = invoice_data['seller_registration_no']
+                seller_name = invoice_data.get('seller_name', 'N/A')
+                number = invoice_data.get('number', 'N/A')
+                date = invoice_data.get('date', 'N/A')
+                
+                # Display record details in live logs (table format)
+                self.log_message(f"� RECORD #{self.processed_count + 1}")
+                self.log_message(f"   Row: {row_number} | Sr.No: {sr_no}")
+                self.log_message(f"   Source: {source_auth} | Name: {seller_name}")
+                self.log_message(f"   Registration No: {registration_no}")
+                self.log_message(f"   Number: {number} | Date: {date}")
+                
+                # Verify invoice with source authority from Excel
+                self.log_message(f"🔍 Verifying on FBR portal...")
+                status = fbr_checker.verify_invoice(registration_no, source_authority=source_auth)
                 
                 # Update Excel
                 excel_handler.update_invoice_status(row_number, status)
@@ -384,7 +405,7 @@ class FBRInvoiceCheckerGUI:
                 self.update_statistics()
                 self.update_progress()
                 
-                self.log_message(f"   → Result: {status}")
+                self.log_message(f"   ✓ Result: {status}")
                 self.log_message("-" * 80)
                 
                 # Random delay between requests (human-like behavior)
