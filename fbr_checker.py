@@ -480,7 +480,7 @@ class FBRChecker:
             self.process_claim_workflow()
             
             # Random delay to simulate human reading page
-            self._random_delay(2.0, 4.0)
+            self._random_delay(1.0, 2.0)
             
             # Simulate mouse movement before interacting
             self._simulate_mouse_movement()
@@ -746,54 +746,70 @@ class FBRChecker:
                         self._random_delay(0.5, 1.0)
                         
                         # Step 7: Extract "Value of Purchases" from the table
-                        try:
-                            logging.info("Extracting 'Value of Purchases' from results table...")
+                        logging.info("Extracting 'Value of Purchases' from results table...")
+                        
+                        # Strategy: Find the "Value of Purchases" header column, determine its position, 
+                        # then extract the value from the corresponding cell in the data row
+                        
+                        # Step 7.1: Find the "Value of Purchases" header column
+                        header_selectors = [
+                            # Exact ID from provided HTML
+                            (By.ID, "correspondenceTabs:loadAnnexAform:purchaseInvoiceTable:j_idt5936"),
+                            # By aria-label
+                            (By.XPATH, "//th[@aria-label='Value of Purchases']"),
+                            # By span text content
+                            (By.XPATH, "//th[.//span[@class='ui-column-title' and contains(text(), 'Value of Purchases')]]"),
+                            # Generic fallback
+                            (By.XPATH, "//table[@id='correspondenceTabs:loadAnnexAform:purchaseInvoiceTable']//th[contains(., 'Value of Purchases')]"),
+                        ]
+                        
+                        header_element = None
+                        for by_type, selector in header_selectors:
+                            try:
+                                header_element = wait.until(EC.presence_of_element_located((by_type, selector)))
+                                logging.info(f"Found 'Value of Purchases' header using selector: {selector}")
+                                break
+                            except TimeoutException:
+                                continue
+                        
+                        value_of_purchases = 'N/A'  # Default value
+                        
+                        if header_element:
+                            # Step 7.2: Determine the column index (position) of the header
+                            # Use JavaScript to get the column index more reliably
+                            column_index = self.driver.execute_script("""
+                                var header = arguments[0];
+                                var headers = header.parentElement.children;
+                                for (var i = 0; i < headers.length; i++) {
+                                    if (headers[i] === header) {
+                                        return i + 1; // 1-indexed for XPath
+                                    }
+                                }
+                                return -1;
+                            """, header_element)
                             
-                            # Find the table cell containing the Value of Purchases
-                            # The header is: correspondenceTabs:loadAnnexAform:purchaseInvoiceTable:j_idt5936
-                            # We need to find the corresponding data cell in the first row
-                            value_of_purchases_selectors = [
-                                # Try to find the cell by looking for the column under the specific header
-                                (By.XPATH, "//table[@id='correspondenceTabs:loadAnnexAform:purchaseInvoiceTable']//tbody/tr[1]/td[contains(@class, 'alignRight')]"),
-                                # More specific - find the column index based on the header and get the corresponding cell
-                                (By.XPATH, "//th[@id='correspondenceTabs:loadAnnexAform:purchaseInvoiceTable:j_idt5936']/ancestor::tr/following-sibling::*/tr[1]/td[position()=(count(//th[@id='correspondenceTabs:loadAnnexAform:purchaseInvoiceTable:j_idt5936']/preceding-sibling::th)+1)]"),
-                                # Generic fallback - get the cell with "alignRight" class (typically numeric values)
-                                (By.XPATH, "//table[@id='correspondenceTabs:loadAnnexAform:purchaseInvoiceTable']//tbody//tr[1]//td[contains(@class, 'alignRight')]"),
-                                # Another approach - find by aria-label
-                                (By.XPATH, "//table[@id='correspondenceTabs:loadAnnexAform:purchaseInvoiceTable']//td[contains(@role, 'gridcell')]"),
-                            ]
+                            logging.info(f"'Value of Purchases' column index: {column_index}")
                             
-                            value_element = None
-                            for by_type, selector in value_of_purchases_selectors:
+                            if column_index > 0:
+                                # Step 7.3: Extract the value from the corresponding cell in the first data row
+                                value_cell_xpath = f"//table[@id='correspondenceTabs:loadAnnexAform:purchaseInvoiceTable']//tbody/tr[1]/td[{column_index}]"
+                                
                                 try:
-                                    value_element = wait.until(EC.presence_of_element_located((by_type, selector)))
-                                    logging.info(f"Found 'Value of Purchases' cell using selector: {selector}")
-                                    break
+                                    value_element = wait.until(EC.presence_of_element_located((By.XPATH, value_cell_xpath)))
+                                    value_of_purchases = value_element.text.strip()
+                                    logging.info(f"✓ Extracted Value of Purchases: {value_of_purchases}")
                                 except TimeoutException:
-                                    continue
-                            
-                            if value_element:
-                                value_of_purchases = value_element.text.strip()
-                                logging.info(f"✓ Extracted Value of Purchases: {value_of_purchases}")
-                                
-                                # Return both status and the value
-                                return {
-                                    'status': '✓ Processed',
-                                    'value_of_purchases': value_of_purchases
-                                }
+                                    logging.warning(f"Could not find data cell at column index {column_index}")
                             else:
-                                logging.warning("Could not find 'Value of Purchases' cell in results table")
-                                return {
-                                    'status': '✓ Processed',
-                                    'value_of_purchases': 'N/A'
-                                }
-                                
-                        except Exception as e:
-                            logging.error(f"Error extracting Value of Purchases: {str(e)}")
-                            return {
-                                'status': '✓ Processed',
-                                'value_of_purchases': 'N/A'
-                            }
+                                logging.warning("Could not determine column index for 'Value of Purchases'")
+                        else:
+                            logging.warning("Could not find 'Value of Purchases' header in results table")
+                        
+                        # Return both status and the value
+                        return {
+                            'status': '✓ Processed',
+                            'value_of_purchases': value_of_purchases
+                        }
                     else:
                         logging.warning("Checkbox not found in results table - may be no results")
                         return {
