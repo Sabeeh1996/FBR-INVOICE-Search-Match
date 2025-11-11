@@ -679,11 +679,54 @@ class FBRChecker:
                         # Wait for results to load
                         self._random_delay(3.0, 5.0)
                         logging.info("Waiting for search results to load...")
+                        
+                        # Step 6: Click the checkbox in the results table if results found
+                        try:
+                            # Wait for the results table to be present
+                            checkbox_wait = WebDriverWait(self.driver, 10)
+                            
+                            # Multiple selector strategies for the checkbox
+                            checkbox_selectors = [
+                                # Exact ID from the provided HTML
+                                (By.ID, "correspondenceTabs:loadAnnexAform:purchaseInvoiceTable:j_idt5893"),
+                                # Input element inside the checkbox
+                                (By.ID, "correspondenceTabs:loadAnnexAform:purchaseInvoiceTable:j_idt5893_input"),
+                                # XPath for the checkbox div
+                                (By.XPATH, "//div[@id='correspondenceTabs:loadAnnexAform:purchaseInvoiceTable:j_idt5893']"),
+                                # XPath for the clickable checkbox box
+                                (By.XPATH, "//div[@id='correspondenceTabs:loadAnnexAform:purchaseInvoiceTable:j_idt5893']//div[contains(@class, 'ui-chkbox-box')]"),
+                                # Generic fallback - first checkbox in the table
+                                (By.XPATH, "//table[@id='correspondenceTabs:loadAnnexAform:purchaseInvoiceTable']//div[contains(@class, 'ui-chkbox-box')]"),
+                            ]
+                            
+                            checkbox_element = None
+                            for by_type, selector in checkbox_selectors:
+                                try:
+                                    checkbox_element = checkbox_wait.until(EC.element_to_be_clickable((by_type, selector)))
+                                    logging.info(f"Found checkbox using selector: {selector}")
+                                    break
+                                except TimeoutException:
+                                    continue
+                            
+                            if checkbox_element:
+                                # Human-like click on the checkbox
+                                self._human_like_click(checkbox_element)
+                                logging.info("✓ Clicked checkbox in results table")
+                                
+                                # Wait for checkbox state to update (AJAX callback)
+                                self._random_delay(1.5, 2.5)
+                            else:
+                                logging.warning("Checkbox not found in results table - may be no results")
+                                
+                        except TimeoutException:
+                            logging.warning("Results table or checkbox not found - may be no results")
+                        except Exception as e:
+                            logging.error(f"Error clicking checkbox: {str(e)}")
                     else:
                         logging.error("Annex-A Search button not found")
                         return "⚠️ Error - Search button not found"
                     
-                    # Step 6: Enter invoice number in the Seller Registration No. field
+                    # Step 7: Enter invoice number in the Seller Registration No. field
                     invoice_input = None
                     
                     selectors_to_try = [
