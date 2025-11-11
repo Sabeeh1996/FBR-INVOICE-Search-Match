@@ -28,6 +28,7 @@ class ExcelHandler:
         self.column_indices = {}  # Dictionary to store column indices
         self.status_column = None
         self.timestamp_column = None
+        self.value_of_purchases_column = None
         
     def load_excel(self):
         """
@@ -88,6 +89,16 @@ class ExcelHandler:
             else:
                 headers = [cell.value for cell in self.worksheet[1]]  # Refresh headers
                 self.timestamp_column = headers.index('Checked_On') + 1
+            
+            # Add Value_of_Purchases column if it doesn't exist
+            headers = [cell.value for cell in self.worksheet[1]]  # Refresh headers
+            if 'Value_of_Purchases' not in headers:
+                value_col_idx = len(headers) + 1
+                self.worksheet.cell(row=1, column=value_col_idx, value='Value_of_Purchases')
+                self.value_of_purchases_column = value_col_idx
+                logging.info("Added 'Value_of_Purchases' column to Excel file")
+            else:
+                self.value_of_purchases_column = headers.index('Value_of_Purchases') + 1
             
             self.workbook.save(self.file_path)
             logging.info(f"Excel file loaded successfully: {self.file_path}")
@@ -154,13 +165,14 @@ class ExcelHandler:
             logging.error(f"Error reading invoice data: {str(e)}")
             return []
     
-    def update_invoice_status(self, row_number, status):
+    def update_invoice_status(self, row_number, status, value_of_purchases=None):
         """
         Update the status of an invoice in the Excel file.
         
         Args:
             row_number (int): Row number in Excel (1-indexed)
             status (str): Status to update (Claimed/Not Claimed/Error)
+            value_of_purchases (str, optional): Value of Purchases from FBR portal
         """
         try:
             # Update Status column
@@ -169,6 +181,11 @@ class ExcelHandler:
             # Update timestamp
             timestamp = datetime.now().strftime('%Y-%m-%d %I:%M:%S %p')
             self.worksheet.cell(row=row_number, column=self.timestamp_column, value=timestamp)
+            
+            # Update Value of Purchases if provided
+            if value_of_purchases and self.value_of_purchases_column:
+                self.worksheet.cell(row=row_number, column=self.value_of_purchases_column, value=value_of_purchases)
+                logging.info(f"Updated row {row_number} with Value of Purchases: {value_of_purchases}")
             
             # Save immediately to prevent data loss
             self.workbook.save(self.file_path)

@@ -386,15 +386,26 @@ class FBRInvoiceCheckerGUI:
                 # Verify invoice with source authority, invoice number, and date from Excel
                 self.log_message(f"🔍 Verifying on FBR portal...")
                 try:
-                    status = fbr_checker.verify_invoice(registration_no, source_authority=source_auth, invoice_no_field=number, date_field=date)
+                    result = fbr_checker.verify_invoice(registration_no, source_authority=source_auth, invoice_no_field=number, date_field=date)
+                    
+                    # Handle both dict and string return types for backwards compatibility
+                    if isinstance(result, dict):
+                        status = result.get('status', '⚠️ Error')
+                        value_of_purchases = result.get('value_of_purchases', 'N/A')
+                    else:
+                        # Backwards compatibility: if result is a string
+                        status = result
+                        value_of_purchases = 'N/A'
+                        
                 except Exception as e:
                     # If verify_invoice fails or hangs, catch it and allow loop to continue
                     logging.exception(f"verify_invoice raised exception for row {row_number}: {str(e)}")
                     self.log_message(f"❌ Exception during verification: {str(e)}")
                     status = "⚠️ Error"
+                    value_of_purchases = 'N/A'
                 
-                # Update Excel
-                excel_handler.update_invoice_status(row_number, status)
+                # Update Excel with status and value of purchases
+                excel_handler.update_invoice_status(row_number, status, value_of_purchases)
                 
                 # Update statistics
                 self.processed_count += 1
@@ -413,10 +424,12 @@ class FBRInvoiceCheckerGUI:
                 self.update_progress()
                 
                 self.log_message(f"   ✓ Result: {status}")
+                if value_of_purchases and value_of_purchases != 'N/A':
+                    self.log_message(f"   💰 Value of Purchases: {value_of_purchases}")
                 self.log_message("-" * 80)
                 
                 # Random delay between requests (human-like behavior)
-                delay = random.uniform(2.0, 5.0)
+                delay = random.uniform(0.5, 1.0)
                 self.log_message(f"⏱️ Waiting {delay:.1f}s before next invoice...")
                 time.sleep(delay)
             

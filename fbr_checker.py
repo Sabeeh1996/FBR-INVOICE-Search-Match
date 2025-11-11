@@ -743,24 +743,89 @@ class FBRChecker:
                         logging.info("✓ Clicked checkbox in results table")
                         
                         # Wait for checkbox state to update (AJAX callback)
-                        self._random_delay(1.5, 2.5)
+                        self._random_delay(0.5, 1.0)
+                        
+                        # Step 7: Extract "Value of Purchases" from the table
+                        try:
+                            logging.info("Extracting 'Value of Purchases' from results table...")
+                            
+                            # Find the table cell containing the Value of Purchases
+                            # The header is: correspondenceTabs:loadAnnexAform:purchaseInvoiceTable:j_idt5936
+                            # We need to find the corresponding data cell in the first row
+                            value_of_purchases_selectors = [
+                                # Try to find the cell by looking for the column under the specific header
+                                (By.XPATH, "//table[@id='correspondenceTabs:loadAnnexAform:purchaseInvoiceTable']//tbody/tr[1]/td[contains(@class, 'alignRight')]"),
+                                # More specific - find the column index based on the header and get the corresponding cell
+                                (By.XPATH, "//th[@id='correspondenceTabs:loadAnnexAform:purchaseInvoiceTable:j_idt5936']/ancestor::tr/following-sibling::*/tr[1]/td[position()=(count(//th[@id='correspondenceTabs:loadAnnexAform:purchaseInvoiceTable:j_idt5936']/preceding-sibling::th)+1)]"),
+                                # Generic fallback - get the cell with "alignRight" class (typically numeric values)
+                                (By.XPATH, "//table[@id='correspondenceTabs:loadAnnexAform:purchaseInvoiceTable']//tbody//tr[1]//td[contains(@class, 'alignRight')]"),
+                                # Another approach - find by aria-label
+                                (By.XPATH, "//table[@id='correspondenceTabs:loadAnnexAform:purchaseInvoiceTable']//td[contains(@role, 'gridcell')]"),
+                            ]
+                            
+                            value_element = None
+                            for by_type, selector in value_of_purchases_selectors:
+                                try:
+                                    value_element = wait.until(EC.presence_of_element_located((by_type, selector)))
+                                    logging.info(f"Found 'Value of Purchases' cell using selector: {selector}")
+                                    break
+                                except TimeoutException:
+                                    continue
+                            
+                            if value_element:
+                                value_of_purchases = value_element.text.strip()
+                                logging.info(f"✓ Extracted Value of Purchases: {value_of_purchases}")
+                                
+                                # Return both status and the value
+                                return {
+                                    'status': '✓ Processed',
+                                    'value_of_purchases': value_of_purchases
+                                }
+                            else:
+                                logging.warning("Could not find 'Value of Purchases' cell in results table")
+                                return {
+                                    'status': '✓ Processed',
+                                    'value_of_purchases': 'N/A'
+                                }
+                                
+                        except Exception as e:
+                            logging.error(f"Error extracting Value of Purchases: {str(e)}")
+                            return {
+                                'status': '✓ Processed',
+                                'value_of_purchases': 'N/A'
+                            }
                     else:
                         logging.warning("Checkbox not found in results table - may be no results")
+                        return {
+                            'status': '⚠️ No results',
+                            'value_of_purchases': 'N/A'
+                        }
                         
                 except TimeoutException:
                     logging.warning("Results table or checkbox not found - may be no results")
+                    return {
+                        'status': '⚠️ No results',
+                        'value_of_purchases': 'N/A'
+                    }
                 except Exception as e:
                     logging.error(f"Error clicking checkbox: {str(e)}")
+                    return {
+                        'status': '⚠️ Error',
+                        'value_of_purchases': 'N/A'
+                    }
             else:
                 logging.error("Annex-A Search button not found")
-                return "⚠️ Error - Search button not found"
-            
-            # Return success (simplified - actual status checking would be implemented here)
-            return "✓ Processed"
+                return {
+                    'status': '⚠️ Error - Search button not found',
+                    'value_of_purchases': 'N/A'
+                }
             
         except Exception as e:
             logging.error(f"Error verifying invoice {invoice_number}: {str(e)}")
-            return "⚠️ Error"
+            return {
+                'status': '⚠️ Error',
+                'value_of_purchases': 'N/A'
+            }
     
     def close_browser(self):
         """
