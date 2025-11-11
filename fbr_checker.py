@@ -647,7 +647,43 @@ class FBRChecker:
                         else:
                             logging.warning(f"Could not parse date: {date_field}")
                     
-                    # Step 5: Enter invoice number in the Seller Registration No. field
+                    # Step 5: Click the Search button in Annex-A form
+                    logging.info("Clicking Search button in Annex-A form...")
+                    
+                    search_button_annexa = None
+                    search_button_selectors = [
+                        # Exact ID from the provided HTML
+                        (By.ID, "correspondenceTabs:loadAnnexAform:j_idt5876"),
+                        (By.NAME, "correspondenceTabs:loadAnnexAform:j_idt5876"),
+                        (By.XPATH, "//button[@id='correspondenceTabs:loadAnnexAform:j_idt5876']"),
+                        # Button with "Search" text in Annex-A form
+                        (By.XPATH, "//button[contains(@id, 'loadAnnexAform') and .//span[normalize-space(text())='Search']]"),
+                        (By.XPATH, "//button[@type='submit' and contains(@id, 'loadAnnexAform')]//span[contains(text(), 'Search')]"),
+                        # Generic search button in the form
+                        (By.XPATH, "//form[contains(@id, 'loadAnnexAform')]//button[contains(@class, 'ui-button')]//span[contains(text(), 'Search')]"),
+                    ]
+                    
+                    for by_type, selector in search_button_selectors:
+                        try:
+                            search_button_annexa = wait.until(EC.element_to_be_clickable((by_type, selector)))
+                            logging.info(f"Found Annex-A Search button using selector: {selector}")
+                            break
+                        except TimeoutException:
+                            continue
+                    
+                    if search_button_annexa:
+                        # Human-like click on search button
+                        self._human_like_click(search_button_annexa)
+                        logging.info("✓ Clicked Annex-A Search button")
+                        
+                        # Wait for results to load
+                        self._random_delay(3.0, 5.0)
+                        logging.info("Waiting for search results to load...")
+                    else:
+                        logging.error("Annex-A Search button not found")
+                        return "⚠️ Error - Search button not found"
+                    
+                    # Step 6: Enter invoice number in the Seller Registration No. field
                     invoice_input = None
                     
                     selectors_to_try = [
