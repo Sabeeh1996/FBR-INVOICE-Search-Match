@@ -192,6 +192,171 @@ class FBRChecker:
         except Exception:
             pass  # Ignore errors in mouse simulation
     
+    def click_annex_a_tab(self):
+        """
+        Click the Annex-A (Purchases) tab if present on the current page.
+        
+        Returns:
+            bool: True if tab was found and clicked, False otherwise
+        """
+        try:
+            # Look for the Annex-A tab with the specific class structure
+            tab_xpath = "//li[@class='ui-state-default ui-corner-top ui-tabs-selected ui-state-active' or contains(@class, 'ui-tabs-selected')]//a[contains(text(), 'Annex-A')]"
+            
+            # More flexible selector for Annex-A tab
+            annex_a_tab = None
+            selectors = [
+                (By.XPATH, "//li[contains(@class, 'ui-tabs-selected')]//a[contains(text(), 'Annex-A')]"),
+                (By.XPATH, "//a[contains(@href, '#correspondenceTabs:tab') and contains(text(), 'Annex-A')]"),
+                (By.XPATH, "//li[@role='tab']//a[contains(text(), 'Annex-A (Purchases)')]"),
+                (By.XPATH, "//a[contains(text(), 'Annex-A')]"),
+            ]
+            
+            for by_type, selector in selectors:
+                try:
+                    annex_a_tab = WebDriverWait(self.driver, 5).until(
+                        EC.presence_of_element_located((by_type, selector))
+                    )
+                    logging.info(f"Found Annex-A tab using selector: {selector}")
+                    break
+                except TimeoutException:
+                    continue
+            
+            if not annex_a_tab:
+                logging.info("Annex-A tab not found on current page")
+                return False
+            
+            # Click the tab
+            self._human_like_click(annex_a_tab)
+            self._random_delay(1.5, 2.5)
+            logging.info("✅ Clicked Annex-A (Purchases) tab")
+            return True
+            
+        except Exception as e:
+            logging.warning(f"Error clicking Annex-A tab: {str(e)}")
+            return False
+    
+    def click_claim_invoices_button(self):
+        """
+        Click the 'Claim Invoices' dropdown button after Annex-A tab is active.
+        
+        Returns:
+            bool: True if button was found and clicked, False otherwise
+        """
+        try:
+            # Look for the span with ui-menubutton class containing the button
+            claim_button = None
+            selectors = [
+                # Exact ID from the provided HTML
+                (By.ID, "correspondenceTabs:annexa-form:j_idt6954_button"),
+                (By.XPATH, "//button[contains(@id, 'annexa-form:j_idt6954_button')]"),
+                (By.XPATH, "//span[@class='ui-menubutton']//button[contains(normalize-space(.), 'Claim Invoices')]"),
+                (By.XPATH, "//button[contains(@class, 'ui-menubutton') or ancestor::span[@class='ui-menubutton']]//span[contains(text(), 'Claim Invoices')]"),
+                (By.XPATH, "//button[.//span[contains(text(), 'Claim Invoices')]]"),
+            ]
+            
+            for by_type, selector in selectors:
+                try:
+                    claim_button = WebDriverWait(self.driver, 5).until(
+                        EC.presence_of_element_located((by_type, selector))
+                    )
+                    logging.info(f"Found Claim Invoices button using selector: {selector}")
+                    break
+                except TimeoutException:
+                    continue
+            
+            if not claim_button:
+                logging.error("Claim Invoices button not found")
+                return False
+            
+            # Click the button
+            self._human_like_click(claim_button)
+            self._random_delay(1.0, 2.0)
+            logging.info("✅ Clicked 'Claim Invoices' button")
+            return True
+            
+        except Exception as e:
+            logging.warning(f"Error clicking Claim Invoices button: {str(e)}")
+            return False
+    
+    def click_claim_in_fbr_menu_item(self):
+        """
+        Click the 'Claim in FBR' menu item from the dropdown.
+        
+        Returns:
+            bool: True if menu item was found and clicked, False otherwise
+        """
+        try:
+            # Look for the menu item with text "Claim in FBR"
+            claim_fbr_item = None
+            selectors = [
+                # Look for the anchor with the specific onclick handler pattern
+                (By.XPATH, "//a[contains(@onclick, 'PrimeFaces.ab') and contains(@onclick, 'annexAClaimBtnPnl') and .//span[contains(text(), 'Claim in FBR')]]"),
+                # More flexible selectors
+                (By.XPATH, "//span[@class='ui-menuitem-text' and contains(text(), 'Claim in FBR')]/ancestor::a"),
+                (By.XPATH, "//a[.//span[contains(@class, 'ui-menuitem-text') and contains(text(), 'Claim in FBR')]]"),
+                (By.XPATH, "//a[contains(text(), 'Claim in FBR')]"),
+            ]
+            
+            for by_type, selector in selectors:
+                try:
+                    claim_fbr_item = WebDriverWait(self.driver, 5).until(
+                        EC.presence_of_element_located((by_type, selector))
+                    )
+                    logging.info(f"Found 'Claim in FBR' menu item using selector: {selector}")
+                    break
+                except TimeoutException:
+                    continue
+            
+            if not claim_fbr_item:
+                logging.error("'Claim in FBR' menu item not found")
+                return False
+            
+            # Click the menu item
+            self._human_like_click(claim_fbr_item)
+            self._random_delay(2.0, 3.5)
+            logging.info("✅ Clicked 'Claim in FBR' menu item")
+            return True
+            
+        except Exception as e:
+            logging.warning(f"Error clicking 'Claim in FBR' menu item: {str(e)}")
+            return False
+    
+    def process_claim_workflow(self):
+        """
+        Execute the complete Annex-A claim workflow:
+        1. Click Annex-A (Purchases) tab
+        2. Click Claim Invoices button
+        3. Click Claim in FBR menu item
+        
+        Returns:
+            bool: True if all steps completed successfully, False otherwise
+        """
+        try:
+            logging.info("Starting Annex-A claim workflow...")
+            
+            # Step 1: Click Annex-A tab
+            if not self.click_annex_a_tab():
+                logging.warning("Annex-A tab workflow skipped (tab not found)")
+                return False
+            
+            # Step 2: Click Claim Invoices button
+            if not self.click_claim_invoices_button():
+                logging.error("Failed at Claim Invoices button step")
+                return False
+            
+            # Step 3: Click Claim in FBR menu item
+            if not self.click_claim_in_fbr_menu_item():
+                logging.error("Failed at Claim in FBR menu item step")
+                return False
+            
+            logging.info("✅ Annex-A claim workflow completed successfully")
+            return True
+            
+        except Exception as e:
+            logging.error(f"Error in claim workflow: {str(e)}")
+            return False
+    
     def navigate_to_fbr(self):
         """
         Navigate to the FBR invoice verification portal.
@@ -225,13 +390,16 @@ class FBRChecker:
         Returns:
             str: Status - "Claimed", "Not Claimed", or "Error"
         """
+         # Now process the claim workflow (Annex-A steps)
+        self._random_delay(1.0, 2.0)
+        self.process_claim_workflow()
         retry_count = 0
         
         while retry_count < self.max_retries:
             try:
                 # Navigate to FBR portal if not already there
-                if self.driver.current_url != self.FBR_URL:
-                    self.navigate_to_fbr()
+               # if self.driver.current_url != self.FBR_URL:
+                #    self.navigate_to_fbr()
                 
                 # Random delay to simulate human reading page
                 self._random_delay(2.0, 4.0)
@@ -338,6 +506,9 @@ class FBRChecker:
                         
                         if len(result_rows) > 0:
                             logging.info(f"Invoice {invoice_number}: CLAIMED (Found {len(result_rows)} result(s))")
+                            
+                           
+                            
                             return "✅ Claimed"
                         else:
                             # No rows found
@@ -347,6 +518,11 @@ class FBRChecker:
                         # Fallback: check if invoice number appears in page
                         if str(invoice_number) in page_source:
                             logging.info(f"Invoice {invoice_number}: CLAIMED (Found in page)")
+                            
+                            # Now process the claim workflow (Annex-A steps)
+                            self._random_delay(1.0, 2.0)
+                            self.process_claim_workflow()
+                            
                             return "✅ Claimed"
                         else:
                             logging.info(f"Invoice {invoice_number}: NOT CLAIMED")
