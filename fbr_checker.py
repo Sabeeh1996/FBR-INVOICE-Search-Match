@@ -489,7 +489,7 @@ class FBRChecker:
             
             # Step 1: Select Source Authority from dropdown if provided
             if source_authority:
-                logging.info(f"Selecting Source Authority: {source_authority}")
+                logging.info(f"STEP 1: Selecting Source Authority: {source_authority}")
                 
                 # Find the dropdown element
                 dropdown_selectors = [
@@ -507,55 +507,87 @@ class FBRChecker:
                     except TimeoutException:
                         continue
                 
-                if dropdown:
-                    # Click the dropdown to open it
-                    self._human_like_click(dropdown)
-                    self._random_delay(0.5, 1.0)
-                    
-                    # Select the option by text (source_authority value from Excel)
-                    # Map option values: 7=BRA, 1=FBR, 6=KPRA, 5=PRA, 8=SRB
-                    authority_map = {
-                        'BRA': '7',
-                        'FBR': '1',
-                        'KPRA': '6',
-                        'PRA': '5',
-                        'SRB': '8'
+                if not dropdown:
+                    logging.error("STEP 1 FAILED: Source Authority dropdown not found")
+                    return {
+                        'status': '⚠️ Error - Dropdown not found',
+                        'value_of_purchases': 'N/A'
                     }
-                    
-                    # Normalize source_authority
-                    source_auth_normalized = str(source_authority).strip().upper()
-                    option_value = authority_map.get(source_auth_normalized)
-                    
-                    if option_value:
-                        # Find and click the option in the dropdown
-                        option_selectors = [
-                            (By.XPATH, f"//div[@id='correspondenceTabs:loadAnnexAform:sourceAuthorityFilter_panel']//li[@data-label='{source_auth_normalized}']"),
-                            (By.XPATH, f"//div[contains(@id, 'sourceAuthorityFilter_panel')]//li[contains(text(), '{source_auth_normalized}')]"),
-                            (By.XPATH, f"//select[@id='correspondenceTabs:loadAnnexAform:sourceAuthorityFilter_input']/option[@value='{option_value}']"),
-                        ]
-                        
-                        option_selected = False
-                        for by_type, selector in option_selectors:
-                            try:
-                                option = wait.until(EC.element_to_be_clickable((by_type, selector)))
-                                self._human_like_click(option)
-                                logging.info(f"✓ Selected Source Authority: {source_auth_normalized}")
-                                option_selected = True
-                                self._random_delay(0.5, 1.0)
-                                break
-                            except TimeoutException:
-                                continue
-                        
-                        if not option_selected:
-                            logging.warning(f"Could not select option '{source_auth_normalized}' from dropdown, proceeding anyway")
-                    else:
-                        logging.warning(f"Unknown source authority '{source_authority}', valid values: {list(authority_map.keys())}")
-                else:
-                    logging.warning("Source Authority dropdown not found, proceeding without selection")
+                
+                # Click the dropdown to open it
+                self._human_like_click(dropdown)
+                self._random_delay(0.5, 1.0)
+                
+                # Select the option by text (source_authority value from Excel)
+                # Map option values: 7=BRA, 1=FBR, 6=KPRA, 5=PRA, 8=SRB
+                authority_map = {
+                    'BRA': '7',
+                    'FBR': '1',
+                    'KPRA': '6',
+                    'PRA': '5',
+                    'SRB': '8'
+                }
+                
+                # Normalize source_authority
+                source_auth_normalized = str(source_authority).strip().upper()
+                option_value = authority_map.get(source_auth_normalized)
+                
+                if not option_value:
+                    logging.error(f"STEP 1 FAILED: Unknown source authority '{source_authority}', valid values: {list(authority_map.keys())}")
+                    return {
+                        'status': '⚠️ Error - Invalid source authority',
+                        'value_of_purchases': 'N/A'
+                    }
+                
+                # Find and click the option in the dropdown
+                option_selectors = [
+                    (By.XPATH, f"//div[@id='correspondenceTabs:loadAnnexAform:sourceAuthorityFilter_panel']//li[@data-label='{source_auth_normalized}']"),
+                    (By.XPATH, f"//div[contains(@id, 'sourceAuthorityFilter_panel')]//li[contains(text(), '{source_auth_normalized}')]"),
+                    (By.XPATH, f"//select[@id='correspondenceTabs:loadAnnexAform:sourceAuthorityFilter_input']/option[@value='{option_value}']"),
+                ]
+                
+                option_selected = False
+                for by_type, selector in option_selectors:
+                    try:
+                        option = wait.until(EC.element_to_be_clickable((by_type, selector)))
+                        self._human_like_click(option)
+                        logging.info(f"✓ STEP 1 COMPLETED: Selected Source Authority: {source_auth_normalized}")
+                        option_selected = True
+                        self._random_delay(0.5, 1.0)
+                        break
+                    except TimeoutException:
+                        continue
+                
+                if not option_selected:
+                    logging.error(f"STEP 1 FAILED: Could not select option '{source_auth_normalized}' from dropdown")
+                    return {
+                        'status': '⚠️ Error - Option not selectable',
+                        'value_of_purchases': 'N/A'
+                    }
+                
+                # Verify selection was applied
+                self._random_delay(0.3, 0.5)
+                selected_value = self.driver.execute_script("""
+                    var dropdown = document.getElementById('correspondenceTabs:loadAnnexAform:sourceAuthorityFilter');
+                    if (dropdown) {
+                        var label = dropdown.querySelector('.ui-selectonemenu-label');
+                        return label ? label.innerText.trim() : '';
+                    }
+                    return '';
+                """)
+                
+                if selected_value != source_auth_normalized:
+                    logging.error(f"STEP 1 VERIFICATION FAILED: Expected '{source_auth_normalized}', got '{selected_value}'")
+                    return {
+                        'status': '⚠️ Error - Selection verification failed',
+                        'value_of_purchases': 'N/A'
+                    }
+                
+                logging.info(f"✓ STEP 1 VERIFIED: Source Authority is set to '{selected_value}'")
             
             # Step 2: Enter Seller NTN in the annexASellerRegNo field
             if invoice_number:
-                logging.info(f"Entering Seller NTN: {invoice_number}")
+                logging.info(f"STEP 2: Entering Seller NTN: {invoice_number}")
                 
                 # Find the Seller Registration No input field in Annex-A form
                 seller_ntn_input = None
@@ -575,18 +607,33 @@ class FBRChecker:
                     except TimeoutException:
                         continue
                 
-                if seller_ntn_input:
-                    # Human-like interaction: move to field and type naturally
-                    self._human_like_click(seller_ntn_input)
-                    self._human_like_type(seller_ntn_input, invoice_number)
-                    logging.info(f"✓ Entered Seller NTN: {invoice_number}")
-                    self._random_delay(0.8, 1.5)
-                else:
-                    logging.warning("Seller NTN input field not found, skipping this step")
+                if not seller_ntn_input:
+                    logging.error("STEP 2 FAILED: Seller NTN input field not found")
+                    return {
+                        'status': '⚠️ Error - NTN field not found',
+                        'value_of_purchases': 'N/A'
+                    }
+                
+                # Human-like interaction: move to field and type naturally
+                self._human_like_click(seller_ntn_input)
+                self._human_like_type(seller_ntn_input, invoice_number)
+                self._random_delay(0.3, 0.5)
+                
+                # Verify the value was entered
+                entered_value = seller_ntn_input.get_attribute('value')
+                if entered_value != str(invoice_number):
+                    logging.error(f"STEP 2 VERIFICATION FAILED: Expected '{invoice_number}', got '{entered_value}'")
+                    return {
+                        'status': '⚠️ Error - NTN entry verification failed',
+                        'value_of_purchases': 'N/A'
+                    }
+                
+                logging.info(f"✓ STEP 2 COMPLETED & VERIFIED: Seller NTN = '{entered_value}'")
+                self._random_delay(0.5, 1.0)
             
             # Step 3: Enter Invoice Number in the annexAinvoiceNoId field
             if invoice_no_field:
-                logging.info(f"Entering Invoice Number: {invoice_no_field}")
+                logging.info(f"STEP 3: Entering Invoice Number: {invoice_no_field}")
                 
                 # Find the Invoice Number input field in Annex-A form
                 invoice_no_input = None
@@ -606,78 +653,126 @@ class FBRChecker:
                     except TimeoutException:
                         continue
                 
-                if invoice_no_input:
-                    # Human-like interaction: move to field and type naturally
-                    self._human_like_click(invoice_no_input)
-                    self._human_like_type(invoice_no_input, invoice_no_field)
-                    logging.info(f"✓ Entered Invoice Number: {invoice_no_field}")
-                    self._random_delay(0.8, 1.5)
-                else:
-                    logging.warning("Invoice Number input field not found, skipping this step")
+                if not invoice_no_input:
+                    logging.error("STEP 3 FAILED: Invoice Number input field not found")
+                    return {
+                        'status': '⚠️ Error - Invoice field not found',
+                        'value_of_purchases': 'N/A'
+                    }
+                
+                # Human-like interaction: move to field and type naturally
+                self._human_like_click(invoice_no_input)
+                self._human_like_type(invoice_no_input, invoice_no_field)
+                self._random_delay(0.3, 0.5)
+                
+                # Verify the value was entered
+                entered_value = invoice_no_input.get_attribute('value')
+                if entered_value != str(invoice_no_field):
+                    logging.error(f"STEP 3 VERIFICATION FAILED: Expected '{invoice_no_field}', got '{entered_value}'")
+                    return {
+                        'status': '⚠️ Error - Invoice entry verification failed',
+                        'value_of_purchases': 'N/A'
+                    }
+                
+                logging.info(f"✓ STEP 3 COMPLETED & VERIFIED: Invoice Number = '{entered_value}'")
+                self._random_delay(0.5, 1.0)
             
             # Step 4: Select From Date and To Date from datepickers
             if date_field and date_field != 'N/A':
-                logging.info(f"Selecting dates: {date_field}")
+                logging.info(f"STEP 4: Selecting dates: {date_field}")
                 
                 # Parse the date
                 parsed_date = self._select_date_from_datepicker(date_field)
                 
-                if parsed_date:
-                    date_formatted = parsed_date['formatted']
-                    
-                    # Select From Date
-                    from_date_selectors = [
-                        (By.ID, "correspondenceTabs:loadAnnexAform:annexAFromDate_input"),
-                        (By.NAME, "correspondenceTabs:loadAnnexAform:annexAFromDate_input"),
-                        (By.XPATH, "//input[@id='correspondenceTabs:loadAnnexAform:annexAFromDate_input']"),
-                    ]
-                    
-                    from_date_input = None
-                    for by_type, selector in from_date_selectors:
-                        try:
-                            from_date_input = wait.until(EC.presence_of_element_located((by_type, selector)))
-                            logging.info(f"Found From Date input using selector: {selector}")
-                            break
-                        except TimeoutException:
-                            continue
-                    
-                    if from_date_input:
-                        # Click to open datepicker, then use JavaScript to set value directly
-                        # (readonly fields require JS to set value)
-                        self.driver.execute_script(f"arguments[0].value = '{date_formatted}';", from_date_input)
-                        logging.info(f"✓ Set From Date: {date_formatted}")
-                        self._random_delay(0.5, 1.0)
-                    else:
-                        logging.warning("From Date input field not found")
-                    
-                    # Select To Date (same date)
-                    to_date_selectors = [
-                        (By.ID, "correspondenceTabs:loadAnnexAform:annexAToDate_input"),
-                        (By.NAME, "correspondenceTabs:loadAnnexAform:annexAToDate_input"),
-                        (By.XPATH, "//input[@id='correspondenceTabs:loadAnnexAform:annexAToDate_input']"),
-                    ]
-                    
-                    to_date_input = None
-                    for by_type, selector in to_date_selectors:
-                        try:
-                            to_date_input = wait.until(EC.presence_of_element_located((by_type, selector)))
-                            logging.info(f"Found To Date input using selector: {selector}")
-                            break
-                        except TimeoutException:
-                            continue
-                    
-                    if to_date_input:
-                        # Use JavaScript to set value directly
-                        self.driver.execute_script(f"arguments[0].value = '{date_formatted}';", to_date_input)
-                        logging.info(f"✓ Set To Date: {date_formatted}")
-                        self._random_delay(0.5, 1.0)
-                    else:
-                        logging.warning("To Date input field not found")
-                else:
-                    logging.warning(f"Could not parse date: {date_field}")
+                if not parsed_date:
+                    logging.error(f"STEP 4 FAILED: Could not parse date: {date_field}")
+                    return {
+                        'status': '⚠️ Error - Date parsing failed',
+                        'value_of_purchases': 'N/A'
+                    }
+                
+                date_formatted = parsed_date['formatted']
+                
+                # Select From Date
+                from_date_selectors = [
+                    (By.ID, "correspondenceTabs:loadAnnexAform:annexAFromDate_input"),
+                    (By.NAME, "correspondenceTabs:loadAnnexAform:annexAFromDate_input"),
+                    (By.XPATH, "//input[@id='correspondenceTabs:loadAnnexAform:annexAFromDate_input']"),
+                ]
+                
+                from_date_input = None
+                for by_type, selector in from_date_selectors:
+                    try:
+                        from_date_input = wait.until(EC.presence_of_element_located((by_type, selector)))
+                        logging.info(f"Found From Date input using selector: {selector}")
+                        break
+                    except TimeoutException:
+                        continue
+                
+                if not from_date_input:
+                    logging.error("STEP 4 FAILED: From Date input field not found")
+                    return {
+                        'status': '⚠️ Error - From Date field not found',
+                        'value_of_purchases': 'N/A'
+                    }
+                
+                # Click to open datepicker, then use JavaScript to set value directly
+                # (readonly fields require JS to set value)
+                self.driver.execute_script(f"arguments[0].value = '{date_formatted}';", from_date_input)
+                self._random_delay(0.3, 0.5)
+                
+                # Verify From Date was set
+                from_date_value = from_date_input.get_attribute('value')
+                if from_date_value != date_formatted:
+                    logging.error(f"STEP 4 FROM DATE VERIFICATION FAILED: Expected '{date_formatted}', got '{from_date_value}'")
+                    return {
+                        'status': '⚠️ Error - From Date verification failed',
+                        'value_of_purchases': 'N/A'
+                    }
+                
+                logging.info(f"✓ From Date verified: {from_date_value}")
+                
+                # Select To Date (same date)
+                to_date_selectors = [
+                    (By.ID, "correspondenceTabs:loadAnnexAform:annexAToDate_input"),
+                    (By.NAME, "correspondenceTabs:loadAnnexAform:annexAToDate_input"),
+                    (By.XPATH, "//input[@id='correspondenceTabs:loadAnnexAform:annexAToDate_input']"),
+                ]
+                
+                to_date_input = None
+                for by_type, selector in to_date_selectors:
+                    try:
+                        to_date_input = wait.until(EC.presence_of_element_located((by_type, selector)))
+                        logging.info(f"Found To Date input using selector: {selector}")
+                        break
+                    except TimeoutException:
+                        continue
+                
+                if not to_date_input:
+                    logging.error("STEP 4 FAILED: To Date input field not found")
+                    return {
+                        'status': '⚠️ Error - To Date field not found',
+                        'value_of_purchases': 'N/A'
+                    }
+                
+                # Use JavaScript to set value directly
+                self.driver.execute_script(f"arguments[0].value = '{date_formatted}';", to_date_input)
+                self._random_delay(0.3, 0.5)
+                
+                # Verify To Date was set
+                to_date_value = to_date_input.get_attribute('value')
+                if to_date_value != date_formatted:
+                    logging.error(f"STEP 4 TO DATE VERIFICATION FAILED: Expected '{date_formatted}', got '{to_date_value}'")
+                    return {
+                        'status': '⚠️ Error - To Date verification failed',
+                        'value_of_purchases': 'N/A'
+                    }
+                
+                logging.info(f"✓ STEP 4 COMPLETED & VERIFIED: Dates set to '{date_formatted}'")
+                self._random_delay(0.5, 1.0)
             
             # Step 5: Click the Search button in Annex-A form
-            logging.info("Clicking Search button in Annex-A form...")
+            logging.info("STEP 5: Clicking Search button in Annex-A form...")
             
             search_button_annexa = None
             search_button_selectors = [
@@ -700,81 +795,132 @@ class FBRChecker:
                 except TimeoutException:
                     continue
             
-            if search_button_annexa:
-                # Human-like click on search button
-                self._human_like_click(search_button_annexa)
-                logging.info("✓ Clicked Annex-A Search button")
-                
-                # Wait for results to load
-                self._random_delay(3.0, 5.0)
-                logging.info("Waiting for search results to load...")
-                
-                # Step 6: Click the checkbox in the results table if results found
+            if not search_button_annexa:
+                logging.error("STEP 5 FAILED: Annex-A Search button not found")
+                return {
+                    'status': '⚠️ Error - Search button not found',
+                    'value_of_purchases': 'N/A'
+                }
+            
+            # Human-like click on search button
+            self._human_like_click(search_button_annexa)
+            logging.info("✓ STEP 5: Search button clicked, waiting for results...")
+            
+            # Wait for results to load - check for either results table or "no records" message
+            self._random_delay(2.0, 3.0)
+            
+            # Verify search completed by checking for results table or no-records message
+            search_completed = False
+            try:
+                # Check if results table appeared
+                results_table = WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.ID, "correspondenceTabs:loadAnnexAform:purchaseInvoiceTable"))
+                )
+                search_completed = True
+                logging.info("✓ STEP 5 COMPLETED: Results table loaded")
+            except TimeoutException:
+                # Check for "no records found" message
                 try:
-                    # Wait for the results table to be present
-                    checkbox_wait = WebDriverWait(self.driver, 10)
-                    
-                    # Multiple selector strategies for the checkbox
-                    checkbox_selectors = [
-                        # Exact ID from the provided HTML
-                        (By.ID, "correspondenceTabs:loadAnnexAform:purchaseInvoiceTable:j_idt5893"),
-                        # Input element inside the checkbox
-                        (By.ID, "correspondenceTabs:loadAnnexAform:purchaseInvoiceTable:j_idt5893_input"),
-                        # XPath for the checkbox div
-                        (By.XPATH, "//div[@id='correspondenceTabs:loadAnnexAform:purchaseInvoiceTable:j_idt5893']"),
-                        # XPath for the clickable checkbox box
-                        (By.XPATH, "//div[@id='correspondenceTabs:loadAnnexAform:purchaseInvoiceTable:j_idt5893']//div[contains(@class, 'ui-chkbox-box')]"),
-                        # Generic fallback - first checkbox in the table
-                        (By.XPATH, "//table[@id='correspondenceTabs:loadAnnexAform:purchaseInvoiceTable']//div[contains(@class, 'ui-chkbox-box')]"),
-                    ]
-                    
-                    checkbox_element = None
-                    for by_type, selector in checkbox_selectors:
-                        try:
-                            checkbox_element = checkbox_wait.until(EC.element_to_be_clickable((by_type, selector)))
-                            logging.info(f"Found checkbox using selector: {selector}")
-                            break
-                        except TimeoutException:
-                            continue
-                    
-                    if checkbox_element:
-                        # Human-like click on the checkbox
-                        self._human_like_click(checkbox_element)
-                        logging.info("✓ Clicked checkbox in results table")
-                        
-                        # Wait for checkbox state to update (AJAX callback)
-                        self._random_delay(0.5, 1.0)
-                        
-                        # Step 7: Extract "Value of Purchases" from the table
-                        logging.info("Extracting 'Value of Purchases' from results table...")
-                        
-                        # Strategy: Find the "Value of Purchases" header column, determine its position, 
-                        # then extract the value from the corresponding cell in the data row
-                        
-                        # Step 7.1: Find the "Value of Purchases" header column
-                        header_selectors = [
-                            # Exact ID from provided HTML
-                            (By.ID, "correspondenceTabs:loadAnnexAform:purchaseInvoiceTable:j_idt5936"),
-                            # By aria-label
-                            (By.XPATH, "//th[@aria-label='Value of Purchases']"),
-                            # By span text content
-                            (By.XPATH, "//th[.//span[@class='ui-column-title' and contains(text(), 'Value of Purchases')]]"),
-                            # Generic fallback
-                            (By.XPATH, "//table[@id='correspondenceTabs:loadAnnexAform:purchaseInvoiceTable']//th[contains(., 'Value of Purchases')]"),
-                        ]
-                        
-                        header_element = None
-                        for by_type, selector in header_selectors:
-                            try:
-                                header_element = wait.until(EC.presence_of_element_located((by_type, selector)))
-                                logging.info(f"Found 'Value of Purchases' header using selector: {selector}")
-                                break
-                            except TimeoutException:
-                                continue
-                        
-                        value_of_purchases = 'N/A'  # Default value
-                        
-                        if header_element:
+                    no_records_msg = self.driver.find_element(By.XPATH, "//span[contains(text(), 'No records found') or contains(text(), 'No data')]")
+                    if no_records_msg:
+                        logging.info("✓ STEP 5 COMPLETED: No records found message displayed")
+                        return {
+                            'status': '⚠️ No results',
+                            'value_of_purchases': 'N/A'
+                        }
+                except:
+                    pass
+            
+            if not search_completed:
+                logging.error("STEP 5 VERIFICATION FAILED: Neither results table nor no-records message appeared")
+                return {
+                    'status': '⚠️ Error - Search results not loaded',
+                    'value_of_purchases': 'N/A'
+                }
+            
+            self._random_delay(1.0, 2.0)
+            
+            # Step 6: Click the checkbox in the results table if results found
+            logging.info("STEP 6: Looking for checkbox in results table...")
+            try:
+                # Wait for the results table to be present
+                checkbox_wait = WebDriverWait(self.driver, 10)
+                
+                # Multiple selector strategies for the checkbox
+                checkbox_selectors = [
+                    # Exact ID from the provided HTML
+                    (By.ID, "correspondenceTabs:loadAnnexAform:purchaseInvoiceTable:j_idt5893"),
+                    # Input element inside the checkbox
+                    (By.ID, "correspondenceTabs:loadAnnexAform:purchaseInvoiceTable:j_idt5893_input"),
+                    # XPath for the checkbox div
+                    (By.XPATH, "//div[@id='correspondenceTabs:loadAnnexAform:purchaseInvoiceTable:j_idt5893']"),
+                    # XPath for the clickable checkbox box
+                    (By.XPATH, "//div[@id='correspondenceTabs:loadAnnexAform:purchaseInvoiceTable:j_idt5893']//div[contains(@class, 'ui-chkbox-box')]"),
+                    # Generic fallback - first checkbox in the table
+                    (By.XPATH, "//table[@id='correspondenceTabs:loadAnnexAform:purchaseInvoiceTable']//div[contains(@class, 'ui-chkbox-box')]"),
+                ]
+                
+                checkbox_element = None
+                for by_type, selector in checkbox_selectors:
+                    try:
+                        checkbox_element = checkbox_wait.until(EC.element_to_be_clickable((by_type, selector)))
+                        logging.info(f"Found checkbox using selector: {selector}")
+                        break
+                    except TimeoutException:
+                        continue
+                
+                if not checkbox_element:
+                    logging.error("STEP 6 FAILED: Checkbox not found in results table")
+                    return {
+                        'status': '⚠️ No results',
+                        'value_of_purchases': 'N/A'
+                    }
+                
+                # Human-like click on the checkbox
+                self._human_like_click(checkbox_element)
+                self._random_delay(0.5, 1.0)
+                
+                # Verify checkbox was clicked by checking its state
+                checkbox_checked = self.driver.execute_script("""
+                    var checkbox = document.querySelector('#correspondenceTabs\\\\:loadAnnexAform\\\\:purchaseInvoiceTable\\\\:j_idt5893_input');
+                    return checkbox ? checkbox.checked : false;
+                """)
+                
+                if not checkbox_checked:
+                    logging.warning("STEP 6: Checkbox state not confirmed as checked, but proceeding...")
+                
+                logging.info("✓ STEP 6 COMPLETED: Checkbox clicked in results table")
+                
+                # Step 7: Extract "Value of Purchases" from the table
+                logging.info("STEP 7: Extracting 'Value of Purchases' from results table...")
+                
+                # Strategy: Find the "Value of Purchases" header column, determine its position, 
+                # then extract the value from the corresponding cell in the data row
+                
+                # Step 7.1: Find the "Value of Purchases" header column
+                header_selectors = [
+                    # Exact ID from provided HTML
+                    (By.ID, "correspondenceTabs:loadAnnexAform:purchaseInvoiceTable:j_idt5936"),
+                    # By aria-label
+                    (By.XPATH, "//th[@aria-label='Value of Purchases']"),
+                    # By span text content
+                    (By.XPATH, "//th[.//span[@class='ui-column-title' and contains(text(), 'Value of Purchases')]]"),
+                    # Generic fallback
+                    (By.XPATH, "//table[@id='correspondenceTabs:loadAnnexAform:purchaseInvoiceTable']//th[contains(., 'Value of Purchases')]"),
+                ]
+                
+                header_element = None
+                for by_type, selector in header_selectors:
+                    try:
+                        header_element = wait.until(EC.presence_of_element_located((by_type, selector)))
+                        logging.info(f"Found 'Value of Purchases' header using selector: {selector}")
+                        break
+                    except TimeoutException:
+                        continue
+                
+                value_of_purchases = 'N/A'  # Default value
+                
+                if header_element:
                             # Step 7.2: Determine the column index (position) of the header
                             # Use JavaScript to get the column index more reliably
                             column_index = self.driver.execute_script("""
@@ -870,40 +1016,28 @@ class FBRChecker:
                                     return 'N/A - No data rows found';
                                 """, column_index)
                                 
-                                logging.info(f"✓ Extracted Value of Purchases: {value_of_purchases}")
+                                logging.info(f"✓ STEP 7 COMPLETED: Extracted Value of Purchases: {value_of_purchases}")
                             else:
-                                logging.warning("Could not determine column index for 'Value of Purchases'")
-                        else:
-                            logging.warning("Could not find 'Value of Purchases' header in results table")
-                        
-                        # Return both status and the value
-                        return {
-                            'status': '✓ Processed',
-                            'value_of_purchases': value_of_purchases
-                        }
-                    else:
-                        logging.warning("Checkbox not found in results table - may be no results")
-                        return {
-                            'status': '⚠️ No results',
-                            'value_of_purchases': 'N/A'
-                        }
-                        
-                except TimeoutException:
-                    logging.warning("Results table or checkbox not found - may be no results")
-                    return {
-                        'status': '⚠️ No results',
-                        'value_of_purchases': 'N/A'
-                    }
-                except Exception as e:
-                    logging.error(f"Error clicking checkbox: {str(e)}")
-                    return {
-                        'status': '⚠️ Error',
-                        'value_of_purchases': 'N/A'
-                    }
-            else:
-                logging.error("Annex-A Search button not found")
+                                logging.warning("STEP 7: Could not determine column index for 'Value of Purchases'")
+                else:
+                    logging.warning("STEP 7: Could not find 'Value of Purchases' header in results table")
+                
+                # Return both status and the value
                 return {
-                    'status': '⚠️ Error - Search button not found',
+                    'status': '✓ Processed',
+                    'value_of_purchases': value_of_purchases
+                }
+                
+            except TimeoutException:
+                logging.error("STEP 6/7 FAILED: Timeout exception")
+                return {
+                    'status': '⚠️ Error - Timeout',
+                    'value_of_purchases': 'N/A'
+                }
+            except Exception as e:
+                logging.error(f"STEP 6/7 FAILED: {str(e)}")
+                return {
+                    'status': '⚠️ Error',
                     'value_of_purchases': 'N/A'
                 }
             
