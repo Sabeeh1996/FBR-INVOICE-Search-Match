@@ -382,9 +382,9 @@ class FBRInvoiceCheckerGUI:
                 self.log_message(f"   Registration No: {registration_no}")
                 self.log_message(f"   Number: {number} | Date: {date}")
                 
-                # Verify invoice with source authority from Excel
+                # Verify invoice with source authority and invoice number from Excel
                 self.log_message(f"🔍 Verifying on FBR portal...")
-                status = fbr_checker.verify_invoice(registration_no, source_authority=source_auth)
+                status = fbr_checker.verify_invoice(registration_no, source_authority=source_auth, invoice_no_field=number)
                 
                 # Update Excel
                 excel_handler.update_invoice_status(row_number, status)

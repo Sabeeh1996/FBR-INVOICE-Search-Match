@@ -380,13 +380,14 @@ class FBRChecker:
             logging.error(f"Error navigating to FBR portal: {str(e)}")
             return False
         
-    def verify_invoice(self, invoice_number, source_authority=None):
+    def verify_invoice(self, invoice_number, source_authority=None, invoice_no_field=None):
         """
         Verify a single invoice number on the FBR portal.
         
         Args:
-            invoice_number (str): The invoice number to verify
+            invoice_number (str): The seller registration number (NTN) to verify
             source_authority (str): Source Authority value (e.g., 'FBR', 'BRA', 'KPRA', 'PRA', 'SRB')
+            invoice_no_field (str): Invoice number from 'Number' column in Excel
             
         Returns:
             str: Status - "Claimed", "Not Claimed", or "Error"
@@ -508,7 +509,38 @@ class FBRChecker:
                         else:
                             logging.warning("Seller NTN input field not found, skipping this step")
                     
-                    # Step 3: Enter invoice number in the Seller Registration No. field
+                    # Step 3: Enter Invoice Number in the annexAinvoiceNoId field
+                    if invoice_no_field:
+                        logging.info(f"Entering Invoice Number: {invoice_no_field}")
+                        
+                        # Find the Invoice Number input field in Annex-A form
+                        invoice_no_input = None
+                        invoice_no_selectors = [
+                            (By.ID, "correspondenceTabs:loadAnnexAform:annexAinvoiceNoId"),
+                            (By.NAME, "correspondenceTabs:loadAnnexAform:annexAinvoiceNoId"),
+                            (By.XPATH, "//input[@id='correspondenceTabs:loadAnnexAform:annexAinvoiceNoId']"),
+                            (By.XPATH, "//input[@name='correspondenceTabs:loadAnnexAform:annexAinvoiceNoId']"),
+                            (By.XPATH, "//input[@type='text' and @maxlength='25']"),
+                        ]
+                        
+                        for by_type, selector in invoice_no_selectors:
+                            try:
+                                invoice_no_input = wait.until(EC.presence_of_element_located((by_type, selector)))
+                                logging.info(f"Found Invoice Number input using selector: {selector}")
+                                break
+                            except TimeoutException:
+                                continue
+                        
+                        if invoice_no_input:
+                            # Human-like interaction: move to field and type naturally
+                            self._human_like_click(invoice_no_input)
+                            self._human_like_type(invoice_no_input, invoice_no_field)
+                            logging.info(f"✓ Entered Invoice Number: {invoice_no_field}")
+                            self._random_delay(0.8, 1.5)
+                        else:
+                            logging.warning("Invoice Number input field not found, skipping this step")
+                    
+                    # Step 4: Enter invoice number in the Seller Registration No. field
                     invoice_input = None
                     
                     selectors_to_try = [
