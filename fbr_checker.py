@@ -477,7 +477,38 @@ class FBRChecker:
                         else:
                             logging.warning("Source Authority dropdown not found, proceeding without selection")
                     
-                    # Step 2: Enter invoice number in the Seller Registration No. field
+                    # Step 2: Enter Seller NTN in the annexASellerRegNo field
+                    if invoice_number:
+                        logging.info(f"Entering Seller NTN: {invoice_number}")
+                        
+                        # Find the Seller Registration No input field in Annex-A form
+                        seller_ntn_input = None
+                        seller_ntn_selectors = [
+                            (By.ID, "correspondenceTabs:loadAnnexAform:annexASellerRegNo"),
+                            (By.NAME, "correspondenceTabs:loadAnnexAform:annexASellerRegNo"),
+                            (By.XPATH, "//input[@id='correspondenceTabs:loadAnnexAform:annexASellerRegNo']"),
+                            (By.XPATH, "//input[@name='correspondenceTabs:loadAnnexAform:annexASellerRegNo']"),
+                            (By.XPATH, "//input[@type='text' and @maxlength='13']"),
+                        ]
+                        
+                        for by_type, selector in seller_ntn_selectors:
+                            try:
+                                seller_ntn_input = wait.until(EC.presence_of_element_located((by_type, selector)))
+                                logging.info(f"Found Seller NTN input using selector: {selector}")
+                                break
+                            except TimeoutException:
+                                continue
+                        
+                        if seller_ntn_input:
+                            # Human-like interaction: move to field and type naturally
+                            self._human_like_click(seller_ntn_input)
+                            self._human_like_type(seller_ntn_input, invoice_number)
+                            logging.info(f"✓ Entered Seller NTN: {invoice_number}")
+                            self._random_delay(0.8, 1.5)
+                        else:
+                            logging.warning("Seller NTN input field not found, skipping this step")
+                    
+                    # Step 3: Enter invoice number in the Seller Registration No. field
                     invoice_input = None
                     
                     selectors_to_try = [
