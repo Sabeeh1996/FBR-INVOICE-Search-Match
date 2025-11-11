@@ -192,6 +192,51 @@ class FBRChecker:
         except Exception:
             pass  # Ignore errors in mouse simulation
     
+    def _select_date_from_datepicker(self, date_string):
+        """
+        Parse date string and select date from datepicker calendar.
+        
+        Args:
+            date_string: Date in format like '07-Apr-2025' or similar
+            
+        Returns:
+            dict: Parsed date with 'day', 'month', 'year' keys, or None if parsing failed
+        """
+        try:
+            from datetime import datetime
+            
+            # Try multiple date formats
+            date_formats = [
+                '%d-%b-%Y',      # 07-Apr-2025
+                '%d-%B-%Y',      # 07-April-2025
+                '%Y-%m-%d',      # 2025-04-07
+                '%d/%m/%Y',      # 07/04/2025
+                '%m/%d/%Y',      # 04/07/2025
+            ]
+            
+            parsed_date = None
+            for date_format in date_formats:
+                try:
+                    parsed_date = datetime.strptime(str(date_string), date_format)
+                    break
+                except ValueError:
+                    continue
+            
+            if parsed_date:
+                return {
+                    'day': parsed_date.day,
+                    'month': parsed_date.month,
+                    'year': parsed_date.year,
+                    'formatted': parsed_date.strftime('%d/%m/%Y')
+                }
+            else:
+                logging.warning(f"Could not parse date: {date_string}")
+                return None
+                
+        except Exception as e:
+            logging.error(f"Error parsing date {date_string}: {str(e)}")
+            return None
+    
     def click_annex_a_tab(self):
         """
         Click the Annex-A (Purchases) tab if present on the current page.
@@ -380,7 +425,7 @@ class FBRChecker:
             logging.error(f"Error navigating to FBR portal: {str(e)}")
             return False
         
-    def verify_invoice(self, invoice_number, source_authority=None, invoice_no_field=None):
+    def verify_invoice(self, invoice_number, source_authority=None, invoice_no_field=None, date_field=None):
         """
         Verify a single invoice number on the FBR portal.
         
@@ -388,6 +433,7 @@ class FBRChecker:
             invoice_number (str): The seller registration number (NTN) to verify
             source_authority (str): Source Authority value (e.g., 'FBR', 'BRA', 'KPRA', 'PRA', 'SRB')
             invoice_no_field (str): Invoice number from 'Number' column in Excel
+            date_field (str): Date from 'Date' column in Excel (will be used for both From and To dates)
             
         Returns:
             str: Status - "Claimed", "Not Claimed", or "Error"
@@ -540,7 +586,68 @@ class FBRChecker:
                         else:
                             logging.warning("Invoice Number input field not found, skipping this step")
                     
-                    # Step 4: Enter invoice number in the Seller Registration No. field
+                    # Step 4: Select From Date and To Date from datepickers
+                    if date_field and date_field != 'N/A':
+                        logging.info(f"Selecting dates: {date_field}")
+                        
+                        # Parse the date
+                        parsed_date = self._select_date_from_datepicker(date_field)
+                        
+                        if parsed_date:
+                            date_formatted = parsed_date['formatted']
+                            
+                            # Select From Date
+                            from_date_selectors = [
+                                (By.ID, "correspondenceTabs:loadAnnexAform:annexAFromDate_input"),
+                                (By.NAME, "correspondenceTabs:loadAnnexAform:annexAFromDate_input"),
+                                (By.XPATH, "//input[@id='correspondenceTabs:loadAnnexAform:annexAFromDate_input']"),
+                            ]
+                            
+                            from_date_input = None
+                            for by_type, selector in from_date_selectors:
+                                try:
+                                    from_date_input = wait.until(EC.presence_of_element_located((by_type, selector)))
+                                    logging.info(f"Found From Date input using selector: {selector}")
+                                    break
+                                except TimeoutException:
+                                    continue
+                            
+                            if from_date_input:
+                                # Click to open datepicker, then use JavaScript to set value directly
+                                # (readonly fields require JS to set value)
+                                self.driver.execute_script(f"arguments[0].value = '{date_formatted}';", from_date_input)
+                                logging.info(f"✓ Set From Date: {date_formatted}")
+                                self._random_delay(0.5, 1.0)
+                            else:
+                                logging.warning("From Date input field not found")
+                            
+                            # Select To Date (same date)
+                            to_date_selectors = [
+                                (By.ID, "correspondenceTabs:loadAnnexAform:annexAToDate_input"),
+                                (By.NAME, "correspondenceTabs:loadAnnexAform:annexAToDate_input"),
+                                (By.XPATH, "//input[@id='correspondenceTabs:loadAnnexAform:annexAToDate_input']"),
+                            ]
+                            
+                            to_date_input = None
+                            for by_type, selector in to_date_selectors:
+                                try:
+                                    to_date_input = wait.until(EC.presence_of_element_located((by_type, selector)))
+                                    logging.info(f"Found To Date input using selector: {selector}")
+                                    break
+                                except TimeoutException:
+                                    continue
+                            
+                            if to_date_input:
+                                # Use JavaScript to set value directly
+                                self.driver.execute_script(f"arguments[0].value = '{date_formatted}';", to_date_input)
+                                logging.info(f"✓ Set To Date: {date_formatted}")
+                                self._random_delay(0.5, 1.0)
+                            else:
+                                logging.warning("To Date input field not found")
+                        else:
+                            logging.warning(f"Could not parse date: {date_field}")
+                    
+                    # Step 5: Enter invoice number in the Seller Registration No. field
                     invoice_input = None
                     
                     selectors_to_try = [
