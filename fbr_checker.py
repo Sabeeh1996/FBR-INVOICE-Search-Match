@@ -791,22 +791,61 @@ class FBRChecker:
                             logging.info(f"'Value of Purchases' column index: {column_index}")
                             
                             if column_index > 0:
-                                # Step 7.3: Extract the value using JavaScript directly
-                                # This is the most reliable method for dynamic tables
-                                logging.info("Extracting value using JavaScript...")
-                                value_of_purchases = self.driver.execute_script("""
-                                    var table = document.getElementById('correspondenceTabs:loadAnnexAform:purchaseInvoiceTable');
-                                    if (table && table.tBodies[0] && table.tBodies[0].rows[0]) {
-                                        var cell = table.tBodies[0].rows[0].cells[arguments[0] - 1];
-                                        return cell ? cell.innerText.trim() : 'N/A';
-                                    }
-                                    return 'N/A';
-                                """, column_index)
+                                # Step 7.3: Extract the value from the corresponding cell in the first data row
+                                # Multiple strategies for finding the data cell
+                                value_cell_selectors = [
+                                    # Strategy 1: Direct tbody path with column index
+                                    (By.XPATH, f"//table[@id='correspondenceTabs:loadAnnexAform:purchaseInvoiceTable']//tbody//tr[1]/td[{column_index}]"),
+                                    # Strategy 2: Using descendant selector
+                                    (By.XPATH, f"//table[@id='correspondenceTabs:loadAnnexAform:purchaseInvoiceTable']//tbody/tr//td[{column_index}]"),
+                                    # Strategy 3: First visible row in tbody
+                                    (By.XPATH, f"//table[@id='correspondenceTabs:loadAnnexAform:purchaseInvoiceTable']//tbody/tr[contains(@class, 'ui-widget-content')][1]/td[{column_index}]"),
+                                    # Strategy 4: Any tr with data-ri attribute (row index)
+                                    (By.XPATH, f"//table[@id='correspondenceTabs:loadAnnexAform:purchaseInvoiceTable']//tr[@data-ri='0']/td[{column_index}]"),
+                                    # Strategy 5: Use JavaScript to get the exact cell
+                                ]
                                 
-                                if value_of_purchases and value_of_purchases != 'N/A':
-                                    logging.info(f"✓ Extracted Value of Purchases: {value_of_purchases}")
+                                value_element = None
+                                for by_type, selector in value_cell_selectors:
+                                    try:
+                                        value_element = WebDriverWait(self.driver, 5).until(
+                                            EC.presence_of_element_located((by_type, selector))
+                                        )
+                                        logging.info(f"Found Value of Purchases cell using: {selector}")
+                                        break
+                                    except TimeoutException:
+                                        continue
+                                
+                                if value_element:
+                                    value_of_purchases = value_element.text.strip()
+                                    if value_of_purchases:
+                                        logging.info(f"✓ Extracted Value of Purchases: {value_of_purchases}")
+                                    else:
+                                        # Try JavaScript extraction as last resort
+                                        logging.info("Cell found but empty, trying JavaScript extraction...")
+                                        value_of_purchases = self.driver.execute_script("""
+                                            var table = document.getElementById('correspondenceTabs:loadAnnexAform:purchaseInvoiceTable');
+                                            if (table && table.tBodies[0] && table.tBodies[0].rows[0]) {
+                                                var cell = table.tBodies[0].rows[0].cells[arguments[0] - 1];
+                                                return cell ? cell.innerText.trim() : 'N/A';
+                                            }
+                                            return 'N/A';
+                                        """, column_index)
+                                        logging.info(f"✓ JavaScript extracted Value of Purchases: {value_of_purchases}")
                                 else:
-                                    logging.warning(f"Could not extract value at column index {column_index}")
+                                    logging.warning(f"Could not find data cell at column index {column_index} using any strategy")
+                                    # Final fallback: Try JavaScript directly
+                                    logging.info("Attempting direct JavaScript extraction as final fallback...")
+                                    value_of_purchases = self.driver.execute_script("""
+                                        var table = document.getElementById('correspondenceTabs:loadAnnexAform:purchaseInvoiceTable');
+                                        if (table && table.tBodies[0] && table.tBodies[0].rows[0]) {
+                                            var cell = table.tBodies[0].rows[0].cells[arguments[0] - 1];
+                                            return cell ? cell.innerText.trim() : 'N/A';
+                                        }
+                                        return 'N/A';
+                                    """, column_index)
+                                    if value_of_purchases and value_of_purchases != 'N/A':
+                                        logging.info(f"✓ Final fallback JavaScript extracted: {value_of_purchases}")
                             else:
                                 logging.warning("Could not determine column index for 'Value of Purchases'")
                         else:
