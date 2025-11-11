@@ -501,7 +501,9 @@ class FBRChecker:
                 dropdown = None
                 for by_type, selector in dropdown_selectors:
                     try:
-                        dropdown = wait.until(EC.presence_of_element_located((by_type, selector)))
+                        # Wait for element to be visible AND clickable
+                        dropdown = wait.until(EC.visibility_of_element_located((by_type, selector)))
+                        dropdown = wait.until(EC.element_to_be_clickable((by_type, selector)))
                         logging.info(f"Found dropdown using selector: {selector}")
                         break
                     except TimeoutException:
@@ -601,7 +603,9 @@ class FBRChecker:
                 
                 for by_type, selector in seller_ntn_selectors:
                     try:
-                        seller_ntn_input = wait.until(EC.presence_of_element_located((by_type, selector)))
+                        # Wait for element to be visible AND clickable
+                        seller_ntn_input = wait.until(EC.visibility_of_element_located((by_type, selector)))
+                        seller_ntn_input = wait.until(EC.element_to_be_clickable((by_type, selector)))
                         logging.info(f"Found Seller NTN input using selector: {selector}")
                         break
                     except TimeoutException:
@@ -647,7 +651,9 @@ class FBRChecker:
                 
                 for by_type, selector in invoice_no_selectors:
                     try:
-                        invoice_no_input = wait.until(EC.presence_of_element_located((by_type, selector)))
+                        # Wait for element to be visible AND clickable
+                        invoice_no_input = wait.until(EC.visibility_of_element_located((by_type, selector)))
+                        invoice_no_input = wait.until(EC.element_to_be_clickable((by_type, selector)))
                         logging.info(f"Found Invoice Number input using selector: {selector}")
                         break
                     except TimeoutException:
@@ -703,7 +709,8 @@ class FBRChecker:
                 from_date_input = None
                 for by_type, selector in from_date_selectors:
                     try:
-                        from_date_input = wait.until(EC.presence_of_element_located((by_type, selector)))
+                        # Wait for element to be visible and present
+                        from_date_input = wait.until(EC.visibility_of_element_located((by_type, selector)))
                         logging.info(f"Found From Date input using selector: {selector}")
                         break
                     except TimeoutException:
@@ -742,7 +749,8 @@ class FBRChecker:
                 to_date_input = None
                 for by_type, selector in to_date_selectors:
                     try:
-                        to_date_input = wait.until(EC.presence_of_element_located((by_type, selector)))
+                        # Wait for element to be visible and present
+                        to_date_input = wait.until(EC.visibility_of_element_located((by_type, selector)))
                         logging.info(f"Found To Date input using selector: {selector}")
                         break
                     except TimeoutException:
@@ -807,29 +815,71 @@ class FBRChecker:
             logging.info("✓ STEP 5: Search button clicked, waiting for results...")
             
             # Wait for results to load - check for either results table or "no records" message
-            self._random_delay(2.0, 3.0)
-            
-            # Verify search completed by checking for results table or no-records message
+            # Use explicit wait with multiple conditions
             search_completed = False
+            results_wait = WebDriverWait(self.driver, 30)
+            
             try:
-                # Check if results table appeared
-                results_table = WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.ID, "correspondenceTabs:loadAnnexAform:purchaseInvoiceTable"))
-                )
-                search_completed = True
-                logging.info("✓ STEP 5 COMPLETED: Results table loaded")
-            except TimeoutException:
-                # Check for "no records found" message
+                # CRITICAL: First wait for the AJAX loading dialog to appear and then disappear
+                logging.info("Waiting for AJAX loading dialog...")
                 try:
-                    no_records_msg = self.driver.find_element(By.XPATH, "//span[contains(text(), 'No records found') or contains(text(), 'No data')]")
-                    if no_records_msg:
-                        logging.info("✓ STEP 5 COMPLETED: No records found message displayed")
-                        return {
-                            'status': '⚠️ No results',
-                            'value_of_purchases': 'N/A'
-                        }
-                except:
-                    pass
+                    # Wait for loading dialog to appear (check for both the dialog container and the image)
+                    # The loader is inside: <div class="ui-dialog-content ui-widget-content"><img src="/images/ajaxloadingbar.gif"></div>
+                    loading_dialog = WebDriverWait(self.driver, 5).until(
+                        EC.presence_of_element_located((By.XPATH, 
+                            "//div[contains(@class, 'ui-dialog-content') and contains(@class, 'ui-widget-content')]//img[contains(@src, 'ajaxloadingbar.gif')]"))
+                    )
+                    logging.info("AJAX loading dialog appeared, waiting for it to disappear...")
+                except TimeoutException:
+                    logging.info("Loading dialog not detected or already gone, proceeding...")
+                
+                # Now wait for the loading dialog to become invisible/disappear
+                # Wait for both the image and the dialog container to disappear
+                results_wait.until(
+                    EC.invisibility_of_element_located((By.XPATH, 
+                        "//div[contains(@class, 'ui-dialog-content') and contains(@class, 'ui-widget-content')]//img[contains(@src, 'ajaxloadingbar.gif')]"))
+                )
+                logging.info("✓ AJAX loading dialog has disappeared")
+                
+                # Additional wait to ensure DOM is stable after loader disappears
+                self._random_delay(0.5, 1.0)
+                
+                # Wait for either the results table to be visible OR "no records" message
+                logging.info("Waiting for search results or 'no data' message...")
+                
+                # First, check if results table appears and is visible
+                try:
+                    results_table = results_wait.until(
+                        EC.visibility_of_element_located((By.ID, "correspondenceTabs:loadAnnexAform:purchaseInvoiceTable"))
+                    )
+                    # Additional check: wait for table body to have content
+                    results_wait.until(
+                        lambda driver: driver.execute_script("""
+                            var table = document.getElementById('correspondenceTabs:loadAnnexAform:purchaseInvoiceTable');
+                            if (!table) return false;
+                            var tbody = table.querySelector('tbody');
+                            return tbody && (tbody.rows.length > 0 || tbody.querySelector('tr'));
+                        """)
+                    )
+                    search_completed = True
+                    logging.info("✓ STEP 5 COMPLETED: Results table loaded and data is visible")
+                except TimeoutException:
+                    # If table didn't load, check for "no records found" message
+                    logging.info("Results table not found, checking for 'no data' message...")
+                    try:
+                        no_records_msg = results_wait.until(
+                            EC.visibility_of_element_located((By.XPATH, "//span[contains(text(), 'No records found') or contains(text(), 'No data') or contains(text(), 'No Records')]"))
+                        )
+                        if no_records_msg and no_records_msg.is_displayed():
+                            logging.info("✓ STEP 5 COMPLETED: No records found message displayed")
+                            return {
+                                'status': '⚠️ No results',
+                                'value_of_purchases': 'N/A'
+                            }
+                    except TimeoutException:
+                        pass
+            except Exception as e:
+                logging.error(f"Error waiting for search results: {str(e)}")
             
             if not search_completed:
                 logging.error("STEP 5 VERIFICATION FAILED: Neither results table nor no-records message appeared")
@@ -838,13 +888,25 @@ class FBRChecker:
                     'value_of_purchases': 'N/A'
                 }
             
-            self._random_delay(1.0, 2.0)
+            # Small delay for human-like behavior
+            self._random_delay(0.5, 1.0)
             
             # Step 6: Click the checkbox in the results table if results found
             logging.info("STEP 6: Looking for checkbox in results table...")
             try:
-                # Wait for the results table to be present
-                checkbox_wait = WebDriverWait(self.driver, 10)
+                # Wait for the results table data to be fully loaded
+                checkbox_wait = WebDriverWait(self.driver, 15)
+                
+                # Wait for table rows to be present and visible
+                logging.info("Waiting for table rows to load...")
+                checkbox_wait.until(
+                    lambda driver: driver.execute_script("""
+                        var table = document.getElementById('correspondenceTabs:loadAnnexAform:purchaseInvoiceTable');
+                        if (!table) return false;
+                        var rows = table.querySelectorAll('tbody tr');
+                        return rows && rows.length > 0 && rows[0].offsetParent !== null;
+                    """)
+                )
                 
                 # Multiple selector strategies for the checkbox
                 checkbox_selectors = [
@@ -863,6 +925,8 @@ class FBRChecker:
                 checkbox_element = None
                 for by_type, selector in checkbox_selectors:
                     try:
+                        # Wait for checkbox to be visible AND clickable
+                        checkbox_element = checkbox_wait.until(EC.visibility_of_element_located((by_type, selector)))
                         checkbox_element = checkbox_wait.until(EC.element_to_be_clickable((by_type, selector)))
                         logging.info(f"Found checkbox using selector: {selector}")
                         break
@@ -912,7 +976,8 @@ class FBRChecker:
                 header_element = None
                 for by_type, selector in header_selectors:
                     try:
-                        header_element = wait.until(EC.presence_of_element_located((by_type, selector)))
+                        # Wait for header to be visible
+                        header_element = wait.until(EC.visibility_of_element_located((by_type, selector)))
                         logging.info(f"Found 'Value of Purchases' header using selector: {selector}")
                         break
                     except TimeoutException:
@@ -921,6 +986,17 @@ class FBRChecker:
                 value_of_purchases = 'N/A'  # Default value
                 
                 if header_element:
+                            # Wait for table data cells to be fully loaded
+                            wait.until(
+                                lambda driver: driver.execute_script("""
+                                    var table = document.getElementById('correspondenceTabs:loadAnnexAform:purchaseInvoiceTable');
+                                    if (!table) return false;
+                                    var dataRows = table.querySelectorAll('tbody tr');
+                                    if (!dataRows || dataRows.length === 0) return false;
+                                    var cells = dataRows[0].querySelectorAll('td');
+                                    return cells && cells.length > 0;
+                                """)
+                            )
                             # Step 7.2: Determine the column index (position) of the header
                             # Use JavaScript to get the column index more reliably
                             column_index = self.driver.execute_script("""
