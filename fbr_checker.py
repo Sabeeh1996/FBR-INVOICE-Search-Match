@@ -791,15 +791,22 @@ class FBRChecker:
                             logging.info(f"'Value of Purchases' column index: {column_index}")
                             
                             if column_index > 0:
-                                # Step 7.3: Extract the value from the corresponding cell in the first data row
-                                value_cell_xpath = f"//table[@id='correspondenceTabs:loadAnnexAform:purchaseInvoiceTable']//tbody/tr[1]/td[{column_index}]"
+                                # Step 7.3: Extract the value using JavaScript directly
+                                # This is the most reliable method for dynamic tables
+                                logging.info("Extracting value using JavaScript...")
+                                value_of_purchases = self.driver.execute_script("""
+                                    var table = document.getElementById('correspondenceTabs:loadAnnexAform:purchaseInvoiceTable');
+                                    if (table && table.tBodies[0] && table.tBodies[0].rows[0]) {
+                                        var cell = table.tBodies[0].rows[0].cells[arguments[0] - 1];
+                                        return cell ? cell.innerText.trim() : 'N/A';
+                                    }
+                                    return 'N/A';
+                                """, column_index)
                                 
-                                try:
-                                    value_element = wait.until(EC.presence_of_element_located((By.XPATH, value_cell_xpath)))
-                                    value_of_purchases = value_element.text.strip()
+                                if value_of_purchases and value_of_purchases != 'N/A':
                                     logging.info(f"✓ Extracted Value of Purchases: {value_of_purchases}")
-                                except TimeoutException:
-                                    logging.warning(f"Could not find data cell at column index {column_index}")
+                                else:
+                                    logging.warning(f"Could not extract value at column index {column_index}")
                             else:
                                 logging.warning("Could not determine column index for 'Value of Purchases'")
                         else:
