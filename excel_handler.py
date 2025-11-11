@@ -25,7 +25,7 @@ class ExcelHandler:
         self.file_path = file_path
         self.workbook = None
         self.worksheet = None
-        self.invoice_column = None
+        self.column_indices = {}  # Dictionary to store column indices
         self.status_column = None
         self.timestamp_column = None
         
@@ -40,14 +40,35 @@ class ExcelHandler:
             self.workbook = load_workbook(self.file_path)
             self.worksheet = self.workbook.active
             
-            # Find the InvoiceNumber column
+            # Find all available columns (case-insensitive)
             headers = [cell.value for cell in self.worksheet[1]]
+            headers_lower = [h.lower() if h else None for h in headers]
             
-            if 'InvoiceNumber' not in headers:
-                logging.error("Column 'InvoiceNumber' not found in Excel file")
+            # Expected columns mapping
+            column_names = [
+                'seller registration no',
+                'seller registration no.',
+                'seller name',
+                'number',
+                'date',
+                'source authority',
+                'sr.no'
+            ]
+            
+            # Find columns in the header (case-insensitive)
+            for col_name in column_names:
+                if col_name in headers_lower:
+                    idx = headers_lower.index(col_name)
+                    self.column_indices[col_name] = idx + 1  # 1-indexed
+                    logging.info(f"Found column '{headers[idx]}' at column {idx + 1}")
+            
+            # Check if at least the main column exists
+            seller_reg_found = any(k in self.column_indices for k in ['seller registration no', 'seller registration no.'])
+            
+            if not seller_reg_found:
+                logging.error("Column 'Seller Registration No' not found in Excel file")
+                logging.error(f"Available columns: {headers}")
                 return False
-            
-            self.invoice_column = headers.index('InvoiceNumber') + 1
             
             # Add Status column if it doesn't exist
             if 'Status' not in headers:
@@ -70,6 +91,7 @@ class ExcelHandler:
             
             self.workbook.save(self.file_path)
             logging.info(f"Excel file loaded successfully: {self.file_path}")
+            logging.info(f"Column mapping: {self.column_indices}")
             return True
             
         except Exception as e:
@@ -78,26 +100,58 @@ class ExcelHandler:
     
     def get_invoice_numbers(self):
         """
-        Retrieve all invoice numbers from the Excel file.
+        Retrieve all invoice data from the Excel file.
+        Returns a list of dictionaries with all relevant data for each row.
         
         Returns:
-            list: List of tuples (row_number, invoice_number)
+            list: List of dictionaries containing invoice data
         """
         invoices = []
         
         try:
             # Start from row 2 (skip header)
             for row in range(2, self.worksheet.max_row + 1):
-                invoice_number = self.worksheet.cell(row=row, column=self.invoice_column).value
+                # Get Seller Registration No (required)
+                seller_reg_col = self.column_indices.get('seller registration no') or self.column_indices.get('seller registration no.')
                 
-                if invoice_number:  # Skip empty cells
-                    invoices.append((row, str(invoice_number).strip()))
+                if seller_reg_col:
+                    seller_registration_no = self.worksheet.cell(row=row, column=seller_reg_col).value
+                    
+                    if seller_registration_no:  # Skip empty rows
+                        # Build invoice data dictionary
+                        invoice_data = {
+                            'row': row,
+                            'seller_registration_no': str(seller_registration_no).strip()
+                        }
+                        
+                        # Get optional columns if they exist
+                        if 'seller name' in self.column_indices:
+                            val = self.worksheet.cell(row=row, column=self.column_indices['seller name']).value
+                            invoice_data['seller_name'] = str(val).strip() if val else 'N/A'
+                        
+                        if 'number' in self.column_indices:
+                            val = self.worksheet.cell(row=row, column=self.column_indices['number']).value
+                            invoice_data['number'] = str(val).strip() if val else 'N/A'
+                        
+                        if 'date' in self.column_indices:
+                            val = self.worksheet.cell(row=row, column=self.column_indices['date']).value
+                            invoice_data['date'] = str(val).strip() if val else 'N/A'
+                        
+                        if 'source authority' in self.column_indices:
+                            val = self.worksheet.cell(row=row, column=self.column_indices['source authority']).value
+                            invoice_data['source_authority'] = str(val).strip() if val else 'FBR'
+                        
+                        if 'sr.no' in self.column_indices:
+                            val = self.worksheet.cell(row=row, column=self.column_indices['sr.no']).value
+                            invoice_data['sr_no'] = str(val).strip() if val else str(row - 1)
+                        
+                        invoices.append(invoice_data)
             
-            logging.info(f"Retrieved {len(invoices)} invoice numbers from Excel")
+            logging.info(f"Retrieved {len(invoices)} invoice records from Excel")
             return invoices
             
         except Exception as e:
-            logging.error(f"Error reading invoice numbers: {str(e)}")
+            logging.error(f"Error reading invoice data: {str(e)}")
             return []
     
     def update_invoice_status(self, row_number, status):
