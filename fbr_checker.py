@@ -784,29 +784,96 @@ class FBRChecker:
             
             search_button_annexa = None
             search_button_selectors = [
-                # Exact ID from the provided HTML
-                (By.ID, "correspondenceTabs:loadAnnexAform:j_idt7725"),
-                (By.NAME, "correspondenceTabs:loadAnnexAform:j_idt7725"),
-                (By.XPATH, "//button[@id='correspondenceTabs:loadAnnexAform:j_idt7725']"),
-                # Button with "Search" text in Annex-A form
-                (By.XPATH, "//button[contains(@id, 'loadAnnexAform') and .//span[normalize-space(text())='Search']]"),
-                (By.XPATH, "//button[@type='submit' and contains(@id, 'loadAnnexAform')]//span[contains(text(), 'Search')]"),
-                # Generic search button in the form
-                (By.XPATH, "//form[contains(@id, 'loadAnnexAform')]//button[contains(@class, 'ui-button')]//span[contains(text(), 'Search')]"),
+                # Strategy 1: Partial ID match - form prefix + button with Search text
+                (By.XPATH, "//button[contains(@id, 'loadAnnexAform:j_idt') and .//span[normalize-space(text())='Search']]"),
+                
+                # Strategy 2: Form-scoped search with button type and icon class
+                (By.XPATH, "//form[contains(@id, 'loadAnnexAform')]//button[@type='submit' and contains(@class, 'ui-button')]//span[contains(text(), 'Search')]"),
+                
+                # Strategy 3: Button within form containing "Search" text with icon
+                (By.XPATH, "//form[contains(@id, 'loadAnnexAform')]//button[.//span[normalize-space(text())='Search'] and contains(@class, 'ui-button')]"),
+                
+                # Strategy 4: Button with partial ID match in loadAnnexAform context
+                (By.XPATH, "//button[contains(@id, 'correspondenceTabs:loadAnnexAform:j_idt')]"),
+                
+                # Strategy 5: Any button with Search text inside Annex-A form
+                (By.XPATH, "//button[contains(@id, 'loadAnnexAform') and .//span[contains(text(), 'Search')]]"),
+                
+                # Strategy 6: Submit button in the specific form by role
+                (By.XPATH, "//form[contains(@id, 'loadAnnexAform')]//button[@type='submit'][not(contains(@style, 'display: none'))]"),
+                
+                # Strategy 7: Button with ui-button class and Search span (most generic)
+                (By.XPATH, "//form[contains(@id, 'loadAnnexAform')]//button[contains(@class, 'ui-button')]//span[normalize-space()='Search']"),
+                
+                # Strategy 8: CSS Selector fallback with partial attribute matching
+                (By.CSS_SELECTOR, "button[id*='loadAnnexAform'][id*='j_idt']"),
+                
+                # Strategy 9: Find all buttons in form and filter by text
+                (By.XPATH, "//form[contains(@id, 'loadAnnexAform')]//button[contains(., 'Search')]"),
             ]
             
             for by_type, selector in search_button_selectors:
                 try:
-                    search_button_annexa = wait.until(EC.visibility_of_element_located((by_type, selector)))
+                    # Try to find the element with a shorter timeout for faster fallback
+                    search_button_annexa = WebDriverWait(self.driver, 3).until(
+                        EC.presence_of_element_located((by_type, selector))
+                    )
+                    
+                    # Verify element is actually visible and enabled
                     if search_button_annexa.is_displayed() and search_button_annexa.is_enabled():
-                        logging.info(f"Found Annex-A Search button using selector: {selector}")
+                        logging.info(f"✓ Found Annex-A Search button using selector: {selector}")
                         break
-                    search_button_annexa = None
-                except NoSuchElementException:
+                    else:
+                        logging.debug(f"Element found but not interactable with selector: {selector}")
+                        search_button_annexa = None
+                        
+                except (TimeoutException, NoSuchElementException) as e:
+                    logging.debug(f"Selector failed: {selector} - {type(e).__name__}")
+                    continue
+                except Exception as e:
+                    logging.debug(f"Unexpected error with selector {selector}: {str(e)}")
                     continue
             
+            # Fallback: Use JavaScript to find button if all selectors fail
             if not search_button_annexa:
-                logging.error("STEP 5 FAILED: Annex-A Search button not found")
+                logging.warning("All selectors failed, trying JavaScript fallback...")
+                try:
+                    search_button_annexa = self.driver.execute_script("""
+                        // Find form containing 'loadAnnexAform' in ID
+                        var form = document.querySelector('form[id*="loadAnnexAform"]');
+                        if (!form) return null;
+                        
+                        // Find all buttons in the form
+                        var buttons = form.querySelectorAll('button');
+                        for (var i = 0; i < buttons.length; i++) {
+                            var btn = buttons[i];
+                            // Check if button contains "Search" text
+                            if (btn.textContent.includes('Search') && 
+                                btn.offsetParent !== null && // visible
+                                !btn.disabled) { // enabled
+                                return btn;
+                            }
+                        }
+                        
+                        // Fallback: Find button with partial ID match
+                        var allButtons = form.querySelectorAll('button[id*="j_idt"]');
+                        for (var i = 0; i < allButtons.length; i++) {
+                            if (allButtons[i].offsetParent !== null && !allButtons[i].disabled) {
+                                return allButtons[i];
+                            }
+                        }
+                        
+                        return null;
+                    """)
+                    
+                    if search_button_annexa:
+                        logging.info("✓ Found Search button using JavaScript fallback")
+                    
+                except Exception as js_error:
+                    logging.error(f"JavaScript fallback also failed: {str(js_error)}")
+            
+            if not search_button_annexa:
+                logging.error("STEP 5 FAILED: Annex-A Search button not found after trying all strategies")
                 return {
                     'status': '⚠️ Error - Search button not found',
                     'value_of_purchases': 'N/A'
