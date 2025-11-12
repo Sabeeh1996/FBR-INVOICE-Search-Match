@@ -964,7 +964,7 @@ class FBRChecker:
             logging.info("STEP 6: Looking for checkbox in results table...")
             try:
                 # Wait for the results table data to be fully loaded
-                checkbox_wait = WebDriverWait(self.driver, 5)
+                checkbox_wait = WebDriverWait(self.driver, 60)
                 
                 # Wait for table rows to be present and visible
                 logging.info("Waiting for table rows to load...")
@@ -977,33 +977,97 @@ class FBRChecker:
                     """)
                 )
                 
-                # Multiple selector strategies for the checkbox
+                # Multiple selector strategies for the checkbox with dynamic ID support
                 checkbox_selectors = [
-                    # Exact ID from the provided HTML
-                    (By.ID, "correspondenceTabs:loadAnnexAform:purchaseInvoiceTable:j_idt5893"),
-                    # Input element inside the checkbox
-                    (By.ID, "correspondenceTabs:loadAnnexAform:purchaseInvoiceTable:j_idt5893_input"),
-                    # XPath for the checkbox div
-                    (By.XPATH, "//div[@id='correspondenceTabs:loadAnnexAform:purchaseInvoiceTable:j_idt5893']"),
-                    # XPath for the clickable checkbox box
-                    (By.XPATH, "//div[@id='correspondenceTabs:loadAnnexAform:purchaseInvoiceTable:j_idt5893']//div[contains(@class, 'ui-chkbox-box')]"),
-                    # Generic fallback - first checkbox in the table
-                    (By.XPATH, "//table[@id='correspondenceTabs:loadAnnexAform:purchaseInvoiceTable']//div[contains(@class, 'ui-chkbox-box')]"),
+                    # Strategy 1: Partial ID match - purchaseInvoiceTable with dynamic j_idt
+                    (By.XPATH, "//div[contains(@id, 'purchaseInvoiceTable:j_idt')]//div[contains(@class, 'ui-chkbox-box')]"),
+                    
+                    # Strategy 2: First checkbox with ui-chkbox class in the table
+                    (By.XPATH, "//table[contains(@id, 'purchaseInvoiceTable')]//div[contains(@class, 'ui-chkbox')]"),
+                    
+                    # Strategy 3: Checkbox input within table row (first row)
+                    (By.XPATH, "//table[contains(@id, 'purchaseInvoiceTable')]//tbody//tr[1]//div[contains(@class, 'ui-chkbox-box')]"),
+                    
+                    # Strategy 4: Any checkbox div with ui-chkbox-box in table context
+                    (By.XPATH, "//div[contains(@id, 'purchaseInvoiceTable')]//div[contains(@class, 'ui-chkbox-box')]"),
+                    
+                    # Strategy 5: Checkbox with input element inside table
+                    (By.XPATH, "//table[contains(@id, 'purchaseInvoiceTable')]//input[contains(@id, 'j_idt') and @type='checkbox']/preceding-sibling::div[contains(@class, 'ui-chkbox-box')]"),
+                    
+                    # Strategy 6: Generic - first visible checkbox in table
+                    (By.XPATH, "//table[contains(@id, 'purchaseInvoiceTable')]//div[contains(@class, 'ui-chkbox-box')][1]"),
+                    
+                    # Strategy 7: CSS selector with partial attribute matching
+                    (By.CSS_SELECTOR, "div[id*='purchaseInvoiceTable'][id*='j_idt'] .ui-chkbox-box"),
+                    
+                    # Strategy 8: Checkbox in loadAnnexAform table context
+                    (By.XPATH, "//form[contains(@id, 'loadAnnexAform')]//table[contains(@id, 'purchaseInvoiceTable')]//div[contains(@class, 'ui-chkbox-box')]"),
                 ]
                 
                 checkbox_element = None
                 for by_type, selector in checkbox_selectors:
                     try:
-                        # Wait for checkbox to be visible AND clickable
+                        # Try to find the element with shorter timeout for faster fallback
                         checkbox_element = checkbox_wait.until(EC.visibility_of_element_located((by_type, selector)))
+                        
+                        # Verify element is actually clickable
                         checkbox_element = checkbox_wait.until(EC.element_to_be_clickable((by_type, selector)))
-                        logging.info(f"Found checkbox using selector: {selector}")
+                        logging.info(f"✓ Found checkbox using selector: {selector}")
                         break
-                    except TimeoutException:
+                        
+                    except (TimeoutException, NoSuchElementException) as e:
+                        logging.debug(f"Selector failed: {selector} - {type(e).__name__}")
+                        continue
+                    except Exception as e:
+                        logging.debug(f"Unexpected error with selector {selector}: {str(e)}")
                         continue
                 
+                # Fallback: Use JavaScript to find checkbox if all selectors fail
                 if not checkbox_element:
-                    logging.error("STEP 6 FAILED: Checkbox not found in results table")
+                    logging.warning("All selectors failed, trying JavaScript fallback...")
+                    try:
+                        checkbox_element = self.driver.execute_script("""
+                            // Find the purchase invoice table
+                            var table = document.querySelector('table[id*="purchaseInvoiceTable"]');
+                            if (!table) return null;
+                            
+                            // Find first checkbox in the table
+                            var checkboxDiv = table.querySelector('div[class*="ui-chkbox-box"]');
+                            if (checkboxDiv && checkboxDiv.offsetParent !== null) {
+                                return checkboxDiv;
+                            }
+                            
+                            // Alternative: Find input checkbox and its wrapper
+                            var checkboxInput = table.querySelector('input[type="checkbox"]');
+                            if (checkboxInput) {
+                                var wrapper = checkboxInput.closest('div[class*="ui-chkbox"]');
+                                if (wrapper) {
+                                    var checkBox = wrapper.querySelector('div[class*="ui-chkbox-box"]');
+                                    if (checkBox && checkBox.offsetParent !== null) {
+                                        return checkBox;
+                                    }
+                                }
+                            }
+                            
+                            // Last resort: Find any visible checkbox element
+                            var allCheckboxes = table.querySelectorAll('div[class*="ui-chkbox-box"]');
+                            for (var i = 0; i < allCheckboxes.length; i++) {
+                                if (allCheckboxes[i].offsetParent !== null) {
+                                    return allCheckboxes[i];
+                                }
+                            }
+                            
+                            return null;
+                        """)
+                        
+                        if checkbox_element:
+                            logging.info("✓ Found checkbox using JavaScript fallback")
+                        
+                    except Exception as js_error:
+                        logging.error(f"JavaScript fallback also failed: {str(js_error)}")
+                
+                if not checkbox_element:
+                    logging.error("STEP 6 FAILED: Checkbox not found in results table after trying all strategies")
                     return {
                         'status': '⚠️ No results',
                         'value_of_purchases': 'N/A'
