@@ -785,9 +785,9 @@ class FBRChecker:
             search_button_annexa = None
             search_button_selectors = [
                 # Exact ID from the provided HTML
-                (By.ID, "correspondenceTabs:loadAnnexAform:j_idt5876"),
-                (By.NAME, "correspondenceTabs:loadAnnexAform:j_idt5876"),
-                (By.XPATH, "//button[@id='correspondenceTabs:loadAnnexAform:j_idt5876']"),
+                (By.ID, "correspondenceTabs:loadAnnexAform:j_idt7725"),
+                (By.NAME, "correspondenceTabs:loadAnnexAform:j_idt7725"),
+                (By.XPATH, "//button[@id='correspondenceTabs:loadAnnexAform:j_idt7725']"),
                 # Button with "Search" text in Annex-A form
                 (By.XPATH, "//button[contains(@id, 'loadAnnexAform') and .//span[normalize-space(text())='Search']]"),
                 (By.XPATH, "//button[@type='submit' and contains(@id, 'loadAnnexAform')]//span[contains(text(), 'Search')]"),
@@ -797,10 +797,12 @@ class FBRChecker:
             
             for by_type, selector in search_button_selectors:
                 try:
-                    search_button_annexa = wait.until(EC.element_to_be_clickable((by_type, selector)))
-                    logging.info(f"Found Annex-A Search button using selector: {selector}")
-                    break
-                except TimeoutException:
+                    search_button_annexa = wait.until(EC.visibility_of_element_located((by_type, selector)))
+                    if search_button_annexa.is_displayed() and search_button_annexa.is_enabled():
+                        logging.info(f"Found Annex-A Search button using selector: {selector}")
+                        break
+                    search_button_annexa = None
+                except NoSuchElementException:
                     continue
             
             if not search_button_annexa:
@@ -817,7 +819,7 @@ class FBRChecker:
             # Wait for results to load - check for either results table or "no records" message
             # Use explicit wait with multiple conditions
             search_completed = False
-            results_wait = WebDriverWait(self.driver, 30)
+            results_wait = WebDriverWait(self.driver, 5)
             
             try:
                 # CRITICAL: First wait for the AJAX loading dialog to appear and then disappear
@@ -895,7 +897,7 @@ class FBRChecker:
             logging.info("STEP 6: Looking for checkbox in results table...")
             try:
                 # Wait for the results table data to be fully loaded
-                checkbox_wait = WebDriverWait(self.driver, 15)
+                checkbox_wait = WebDriverWait(self.driver, 5)
                 
                 # Wait for table rows to be present and visible
                 logging.info("Waiting for table rows to load...")
