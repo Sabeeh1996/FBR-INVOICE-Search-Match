@@ -4,7 +4,7 @@
 
 Your software now has an **automatic expiry/license system** that:
 - ✅ Blocks software from running after expiry date
-- ✅ Shows warnings 30 days before expiry
+- ✅ Shows warnings 15 days before expiry
 - ✅ Shows critical alerts 7 days before expiry
 - ✅ Provides easy admin tool to set expiry dates
 
