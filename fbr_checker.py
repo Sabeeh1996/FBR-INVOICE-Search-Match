@@ -319,6 +319,7 @@ class FBRChecker:
     def click_claim_invoices_button(self):
         """
         Click the 'Claim Invoices' dropdown button after Annex-A tab is active.
+        Robust implementation with multiple selector strategies and JavaScript fallback.
         
         Returns:
             bool: True if button was found and clicked, False otherwise
@@ -327,27 +328,150 @@ class FBRChecker:
             # Look for the span with ui-menubutton class containing the button
             claim_button = None
             selectors = [
-                # Exact ID from the provided HTML
+                # Strategy 1: Exact ID from the provided HTML (if ID doesn't change)
                 (By.ID, "correspondenceTabs:annexa-form:j_idt6954_button"),
-                (By.XPATH, "//button[contains(@id, 'annexa-form:j_idt6954_button')]"),
+                
+                # Strategy 2: Partial ID match with dynamic j_idt number
+                (By.XPATH, "//button[contains(@id, 'annexa-form:j_idt') and contains(@id, '_button')]"),
+                
+                # Strategy 3: Button inside ui-menubutton span with text match
                 (By.XPATH, "//span[@class='ui-menubutton']//button[contains(normalize-space(.), 'Claim Invoices')]"),
+                
+                # Strategy 4: Button with ui-menubutton class or inside ui-menubutton span
                 (By.XPATH, "//button[contains(@class, 'ui-menubutton') or ancestor::span[@class='ui-menubutton']]//span[contains(text(), 'Claim Invoices')]"),
+                
+                # Strategy 5: Any button with span containing "Claim Invoices" text
                 (By.XPATH, "//button[.//span[contains(text(), 'Claim Invoices')]]"),
+                
+                # Strategy 6: Form-scoped button with "Claim Invoices" text in annexa-form
+                (By.XPATH, "//form[contains(@id, 'annexa-form')]//button[contains(., 'Claim Invoices')]"),
+                
+                # Strategy 7: Button with aria-label or title containing "Claim Invoices"
+                (By.XPATH, "//button[@aria-label='Claim Invoices' or @title='Claim Invoices']"),
+                
+                # Strategy 8: CSS selector with partial attribute matching
+                (By.CSS_SELECTOR, "button[id*='annexa-form'][id*='button']"),
+                
+                # Strategy 9: Button with ui-button class and menu role in annexa context
+                (By.XPATH, "//button[contains(@class, 'ui-button') and contains(@id, 'annexa-form')]"),
+                
+                # Strategy 10: Generic - any visible button in menubutton span
+                (By.XPATH, "//span[contains(@class, 'ui-menubutton')]//button[not(contains(@style, 'display: none'))]"),
             ]
             
             for by_type, selector in selectors:
                 try:
-                    claim_button = WebDriverWait(self.driver, 5).until(
+                    # Try to find the element with shorter timeout for faster fallback
+                    claim_button = WebDriverWait(self.driver, 3).until(
                         EC.presence_of_element_located((by_type, selector))
                     )
-                    logging.info(f"Found Claim Invoices button using selector: {selector}")
-                    break
-                except TimeoutException:
+                    
+                    # Verify element is actually visible and enabled
+                    if claim_button.is_displayed() and claim_button.is_enabled():
+                        # Additional text verification to ensure it's the correct button
+                        button_text = claim_button.text.strip()
+                        if 'Claim Invoices' in button_text or 'Claim' in button_text:
+                            logging.info(f"✓ Found Claim Invoices button using selector: {selector}")
+                            logging.debug(f"  Button text verified: '{button_text}'")
+                            break
+                        else:
+                            logging.debug(f"Button text mismatch: '{button_text}' (expected 'Claim Invoices')")
+                            claim_button = None
+                    else:
+                        logging.debug(f"Element found but not interactable with selector: {selector}")
+                        claim_button = None
+                        
+                except (TimeoutException, NoSuchElementException) as e:
+                    logging.debug(f"Selector failed: {selector} - {type(e).__name__}")
+                    continue
+                except Exception as e:
+                    logging.debug(f"Unexpected error with selector {selector}: {str(e)}")
                     continue
             
+            # Fallback: Use JavaScript to find button if all selectors fail
             if not claim_button:
-                logging.error("Claim Invoices button not found")
+                logging.warning("All selectors failed, trying JavaScript fallback for Claim Invoices button...")
+                try:
+                    claim_button = self.driver.execute_script("""
+                        // Strategy 1: Find by form ID containing 'annexa-form'
+                        var form = document.querySelector('form[id*="annexa-form"]');
+                        if (form) {
+                            var buttons = form.querySelectorAll('button');
+                            for (var i = 0; i < buttons.length; i++) {
+                                var btn = buttons[i];
+                                var btnText = btn.textContent.trim();
+                                
+                                // Check if button contains "Claim Invoices" text
+                                if (btnText.includes('Claim Invoices') && 
+                                    btn.offsetParent !== null && // visible
+                                    !btn.disabled) { // enabled
+                                    return btn;
+                                }
+                            }
+                        }
+                        
+                        // Strategy 2: Find by ui-menubutton span
+                        var menuButtons = document.querySelectorAll('span.ui-menubutton button');
+                        for (var i = 0; i < menuButtons.length; i++) {
+                            var btn = menuButtons[i];
+                            var btnText = btn.textContent.trim();
+                            
+                            if (btnText.includes('Claim Invoices') && 
+                                btn.offsetParent !== null && 
+                                !btn.disabled) {
+                                return btn;
+                            }
+                        }
+                        
+                        // Strategy 3: Find any button with ID containing 'annexa-form' and 'button'
+                        var allButtons = document.querySelectorAll('button[id*="annexa-form"]');
+                        for (var i = 0; i < allButtons.length; i++) {
+                            var btn = allButtons[i];
+                            if (btn.id.includes('button') && 
+                                btn.offsetParent !== null && 
+                                !btn.disabled) {
+                                var btnText = btn.textContent.trim();
+                                if (btnText.includes('Claim') || btnText.includes('Invoice')) {
+                                    return btn;
+                                }
+                            }
+                        }
+                        
+                        // Strategy 4: Check button spans for "Claim Invoices" text
+                        var spans = document.querySelectorAll('button span');
+                        for (var i = 0; i < spans.length; i++) {
+                            var span = spans[i];
+                            var spanText = span.textContent.trim();
+                            
+                            if (spanText === 'Claim Invoices' || spanText.includes('Claim Invoices')) {
+                                var parentBtn = span.closest('button');
+                                if (parentBtn && parentBtn.offsetParent !== null && !parentBtn.disabled) {
+                                    return parentBtn;
+                                }
+                            }
+                        }
+                        
+                        return null;
+                    """)
+                    
+                    if claim_button:
+                        button_text = claim_button.text.strip()
+                        logging.info(f"✓ Found Claim Invoices button using JavaScript fallback")
+                        logging.info(f"  Button text: '{button_text}'")
+                    
+                except Exception as js_error:
+                    logging.error(f"JavaScript fallback also failed: {str(js_error)}")
+            
+            if not claim_button:
+                logging.error("Claim Invoices button not found after trying all strategies")
                 return False
+            
+            # Final verification before clicking
+            try:
+                button_text = claim_button.text.strip()
+                logging.info(f"About to click Claim Invoices button (text: '{button_text}')")
+            except Exception:
+                logging.warning("Could not verify button text before clicking")
             
             # Click the button
             self._human_like_click(claim_button)
@@ -1283,125 +1407,141 @@ class FBRChecker:
                 self._random_delay(0.5, 1.0)
                 
                 ####################################################################################
-                # Step 8: Click the EXACT "Claim" button (not "Claim in PRA/KPRA/BRA/SRB")
-                logging.info("STEP 8: Clicking Claim button (exact match only)...")
+                # Step 8: Wait for page to fully load before attempting to find Claim button
+                logging.info("STEP 8: Waiting for page to load before finding Claim button...")
+                
+                try:
+                    # Wait for page to fully load
+                    WebDriverWait(self.driver, 60).until(
+                        lambda driver: driver.execute_script("return document.readyState") == "complete"
+                    )
+                    logging.info("✓ Page fully loaded")
+                    
+                    # Additional wait to ensure all elements are rendered
+                    self._random_delay(0.5, 1.5)
+                    
+                except TimeoutException:
+                    logging.warning("Page load timeout, but proceeding anyway...")
+                
+                # Step 8.1: Click the EXACT "Claim" button (not "Claim in PRA/KPRA/BRA/SRB")
+                logging.info("STEP 8.1: Clicking Claim button (exact match only)...")
                 
                 claim_button = None
-                # claim_button_selectors = [
-                #     # Strategy 1: EXACT text match - span must contain ONLY "Claim" (no other text)
-                #     (By.XPATH, "//button[contains(@id, 'loadAnnexAform:j_idt') and .//span[normalize-space(text())='Claim' and not(contains(text(), ' in '))]]"),
+                claim_button_selectors = [
+                    # Strategy 1: EXACT text match - span must contain ONLY "Claim" (no other text)
+                    (By.XPATH, "//button[contains(@id, 'loadAnnexAform:j_idt') and .//span[normalize-space(text())='Claim' and not(contains(text(), ' in '))]]"),
                     
-                #     # Strategy 2: EXACT text match with button in loadAnnexAform context
-                #     (By.XPATH, "//button[contains(@id, 'correspondenceTabs:loadAnnexAform:j_idt')]//span[text()='Claim' and string-length(normalize-space())=5]"),
+                    # Strategy 2: EXACT text match with button in loadAnnexAform context
+                    (By.XPATH, "//button[contains(@id, 'correspondenceTabs:loadAnnexAform:j_idt')]//span[text()='Claim' and string-length(normalize-space())=5]"),
                     
-                #     # Strategy 3: Form-scoped button where span text equals exactly "Claim"
-                #     (By.XPATH, "//form[contains(@id, 'loadAnnexAform')]//button[@type='submit' and contains(@class, 'ui-button')]//span[text()='Claim' and not(contains(text(), 'in'))]"),
+                    # Strategy 3: Form-scoped button where span text equals exactly "Claim"
+                    (By.XPATH, "//form[contains(@id, 'loadAnnexAform')]//button[@type='submit' and contains(@class, 'ui-button')]//span[text()='Claim' and not(contains(text(), 'in'))]"),
                     
-                #     # Strategy 4: Button with calculate class and EXACT "Claim" text (5 characters only)
-                #     (By.XPATH, "//button[contains(@class, 'calculate') and .//span[text()='Claim' and string-length(text())=5]]"),
+                    # Strategy 4: Button with calculate class and EXACT "Claim" text (5 characters only)
+                    (By.XPATH, "//button[contains(@class, 'calculate') and .//span[text()='Claim' and string-length(text())=5]]"),
                     
-                #     # Strategy 5: Any button with span containing ONLY "Claim" word
-                #     (By.XPATH, "//button[contains(@id, 'loadAnnexAform') and .//span[normalize-space()='Claim']]"),
+                    # Strategy 5: Any button with span containing ONLY "Claim" word
+                    (By.XPATH, "//button[contains(@id, 'loadAnnexAform') and .//span[normalize-space()='Claim']]"),
                     
-                #     # Strategy 6: CSS selector with partial ID matching and calculate class
-                #     (By.CSS_SELECTOR, "button[id*='loadAnnexAform'][id*='j_idt'].calculate"),
+                    # Strategy 6: CSS selector with partial ID matching and calculate class
+                    (By.CSS_SELECTOR, "button[id*='loadAnnexAform'][id*='j_idt'].calculate"),
                     
-                #     # Strategy 7: Button where the span text matches exactly "Claim" (case-sensitive)
-                #     (By.XPATH, "//form[contains(@id, 'loadAnnexAform')]//button//span[.='Claim']"),
-                # ]
+                    # Strategy 7: Button where the span text matches exactly "Claim" (case-sensitive)
+                    (By.XPATH, "//form[contains(@id, 'loadAnnexAform')]//button//span[.='Claim']"),
+                ]
                 
-                # for by_type, selector in claim_button_selectors:
-                #     try:
-                #         # Try to find the element with shorter timeout for faster fallback
-                #         claim_button = WebDriverWait(self.driver, 3).until(
-                #             EC.presence_of_element_located((by_type, selector))
-                #         )
+                for by_type, selector in claim_button_selectors:
+                    try:
+                        # Try to find the element with shorter timeout for faster fallback
+                        claim_button = WebDriverWait(self.driver, 3).until(
+                            EC.presence_of_element_located((by_type, selector))
+                        )
                         
-                #         # CRITICAL: Verify the button text is EXACTLY "Claim" (not "Claim in PRA", etc.)
-                #         button_text = claim_button.text.strip()
-                #         if button_text == "Claim" and claim_button.is_displayed() and claim_button.is_enabled():
-                #             logging.info(f"✓ Found EXACT 'Claim' button using selector: {selector}")
-                #             logging.info(f"  Button text verified: '{button_text}'")
-                #             break
-                #         else:
-                #             logging.debug(f"Button text mismatch: '{button_text}' (expected 'Claim') or not interactable")
-                #             claim_button = None
+                        # CRITICAL: Verify the button text is EXACTLY "Claim" (not "Claim in PRA", etc.)
+                        button_text = claim_button.text.strip()
+                        if button_text == "Claim" and claim_button.is_displayed() and claim_button.is_enabled():
+                            logging.info(f"✓ Found EXACT 'Claim' button using selector: {selector}")
+                            logging.info(f"  Button text verified: '{button_text}'")
+                            break
+                        else:
+                            logging.debug(f"Button text mismatch: '{button_text}' (expected 'Claim') or not interactable")
+                            claim_button = None
                             
-                #     except (TimeoutException, NoSuchElementException) as e:
-                #         logging.debug(f"Selector failed: {selector} - {type(e).__name__}")
-                #         continue
-                #     except Exception as e:
-                #         logging.debug(f"Unexpected error with selector {selector}: {str(e)}")
-                #         continue
+                    except (TimeoutException, NoSuchElementException) as e:
+                        logging.debug(f"Selector failed: {selector} - {type(e).__name__}")
+                        continue
+                    except Exception as e:
+                        logging.debug(f"Unexpected error with selector {selector}: {str(e)}")
+                        continue
                 
-                # # Fallback: Use JavaScript to find EXACT "Claim" button if all selectors fail
-                # if not claim_button:
-                #     logging.warning("All selectors failed, trying JavaScript fallback for EXACT 'Claim' button...")
-                #     try:
-                #         claim_button = self.driver.execute_script("""
-                #             // Find form containing 'loadAnnexAform' in ID
-                #             var form = document.querySelector('form[id*="loadAnnexAform"]');
-                #             if (!form) return null;
+                # Fallback: Use JavaScript to find EXACT "Claim" button if all selectors fail
+                if not claim_button:
+                    logging.warning("All selectors failed, trying JavaScript fallback for EXACT 'Claim' button...")
+                    try:
+                        claim_button = self.driver.execute_script("""
+                            // Find form containing 'loadAnnexAform' in ID
+                            var form = document.querySelector('form[id*="loadAnnexAform"]');
+                            if (!form) return null;
                             
-                #             // Find all buttons in the form
-                #             var buttons = form.querySelectorAll('button');
-                #             for (var i = 0; i < buttons.length; i++) {
-                #                 var btn = buttons[i];
-                #                 var btnText = btn.textContent.trim();
+                            // Find all buttons in the form
+                            var buttons = form.querySelectorAll('button');
+                            for (var i = 0; i < buttons.length; i++) {
+                                var btn = buttons[i];
+                                var btnText = btn.textContent.trim();
                                 
-                #                 // CRITICAL: Check if button text is EXACTLY "Claim" (not "Claim in PRA", etc.)
-                #                 if (btnText === 'Claim' && 
-                #                     btn.offsetParent !== null && // visible
-                #                     !btn.disabled) { // enabled
-                #                     return btn;
-                #                 }
-                #             }
+                                // CRITICAL: Check if button text is EXACTLY "Claim" (not "Claim in PRA", etc.)
+                                if (btnText === 'Claim' && 
+                                    btn.offsetParent !== null && // visible
+                                    !btn.disabled) { // enabled
+                                    return btn;
+                                }
+                            }
                             
-                #             // Alternative: Check button span text specifically
-                #             var spans = form.querySelectorAll('button span');
-                #             for (var i = 0; i < spans.length; i++) {
-                #                 var span = spans[i];
-                #                 var spanText = span.textContent.trim();
+                            // Alternative: Check button span text specifically
+                            var spans = form.querySelectorAll('button span');
+                            for (var i = 0; i < spans.length; i++) {
+                                var span = spans[i];
+                                var spanText = span.textContent.trim();
                                 
-                #                 if (spanText === 'Claim' && spanText.length === 5) { // Exactly 5 characters
-                #                     var parentBtn = span.closest('button');
-                #                     if (parentBtn && parentBtn.offsetParent !== null && !parentBtn.disabled) {
-                #                         return parentBtn;
-                #                     }
-                #                 }
-                #             }
+                                if (spanText === 'Claim' && spanText.length === 5) { // Exactly 5 characters
+                                    var parentBtn = span.closest('button');
+                                    if (parentBtn && parentBtn.offsetParent !== null && !parentBtn.disabled) {
+                                        return parentBtn;
+                                    }
+                                }
+                            }
                             
-                #             return null;
-                #         """)
+                            return null;
+                        """)
                         
-                #         if claim_button:
-                #             button_text = claim_button.text.strip()
-                #             logging.info(f"✓ Found 'Claim' button using JavaScript fallback")
-                #             logging.info(f"  Button text verified: '{button_text}'")
+                        if claim_button:
+                            button_text = claim_button.text.strip()
+                            logging.info(f"✓ Found 'Claim' button using JavaScript fallback")
+                            logging.info(f"  Button text verified: '{button_text}'")
                         
-                #     except Exception as js_error:
-                #         logging.error(f"JavaScript fallback also failed: {str(js_error)}")
+                    except Exception as js_error:
+                        logging.error(f"JavaScript fallback also failed: {str(js_error)}")
                 
-                # if not claim_button:
-                #     logging.error("STEP 8 FAILED: EXACT 'Claim' button not found after trying all strategies")
-                #     return {
-                #         'status': '⚠️ Error - Claim button not found',
-                #         'value_of_purchases': value_of_purchases
-                #     }
+                if not claim_button:
+                    logging.error("STEP 8 FAILED: EXACT 'Claim' button not found after trying all strategies")
+                    return {
+                        'status': '⚠️ Error - Claim button not found',
+                        'value_of_purchases': value_of_purchases
+                    }
                 
-                # # Final verification: Ensure button text is exactly "Claim"
-                # final_button_text = claim_button.text.strip()
-                # if final_button_text != "Claim":
-                #     logging.error(f"STEP 8 FAILED: Button text is '{final_button_text}', expected 'Claim'")
-                #     return {
-                #         'status': '⚠️ Error - Wrong button found',
-                #         'value_of_purchases': value_of_purchases
-                #     }
+                # Final verification: Ensure button text is exactly "Claim"
+                final_button_text = claim_button.text.strip()
+                if final_button_text != "Claim":
+                    logging.error(f"STEP 8 FAILED: Button text is '{final_button_text}', expected 'Claim'")
+                    return {
+                        'status': '⚠️ Error - Wrong button found',
+                        'value_of_purchases': value_of_purchases
+                    }
                 
-                # # Human-like click on Claim button
-                # self._human_like_click(claim_button)
-                # logging.info("✓ STEP 8: EXACT 'Claim' button clicked, waiting for success message...")
-                # self._random_delay(1.0, 2.0)
+                # Human-like click on Claim button
+                self._human_like_click(claim_button)
+                logging.info("✓ STEP 8: EXACT 'Claim' button clicked, waiting for success message...")
+                self._random_delay(1.0, 2.0)
                 
                 ####################################################################################
 
@@ -1484,7 +1624,7 @@ class FBRChecker:
                 except Exception as e:
                     logging.warning(f"STEP 9: Error waiting for success message: {str(e)}")
                 
-                # Determine final status
+                #Determine final status
                 if success_message_found:
                     final_status = '✓ Claimed - After Success Message'
                     logging.info("=" * 60)
