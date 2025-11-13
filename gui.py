@@ -126,6 +126,7 @@ class FBRInvoiceCheckerGUI:
             state='disabled'
         )
         self.pause_btn.grid(row=0, column=1, padx=5)
+        self.pause_btn.grid_remove()  # Hide initially
         
         self.resume_btn = ttk.Button(
             button_frame, 
@@ -135,6 +136,7 @@ class FBRInvoiceCheckerGUI:
             state='disabled'
         )
         self.resume_btn.grid(row=0, column=2, padx=5)
+        self.resume_btn.grid_remove()  # Hide initially
         
         self.stop_btn = ttk.Button(
             button_frame, 
@@ -144,6 +146,7 @@ class FBRInvoiceCheckerGUI:
             state='disabled'
         )
         self.stop_btn.grid(row=0, column=3, padx=5)
+        self.stop_btn.grid_remove()  # Hide initially
         
         self.exit_btn = ttk.Button(
             button_frame, 
@@ -272,8 +275,11 @@ class FBRInvoiceCheckerGUI:
             messagebox.showerror("Error", "Please select an Excel file first!")
             return
         
-        # Disable start button
+        # Disable start button and show control buttons
         self.start_btn.config(state='disabled')
+        self.pause_btn.grid()  # Show Pause button
+        self.resume_btn.grid()  # Show Resume button
+        self.stop_btn.grid()  # Show Stop button
         self.pause_btn.config(state='normal')
         self.stop_btn.config(state='normal')
         self.is_running = True
@@ -497,6 +503,10 @@ class FBRInvoiceCheckerGUI:
             self.pause_btn.config(state='disabled')
             self.resume_btn.config(state='disabled')
             self.stop_btn.config(state='disabled')
+            # Hide control buttons
+            self.pause_btn.grid_remove()
+            self.resume_btn.grid_remove()
+            self.stop_btn.grid_remove()
     
     def update_statistics(self):
         """
