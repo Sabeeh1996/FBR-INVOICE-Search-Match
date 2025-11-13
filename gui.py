@@ -275,13 +275,8 @@ class FBRInvoiceCheckerGUI:
             messagebox.showerror("Error", "Please select an Excel file first!")
             return
         
-        # Disable start button and show control buttons
+        # Disable start button
         self.start_btn.config(state='disabled')
-        self.pause_btn.grid()  # Show Pause button
-        self.resume_btn.grid()  # Show Resume button
-        self.stop_btn.grid()  # Show Stop button
-        self.pause_btn.config(state='normal')
-        self.stop_btn.config(state='normal')
         self.is_running = True
         
         # Reset statistics
@@ -500,13 +495,6 @@ class FBRInvoiceCheckerGUI:
             # Reset UI
             self.is_running = False
             self.start_btn.config(state='normal')
-            self.pause_btn.config(state='disabled')
-            self.resume_btn.config(state='disabled')
-            self.stop_btn.config(state='disabled')
-            # Hide control buttons
-            self.pause_btn.grid_remove()
-            self.resume_btn.grid_remove()
-            self.stop_btn.grid_remove()
     
     def update_statistics(self):
         """
