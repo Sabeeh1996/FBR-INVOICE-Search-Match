@@ -437,6 +437,22 @@ class FBRChecker:
             logging.error(f"Error in claim workflow: {str(e)}")
             return False
     
+    def is_browser_alive(self):
+        """
+        Check if the browser instance is still alive and responsive.
+        
+        Returns:
+            bool: True if browser is alive, False otherwise
+        """
+        try:
+            if not self.driver:
+                return False
+            # Try to get current URL to verify browser is responsive
+            _ = self.driver.current_url
+            return True
+        except Exception:
+            return False
+    
     def navigate_to_fbr(self):
         """
         Navigate to the FBR invoice verification portal.
@@ -456,6 +472,9 @@ class FBRChecker:
             
             return True
             
+        except WebDriverException as e:
+            logging.error(f"Browser closed or connection lost: {str(e)}")
+            return False
         except Exception as e:
             logging.error(f"Error navigating to FBR portal: {str(e)}")
             return False
@@ -475,6 +494,14 @@ class FBRChecker:
             str: Status - "Claimed", "Not Claimed", or "Error"
         """
         try:
+            # Check if browser is still alive before proceeding
+            if not self.is_browser_alive():
+                logging.error("Browser was closed by user")
+                return {
+                    'status': '⚠️ Browser Closed',
+                    'value_of_purchases': 'N/A'
+                }
+            
             # Process the claim workflow (Annex-A steps)
             self._random_delay(0.5, 1.0)
             self.process_claim_workflow()
@@ -1243,6 +1270,12 @@ class FBRChecker:
                     'status': '⚠️ Error - Timeout',
                     'value_of_purchases': 'N/A'
                 }
+            except WebDriverException as e:
+                logging.error(f"STEP 6/7 FAILED: Browser closed or disconnected: {str(e)}")
+                return {
+                    'status': '⚠️ Browser Closed',
+                    'value_of_purchases': 'N/A'
+                }
             except Exception as e:
                 logging.error(f"STEP 6/7 FAILED: {str(e)}")
                 return {
@@ -1250,6 +1283,12 @@ class FBRChecker:
                     'value_of_purchases': 'N/A'
                 }
             
+        except WebDriverException as e:
+            logging.error(f"Browser closed by user during verification: {str(e)}")
+            return {
+                'status': '⚠️ Browser Closed',
+                'value_of_purchases': 'N/A'
+            }
         except Exception as e:
             logging.error(f"Error verifying invoice {invoice_number}: {str(e)}")
             return {

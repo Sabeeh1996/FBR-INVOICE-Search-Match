@@ -392,6 +392,12 @@ class FBRInvoiceCheckerGUI:
                     if isinstance(result, dict):
                         status = result.get('status', '⚠️ Error')
                         value_of_purchases = result.get('value_of_purchases', 'N/A')
+                        
+                        # Check if browser was closed by user
+                        if 'Browser Closed' in status:
+                            self.log_message(f"⚠️ Browser was closed by user. Stopping processing...")
+                            self.log_message(f"✅ Progress saved to Excel file up to row {row_number}")
+                            break  # Exit the loop gracefully
                     else:
                         # Backwards compatibility: if result is a string
                         status = result
