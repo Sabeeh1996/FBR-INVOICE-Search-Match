@@ -88,64 +88,79 @@ class FBRInvoiceCheckerGUI:
     
     def setup_gui(self):
         """
-        Setup all GUI components.
+        Setup all GUI components with responsive layout.
         """
-        # Main container with padding
-        main_frame = ttk.Frame(self.root, padding="20")
+        # Configure root window to expand properly
+        self.root.columnconfigure(0, weight=1)
+        self.root.rowconfigure(0, weight=1)
+        
+        # Main container with padding - responsive
+        main_frame = ttk.Frame(self.root, padding="15")
         main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        
+        # Configure main frame columns and rows for responsiveness
+        main_frame.columnconfigure(0, weight=1)
+        main_frame.rowconfigure(4, weight=1)  # Make log section expandable
         
         # Title
         title_label = ttk.Label(
             main_frame, 
             text="🧾 FBR Invoice Checker Bot", 
-            font=("Arial", 18, "bold")
+            font=("Arial", 18, "bold"),
+            wraplength=600
         )
-        title_label.grid(row=0, column=0, columnspan=3, pady=(0, 20))
+        title_label.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 15))
         
-        # License status bar
+        # License status bar (only show for non-OK status)
+        license_frame_created = False
         if self.license_manager:
             status = self.license_manager.get_expiry_status()
-            status_color = {
-                'OK': '#00AA00',           # Green
-                'WARNING': '#FFAA00',      # Orange
-                'CRITICAL': '#FF5500',     # Red-Orange
-                'EXPIRED': '#FF0000'       # Red
-            }
-            bg_color = status_color.get(status['status_level'], '#CCCCCC')
             
-            license_frame = ttk.Frame(main_frame)
-            license_frame.grid(row=1, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 10))
-            
-            # Create a label with background color (using a workaround)
-            license_label = tk.Label(
-                license_frame,
-                text=f"📋 {status['message']}",
-                bg=bg_color,
-                fg='white',
-                font=("Arial", 9),
-                pady=5,
-                padx=10
-            )
-            license_label.pack(fill=tk.X)
-            
-            # Add a help button to show more details
-            def show_license_details():
-                messagebox.showinfo(
-                    "License Information",
-                    self.license_manager.get_expiry_info_text()
+            # Only show the license bar if status is not OK
+            if status['status_level'] != 'OK':
+                status_color = {
+                    'WARNING': '#FFAA00',      # Orange
+                    'CRITICAL': '#FF5500',     # Red-Orange
+                    'EXPIRED': '#FF0000'       # Red
+                }
+                bg_color = status_color.get(status['status_level'], '#CCCCCC')
+                
+                license_frame = ttk.Frame(main_frame)
+                license_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
+                license_frame_created = True
+                
+                # Create a label with background color (using a workaround)
+                license_label = tk.Label(
+                    license_frame,
+                    text=f"📋 {status['message']}",
+                    bg=bg_color,
+                    fg='white',
+                    font=("Arial", 9),
+                    pady=5,
+                    padx=10,
+                    wraplength=500
                 )
-            
-            help_btn = ttk.Button(
-                license_frame,
-                text="Details",
-                command=show_license_details,
-                width=10
-            )
-            help_btn.pack(side=tk.RIGHT, padx=5)
+                license_label.pack(fill=tk.X, side=tk.LEFT, expand=True)
+                
+                # Add a help button to show more details
+                def show_license_details():
+                    messagebox.showinfo(
+                        "License Information",
+                        self.license_manager.get_expiry_info_text()
+                    )
+                
+                help_btn = ttk.Button(
+                    license_frame,
+                    text="Details",
+                    command=show_license_details,
+                    width=10
+                )
+                help_btn.pack(side=tk.RIGHT, padx=5)
         
         # File selection section
         file_frame = ttk.LabelFrame(main_frame, text="Excel File Selection", padding="10")
-        file_frame.grid(row=2, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 15))
+        file_frame.grid(row=(2 if license_frame_created else 1), column=0, sticky=(tk.W, tk.E), pady=(0, 15))
+        file_frame.columnconfigure(1, weight=1)
         
         ttk.Label(file_frame, text="Excel File:").grid(row=0, column=0, sticky=tk.W, padx=(0, 10))
         
@@ -153,13 +168,12 @@ class FBRInvoiceCheckerGUI:
         file_entry.grid(row=0, column=1, sticky=(tk.W, tk.E), padx=(0, 10))
         
         browse_btn = ttk.Button(file_frame, text="Browse...", command=self.browse_file)
-        browse_btn.grid(row=0, column=2)
+        browse_btn.grid(row=0, column=2, padx=(5, 0))
         
-        file_frame.columnconfigure(1, weight=1)
-        
-        # Control buttons
+        # Control buttons - with wrapping support
         button_frame = ttk.Frame(main_frame)
-        button_frame.grid(row=3, column=0, columnspan=3, pady=(0, 15))
+        button_frame.grid(row=(3 if license_frame_created else 2), column=0, sticky=(tk.W, tk.E), pady=(0, 15))
+        button_frame.columnconfigure(0, weight=1)
         
         self.start_btn = ttk.Button(
             button_frame, 
@@ -167,7 +181,7 @@ class FBRInvoiceCheckerGUI:
             command=self.start_processing,
             width=12
         )
-        self.start_btn.grid(row=0, column=0, padx=5)
+        self.start_btn.grid(row=0, column=0, padx=3, pady=5)
         
         self.pause_btn = ttk.Button(
             button_frame, 
@@ -176,7 +190,7 @@ class FBRInvoiceCheckerGUI:
             width=12,
             state='disabled'
         )
-        self.pause_btn.grid(row=0, column=1, padx=5)
+        self.pause_btn.grid(row=0, column=1, padx=3, pady=5)
         self.pause_btn.grid_remove()  # Hide initially
         
         self.resume_btn = ttk.Button(
@@ -186,7 +200,7 @@ class FBRInvoiceCheckerGUI:
             width=12,
             state='disabled'
         )
-        self.resume_btn.grid(row=0, column=2, padx=5)
+        self.resume_btn.grid(row=0, column=2, padx=3, pady=5)
         self.resume_btn.grid_remove()  # Hide initially
         
         self.stop_btn = ttk.Button(
@@ -196,7 +210,7 @@ class FBRInvoiceCheckerGUI:
             width=12,
             state='disabled'
         )
-        self.stop_btn.grid(row=0, column=3, padx=5)
+        self.stop_btn.grid(row=0, column=3, padx=3, pady=5)
         self.stop_btn.grid_remove()  # Hide initially
         
         self.exit_btn = ttk.Button(
@@ -205,50 +219,53 @@ class FBRInvoiceCheckerGUI:
             command=self.exit_application,
             width=12
         )
-        self.exit_btn.grid(row=0, column=4, padx=5)
+        self.exit_btn.grid(row=0, column=4, padx=3, pady=5)
         
         # Recording controls have been removed from the UI
         
-        # Progress section
+        # Progress section - fully responsive
         progress_frame = ttk.LabelFrame(main_frame, text="Progress", padding="10")
-        progress_frame.grid(row=4, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 15))
+        progress_frame.grid(row=(4 if license_frame_created else 3), column=0, sticky=(tk.W, tk.E), pady=(0, 15))
+        progress_frame.columnconfigure(0, weight=1)
         
         # Let progress bar expand horizontally with the window
         self.progress_bar = ttk.Progressbar(
             progress_frame,
             mode='determinate'
         )
-        self.progress_bar.grid(row=0, column=0, columnspan=4, sticky=(tk.W, tk.E), pady=(0, 10))
+        self.progress_bar.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
         
-        # Progress label
-        self.progress_label = ttk.Label(progress_frame, text="Ready to start", font=("Arial", 10))
-        self.progress_label.grid(row=1, column=0, columnspan=4, pady=(0, 10))
+        # Progress label - responsive
+        self.progress_label = ttk.Label(progress_frame, text="Ready to start", font=("Arial", 10), wraplength=600)
+        self.progress_label.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
         
-        # Statistics
+        # Statistics frame - responsive with wrapping
         stats_frame = ttk.Frame(progress_frame)
-        stats_frame.grid(row=2, column=0, columnspan=4)
+        stats_frame.grid(row=2, column=0, sticky=(tk.W, tk.E))
+        stats_frame.columnconfigure(1, weight=1)
+        stats_frame.columnconfigure(3, weight=1)
+        stats_frame.columnconfigure(5, weight=1)
+        stats_frame.columnconfigure(7, weight=1)
         
-        ttk.Label(stats_frame, text="Total:", font=("Arial", 9, "bold")).grid(row=0, column=0, padx=5)
+        ttk.Label(stats_frame, text="Total:", font=("Arial", 9, "bold")).grid(row=0, column=0, padx=5, sticky=tk.W)
         self.total_label = ttk.Label(stats_frame, text="0", font=("Arial", 9))
-        self.total_label.grid(row=0, column=1, padx=5)
+        self.total_label.grid(row=0, column=1, padx=5, sticky=tk.W)
         
-        ttk.Label(stats_frame, text="✅ Claimed:", font=("Arial", 9, "bold"), foreground="green").grid(row=0, column=2, padx=5)
+        ttk.Label(stats_frame, text="✅ Claimed:", font=("Arial", 9, "bold"), foreground="green").grid(row=0, column=2, padx=5, sticky=tk.W)
         self.claimed_label = ttk.Label(stats_frame, text="0", font=("Arial", 9))
-        self.claimed_label.grid(row=0, column=3, padx=5)
+        self.claimed_label.grid(row=0, column=3, padx=5, sticky=tk.W)
         
-        ttk.Label(stats_frame, text="❌ Not Claimed:", font=("Arial", 9, "bold"), foreground="red").grid(row=0, column=4, padx=5)
+        ttk.Label(stats_frame, text="❌ Not Claimed:", font=("Arial", 9, "bold"), foreground="red").grid(row=0, column=4, padx=5, sticky=tk.W)
         self.not_claimed_label = ttk.Label(stats_frame, text="0", font=("Arial", 9))
-        self.not_claimed_label.grid(row=0, column=5, padx=5)
+        self.not_claimed_label.grid(row=0, column=5, padx=5, sticky=tk.W)
         
-        ttk.Label(stats_frame, text="⚠️ Errors:", font=("Arial", 9, "bold"), foreground="orange").grid(row=0, column=6, padx=5)
+        ttk.Label(stats_frame, text="⚠️ Errors:", font=("Arial", 9, "bold"), foreground="orange").grid(row=0, column=6, padx=5, sticky=tk.W)
         self.error_label = ttk.Label(stats_frame, text="0", font=("Arial", 9))
-        self.error_label.grid(row=0, column=7, padx=5)
+        self.error_label.grid(row=0, column=7, padx=5, sticky=tk.W)
         
-        progress_frame.columnconfigure(0, weight=1)
-        
-        # Log section
+        # Log section - fully expandable
         log_frame = ttk.LabelFrame(main_frame, text="Live Logs", padding="10")
-        log_frame.grid(row=5, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
+        log_frame.grid(row=(5 if license_frame_created else 4), column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
         
         # Make log expand with the window; set a reasonable height but allow width to grow
         self.log_text = scrolledtext.ScrolledText(
@@ -261,15 +278,6 @@ class FBRInvoiceCheckerGUI:
         
         log_frame.columnconfigure(0, weight=1)
         log_frame.rowconfigure(0, weight=1)
-        
-        # Configure main frame to expand
-        main_frame.columnconfigure(0, weight=1)
-        main_frame.columnconfigure(1, weight=1)
-        main_frame.columnconfigure(2, weight=1)
-        main_frame.rowconfigure(4, weight=1)
-        
-        self.root.columnconfigure(0, weight=1)
-        self.root.rowconfigure(0, weight=1)
     
     def show_welcome_message(self):
         """
