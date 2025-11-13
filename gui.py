@@ -29,12 +29,13 @@ class FBRInvoiceCheckerGUI:
     Provides an interactive interface for invoice verification.
     """
     
-    def __init__(self, root):
+    def __init__(self, root, license_manager=None):
         """
         Initialize the GUI application.
         
         Args:
             root: Tkinter root window
+            license_manager: License manager instance for expiry checks
         """
         self.root = root
         self.root.title("🧾 FBR Invoice Checker Bot")
@@ -42,6 +43,9 @@ class FBRInvoiceCheckerGUI:
         self.root.geometry("900x650")
         self.root.minsize(720, 480)
         self.root.resizable(True, True)
+        
+        # License manager
+        self.license_manager = license_manager
         
         # Variables
         self.excel_file_path = tk.StringVar()
@@ -73,8 +77,14 @@ class FBRInvoiceCheckerGUI:
         # Setup GUI
         self.setup_gui()
         
-        # Show welcome message
+        # Show welcome message and expiry warning if needed
         self.show_welcome_message()
+        
+        # Show expiry warning if software is expiring soon
+        if self.license_manager:
+            status = self.license_manager.get_expiry_status()
+            if status['should_show_warning']:
+                self.license_manager.show_expiry_warning(self.root)
     
     def setup_gui(self):
         """
@@ -92,9 +102,50 @@ class FBRInvoiceCheckerGUI:
         )
         title_label.grid(row=0, column=0, columnspan=3, pady=(0, 20))
         
+        # License status bar
+        if self.license_manager:
+            status = self.license_manager.get_expiry_status()
+            status_color = {
+                'OK': '#00AA00',           # Green
+                'WARNING': '#FFAA00',      # Orange
+                'CRITICAL': '#FF5500',     # Red-Orange
+                'EXPIRED': '#FF0000'       # Red
+            }
+            bg_color = status_color.get(status['status_level'], '#CCCCCC')
+            
+            license_frame = ttk.Frame(main_frame)
+            license_frame.grid(row=1, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 10))
+            
+            # Create a label with background color (using a workaround)
+            license_label = tk.Label(
+                license_frame,
+                text=f"📋 {status['message']}",
+                bg=bg_color,
+                fg='white',
+                font=("Arial", 9),
+                pady=5,
+                padx=10
+            )
+            license_label.pack(fill=tk.X)
+            
+            # Add a help button to show more details
+            def show_license_details():
+                messagebox.showinfo(
+                    "License Information",
+                    self.license_manager.get_expiry_info_text()
+                )
+            
+            help_btn = ttk.Button(
+                license_frame,
+                text="Details",
+                command=show_license_details,
+                width=10
+            )
+            help_btn.pack(side=tk.RIGHT, padx=5)
+        
         # File selection section
         file_frame = ttk.LabelFrame(main_frame, text="Excel File Selection", padding="10")
-        file_frame.grid(row=1, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 15))
+        file_frame.grid(row=2, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 15))
         
         ttk.Label(file_frame, text="Excel File:").grid(row=0, column=0, sticky=tk.W, padx=(0, 10))
         
@@ -108,7 +159,7 @@ class FBRInvoiceCheckerGUI:
         
         # Control buttons
         button_frame = ttk.Frame(main_frame)
-        button_frame.grid(row=2, column=0, columnspan=3, pady=(0, 15))
+        button_frame.grid(row=3, column=0, columnspan=3, pady=(0, 15))
         
         self.start_btn = ttk.Button(
             button_frame, 
@@ -160,7 +211,7 @@ class FBRInvoiceCheckerGUI:
         
         # Progress section
         progress_frame = ttk.LabelFrame(main_frame, text="Progress", padding="10")
-        progress_frame.grid(row=3, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 15))
+        progress_frame.grid(row=4, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(0, 15))
         
         # Let progress bar expand horizontally with the window
         self.progress_bar = ttk.Progressbar(
@@ -197,7 +248,7 @@ class FBRInvoiceCheckerGUI:
         
         # Log section
         log_frame = ttk.LabelFrame(main_frame, text="Live Logs", padding="10")
-        log_frame.grid(row=4, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
+        log_frame.grid(row=5, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
         
         # Make log expand with the window; set a reasonable height but allow width to grow
         self.log_text = scrolledtext.ScrolledText(
@@ -222,7 +273,7 @@ class FBRInvoiceCheckerGUI:
     
     def show_welcome_message(self):
         """
-        Display welcome popup with instructions.
+        Display welcome popup with instructions and license info.
         """
         welcome_text = """
         Welcome to FBR Invoice Checker Bot! 🎉
@@ -250,6 +301,12 @@ class FBRInvoiceCheckerGUI:
         
         Click OK to continue...
         """
+        
+        # Add license information if available
+        if self.license_manager:
+            status = self.license_manager.get_expiry_status()
+            license_info = f"\n{'='*60}\n{status['message']}\n{'='*60}"
+            welcome_text += license_info
         
         messagebox.showinfo("Welcome", welcome_text)
     

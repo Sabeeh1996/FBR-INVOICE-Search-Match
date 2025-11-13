@@ -1,0 +1,238 @@
+"""
+License Manager Module
+Handles software expiry management with early notifications and license validation.
+"""
+
+import json
+import os
+import logging
+from datetime import datetime, timedelta
+from pathlib import Path
+
+
+class LicenseManager:
+    """
+    Manages software license/expiry system with notifications.
+    """
+    
+    # Default expiry date - can be set to any future date
+    DEFAULT_EXPIRY_DATE = "2025-11-25"  # YYYY-MM-DD format
+    
+    # Days before expiry to show warning
+    EARLY_WARNING_DAYS = 30
+    
+    # Days before expiry to show critical warning
+    CRITICAL_WARNING_DAYS = 7
+    
+    # Config file location
+    CONFIG_FILE = "license_config.json"
+    
+    def __init__(self):
+        """Initialize the license manager."""
+        self.expiry_date = None
+        self.license_config = None
+        self.load_or_create_config()
+    
+    def load_or_create_config(self):
+        """
+        Load license config from file or create with defaults.
+        """
+        try:
+            if os.path.exists(self.CONFIG_FILE):
+                with open(self.CONFIG_FILE, 'r', encoding='utf-8') as f:
+                    self.license_config = json.load(f)
+                    self.expiry_date = datetime.strptime(
+                        self.license_config.get('expiry_date', self.DEFAULT_EXPIRY_DATE),
+                        '%Y-%m-%d'
+                    ).date()
+                    logging.info(f"License loaded from config. Expiry date: {self.expiry_date}")
+            else:
+                # Create new config with default expiry
+                self.expiry_date = datetime.strptime(self.DEFAULT_EXPIRY_DATE, '%Y-%m-%d').date()
+                self.license_config = {
+                    'expiry_date': self.DEFAULT_EXPIRY_DATE,
+                    'created_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    'software_version': '1.0.0'
+                }
+                self.save_config()
+                logging.info(f"New license created with expiry date: {self.expiry_date}")
+        except Exception as e:
+            logging.error(f"Error loading license config: {str(e)}")
+            # Fallback to default
+            self.expiry_date = datetime.strptime(self.DEFAULT_EXPIRY_DATE, '%Y-%m-%d').date()
+    
+    def save_config(self):
+        """Save license config to file."""
+        try:
+            with open(self.CONFIG_FILE, 'w', encoding='utf-8') as f:
+                json.dump(self.license_config, f, indent=4)
+            logging.info("License config saved successfully")
+        except Exception as e:
+            logging.error(f"Error saving license config: {str(e)}")
+    
+    def set_expiry_date(self, expiry_date_str):
+        """
+        Set a new expiry date for the software.
+        
+        Args:
+            expiry_date_str (str): Expiry date in YYYY-MM-DD format
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            expiry_date = datetime.strptime(expiry_date_str, '%Y-%m-%d').date()
+            self.expiry_date = expiry_date
+            self.license_config['expiry_date'] = expiry_date_str
+            self.license_config['last_updated'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            self.save_config()
+            logging.info(f"Expiry date updated to: {expiry_date}")
+            return True
+        except ValueError as e:
+            logging.error(f"Invalid date format. Use YYYY-MM-DD: {str(e)}")
+            return False
+    
+    def get_days_until_expiry(self):
+        """
+        Get number of days until software expires.
+        
+        Returns:
+            int: Number of days remaining (negative if already expired)
+        """
+        today = datetime.now().date()
+        remaining_days = (self.expiry_date - today).days
+        return remaining_days
+    
+    def is_expired(self):
+        """
+        Check if software license has expired.
+        
+        Returns:
+            bool: True if expired, False otherwise
+        """
+        return self.get_days_until_expiry() < 0
+    
+    def get_expiry_status(self):
+        """
+        Get detailed expiry status with warning levels.
+        
+        Returns:
+            dict: Status information with keys:
+                - is_expired: bool
+                - days_remaining: int
+                - status_level: str ('OK', 'WARNING', 'CRITICAL', 'EXPIRED')
+                - message: str
+                - expiry_date: str
+        """
+        days_remaining = self.get_days_until_expiry()
+        today = datetime.now().date()
+        
+        if days_remaining < 0:
+            status_level = 'EXPIRED'
+            message = f"🔴 SOFTWARE EXPIRED! Expired on {self.expiry_date}"
+        elif days_remaining <= self.CRITICAL_WARNING_DAYS:
+            status_level = 'CRITICAL'
+            message = f"🔴 CRITICAL: Software expires in {days_remaining} days ({self.expiry_date})"
+        elif days_remaining <= self.EARLY_WARNING_DAYS:
+            status_level = 'WARNING'
+            message = f"🟡 WARNING: Software expires in {days_remaining} days ({self.expiry_date})"
+        else:
+            status_level = 'OK'
+            message = f"✓ Software active. Expires in {days_remaining} days ({self.expiry_date})"
+        
+        return {
+            'is_expired': days_remaining < 0,
+            'days_remaining': days_remaining,
+            'status_level': status_level,
+            'message': message,
+            'expiry_date': str(self.expiry_date),
+            'should_show_warning': days_remaining <= self.EARLY_WARNING_DAYS
+        }
+    
+    def get_expiry_info_text(self):
+        """
+        Get formatted expiry information for display.
+        
+        Returns:
+            str: Formatted expiry information
+        """
+        status = self.get_expiry_status()
+        
+        info_lines = [
+            "=" * 60,
+            "📋 SOFTWARE LICENSE INFORMATION",
+            "=" * 60,
+            f"Expiry Date:        {status['expiry_date']}",
+            f"Days Remaining:     {status['days_remaining']} days",
+            f"Status:             {status['status_level']}",
+            f"Message:            {status['message']}",
+            "=" * 60
+        ]
+        
+        return "\n".join(info_lines)
+    
+    def show_expiry_warning(self, parent_window=None):
+        """
+        Show expiry warning dialog.
+        
+        Args:
+            parent_window: Parent Tkinter window (optional)
+            
+        Returns:
+            bool: True if user wants to continue, False to quit
+        """
+        from tkinter import messagebox
+        
+        status = self.get_expiry_status()
+        
+        if status['is_expired']:
+            messagebox.showerror(
+                "Software Expired",
+                f"❌ This software has expired.\n\n"
+                f"Expiry Date: {status['expiry_date']}\n"
+                f"Days Since Expiry: {abs(status['days_remaining'])} days\n\n"
+                f"Please contact the software provider to renew your license.",
+                parent=parent_window
+            )
+            return False
+        
+        elif status['status_level'] == 'CRITICAL':
+            result = messagebox.showwarning(
+                "Critical: Software Expiring Soon",
+                f"⚠️  Your software will expire very soon!\n\n"
+                f"Expiry Date: {status['expiry_date']}\n"
+                f"Days Remaining: {status['days_remaining']} days\n\n"
+                f"Please renew your license soon to avoid interruption.\n\n"
+                f"Click OK to continue, or Cancel to exit.",
+                parent=parent_window
+            )
+            return result is not None
+        
+        elif status['status_level'] == 'WARNING':
+            result = messagebox.showinfo(
+                "Notice: Software Expiring",
+                f"ℹ️  Your software will expire soon.\n\n"
+                f"Expiry Date: {status['expiry_date']}\n"
+                f"Days Remaining: {status['days_remaining']} days\n\n"
+                f"Please plan to renew your license.\n\n"
+                f"Click OK to continue.",
+                parent=parent_window
+            )
+            return True
+        
+        return True
+    
+    def validate_license(self):
+        """
+        Validate license on startup.
+        
+        Returns:
+            bool: True if software can run, False if expired
+        """
+        return not self.is_expired()
+
+
+# Convenience function for easy access
+def get_license_manager():
+    """Get the license manager instance."""
+    return LicenseManager()

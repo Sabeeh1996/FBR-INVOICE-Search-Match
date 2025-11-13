@@ -8,6 +8,7 @@ import logging
 import os
 from datetime import datetime
 from gui import FBRInvoiceCheckerGUI
+from license_manager import LicenseManager
 
 
 def setup_logging():
@@ -47,6 +48,20 @@ def main():
     # Setup logging
     setup_logging()
     
+    # Initialize and validate license
+    license_manager = LicenseManager()
+    logging.info(license_manager.get_expiry_info_text())
+    
+    # Check if software is expired
+    if not license_manager.validate_license():
+        logging.error("SOFTWARE LICENSE EXPIRED - Application cannot start")
+        # Show expiry error to user
+        root = tk.Tk()
+        root.withdraw()  # Hide root window
+        license_manager.show_expiry_warning(root)
+        root.destroy()
+        return
+    
     # Create Tkinter root window
     root = tk.Tk()
     
@@ -63,7 +78,7 @@ def main():
     root.geometry(f'{window_width}x{window_height}+{center_x}+{center_y}')
     
     # Create and run GUI
-    app = FBRInvoiceCheckerGUI(root)
+    app = FBRInvoiceCheckerGUI(root, license_manager)
     
     # Start the Tkinter event loop
     try:
