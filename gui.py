@@ -136,13 +136,22 @@ class FBRInvoiceCheckerGUI:
         )
         self.resume_btn.grid(row=0, column=2, padx=5)
         
+        self.stop_btn = ttk.Button(
+            button_frame, 
+            text="⏹ Stop", 
+            command=self.stop_processing,
+            width=12,
+            state='disabled'
+        )
+        self.stop_btn.grid(row=0, column=3, padx=5)
+        
         self.exit_btn = ttk.Button(
             button_frame, 
             text="✖ Exit", 
             command=self.exit_application,
             width=12
         )
-        self.exit_btn.grid(row=0, column=3, padx=5)
+        self.exit_btn.grid(row=0, column=4, padx=5)
         
         # Recording controls have been removed from the UI
         
@@ -266,6 +275,7 @@ class FBRInvoiceCheckerGUI:
         # Disable start button
         self.start_btn.config(state='disabled')
         self.pause_btn.config(state='normal')
+        self.stop_btn.config(state='normal')
         self.is_running = True
         
         # Reset statistics
@@ -300,6 +310,22 @@ class FBRInvoiceCheckerGUI:
         self.pause_btn.config(state='normal')
         self.resume_btn.config(state='disabled')
         self.log_message("▶ Processing resumed")
+    
+    def stop_processing(self):
+        """
+        Stop the invoice verification process immediately.
+        Saves the Excel file with processed data and closes the browser.
+        """
+        if messagebox.askyesno("Stop Processing", "Are you sure you want to stop processing?\nThe Excel file will be saved with current progress."):
+            self.is_running = False
+            self.is_paused = False
+            self.stop_btn.config(state='disabled')
+            self.pause_btn.config(state='disabled')
+            self.resume_btn.config(state='disabled')
+            self.start_btn.config(state='normal')
+            self.log_message("⏹ Stopping processing... Please wait for cleanup")
+        else:
+            self.log_message("Stop cancelled")
     
     def process_invoices(self):
         """
@@ -470,6 +496,7 @@ class FBRInvoiceCheckerGUI:
             self.start_btn.config(state='normal')
             self.pause_btn.config(state='disabled')
             self.resume_btn.config(state='disabled')
+            self.stop_btn.config(state='disabled')
     
     def update_statistics(self):
         """
