@@ -1268,40 +1268,145 @@ class FBRChecker:
                 
                 # Step 7.1: Find the "Value of Purchases" header column
                 header_selectors = [
-                    # Exact ID from provided HTML
+                    # Strategy 1: Exact ID from provided HTML
                     (By.ID, "correspondenceTabs:loadAnnexAform:purchaseInvoiceTable:j_idt5936"),
-                    # By aria-label
+                    
+                    # Strategy 2: By aria-label attribute (exact match)
                     (By.XPATH, "//th[@aria-label='Value of Purchases']"),
-                    # By span text content
-                    (By.XPATH, "//th[.//span[@class='ui-column-title' and contains(text(), 'Value of Purchases')]]"),
-                    # Generic fallback
+                    
+                    # Strategy 3: By span text content with class
+                    (By.XPATH, "//th[.//span[@class='ui-column-title' and normalize-space(text())='Value of Purchases']]"),
+                    
+                    # Strategy 4: Partial ID match with dynamic j_idt
+                    (By.XPATH, "//th[contains(@id, 'purchaseInvoiceTable:j_idt')]//span[contains(text(), 'Value of Purchases')]"),
+                    
+                    # Strategy 5: Table context with text contains
                     (By.XPATH, "//table[@id='correspondenceTabs:loadAnnexAform:purchaseInvoiceTable']//th[contains(., 'Value of Purchases')]"),
+                    
+                    # Strategy 6: By th with data-field or similar attributes
+                    (By.XPATH, "//th[contains(@class, 'ui-state-default') and contains(., 'Value of Purchases')]"),
+                    
+                    # Strategy 7: Using CSS selector with partial attribute matching
+                    (By.CSS_SELECTOR, "th[id*='purchaseInvoiceTable'][id*='j_idt']"),
+                    
+                    # Strategy 8: Any th with class containing 'ui-column'
+                    (By.XPATH, "//table[contains(@id, 'purchaseInvoiceTable')]//th[contains(@class, 'ui-column') and contains(., 'Value')]"),
+                    
+                    # Strategy 9: Form-scoped table header search
+                    (By.XPATH, "//form[contains(@id, 'loadAnnexAform')]//th[contains(., 'Value of Purchases')]"),
+                    
+                    # Strategy 10: th within thead (explicit)
+                    (By.XPATH, "//table[contains(@id, 'purchaseInvoiceTable')]//thead//th[contains(normalize-space(), 'Value of Purchases')]"),
                 ]
                 
                 header_element = None
                 for by_type, selector in header_selectors:
                     try:
-                        # Wait for header to be visible
-                        header_element = wait.until(EC.visibility_of_element_located((by_type, selector)))
-                        logging.info(f"Found 'Value of Purchases' header using selector: {selector}")
-                        break
-                    except TimeoutException:
+                        # Try to find the element with shorter timeout for faster fallback
+                        header_element = WebDriverWait(self.driver, 3).until(
+                            EC.visibility_of_element_located((by_type, selector))
+                        )
+                        
+                        # Verify element is actually visible and contains expected text
+                        if header_element.is_displayed() and 'Value of Purchases' in header_element.text:
+                            logging.info(f"✓ Found 'Value of Purchases' header using selector: {selector}")
+                            break
+                        else:
+                            logging.debug(f"Element found but text mismatch: {header_element.text}")
+                            header_element = None
+                            
+                    except (TimeoutException, NoSuchElementException) as e:
+                        logging.debug(f"Selector failed: {selector} - {type(e).__name__}")
                         continue
+                    except Exception as e:
+                        logging.debug(f"Unexpected error with selector {selector}: {str(e)}")
+                        continue
+                
+                # Fallback: Use JavaScript to find header if all selectors fail
+                if not header_element:
+                    logging.warning("All selectors failed, trying JavaScript fallback for 'Value of Purchases' header...")
+                    try:
+                        header_element = self.driver.execute_script("""
+                            // Find the purchase invoice table
+                            var table = document.getElementById('correspondenceTabs:loadAnnexAform:purchaseInvoiceTable');
+                            if (!table) return null;
+                            
+                            // Strategy 1: Find th with text containing "Value of Purchases"
+                            var headers = table.querySelectorAll('th');
+                            for (var i = 0; i < headers.length; i++) {
+                                var header = headers[i];
+                                if (header.textContent.includes('Value of Purchases') && header.offsetParent !== null) {
+                                    return header;
+                                }
+                            }
+                            
+                            // Strategy 2: Find by aria-label attribute
+                            var ariaHeader = table.querySelector('th[aria-label*="Value"]');
+                            if (ariaHeader && ariaHeader.offsetParent !== null) {
+                                return ariaHeader;
+                            }
+                            
+                            // Strategy 3: Find span with specific text and get parent th
+                            var spans = table.querySelectorAll('span');
+                            for (var i = 0; i < spans.length; i++) {
+                                if (spans[i].textContent.trim() === 'Value of Purchases') {
+                                    var th = spans[i].closest('th');
+                                    if (th && th.offsetParent !== null) {
+                                        return th;
+                                    }
+                                }
+                            }
+                            
+                            // Strategy 4: Find by checking all headers in thead
+                            var thead = table.querySelector('thead');
+                            if (thead) {
+                                var theadHeaders = thead.querySelectorAll('th');
+                                for (var i = 0; i < theadHeaders.length; i++) {
+                                    if (theadHeaders[i].textContent.includes('Value')) {
+                                        return theadHeaders[i];
+                                    }
+                                }
+                            }
+                            
+                            return null;
+                        """)
+                        
+                        if header_element:
+                            logging.info("✓ Found 'Value of Purchases' header using JavaScript fallback")
+                        
+                    except Exception as js_error:
+                        logging.error(f"JavaScript fallback also failed: {str(js_error)}")
+                        header_element = None
                 
                 value_of_purchases = 'N/A'  # Default value
                 
+                if not header_element:
+                    logging.error("STEP 7 FAILED: Could not find 'Value of Purchases' header in results table after trying all strategies")
+                    return {
+                        'status': '⚠️ Error - Header not found',
+                        'value_of_purchases': 'N/A'
+                    }
+                
+                # Wait for table data cells to be fully loaded
+                try:
+                    wait.until(
+                        lambda driver: driver.execute_script("""
+                            var table = document.getElementById('correspondenceTabs:loadAnnexAform:purchaseInvoiceTable');
+                            if (!table) return false;
+                            var dataRows = table.querySelectorAll('tbody tr');
+                            if (!dataRows || dataRows.length === 0) return false;
+                            var cells = dataRows[0].querySelectorAll('td');
+                            return cells && cells.length > 0;
+                        """)
+                    )
+                except TimeoutException:
+                    logging.error("STEP 7 FAILED: Timeout waiting for table data rows")
+                    return {
+                        'status': '⚠️ Error - Table data not loaded',
+                        'value_of_purchases': 'N/A'
+                    }
+                
                 if header_element:
-                            # Wait for table data cells to be fully loaded
-                            wait.until(
-                                lambda driver: driver.execute_script("""
-                                    var table = document.getElementById('correspondenceTabs:loadAnnexAform:purchaseInvoiceTable');
-                                    if (!table) return false;
-                                    var dataRows = table.querySelectorAll('tbody tr');
-                                    if (!dataRows || dataRows.length === 0) return false;
-                                    var cells = dataRows[0].querySelectorAll('td');
-                                    return cells && cells.length > 0;
-                                """)
-                            )
                             # Step 7.2: Determine the column index (position) of the header
                             # Use JavaScript to get the column index more reliably
                             column_index = self.driver.execute_script("""
@@ -1408,140 +1513,140 @@ class FBRChecker:
                 
                 ####################################################################################
                 # Step 8: Wait for page to fully load before attempting to find Claim button
-                logging.info("STEP 8: Waiting for page to load before finding Claim button...")
+                # logging.info("STEP 8: Waiting for page to load before finding Claim button...")
                 
-                try:
-                    # Wait for page to fully load
-                    WebDriverWait(self.driver, 60).until(
-                        lambda driver: driver.execute_script("return document.readyState") == "complete"
-                    )
-                    logging.info("✓ Page fully loaded")
+                # try:
+                #     # Wait for page to fully load
+                #     WebDriverWait(self.driver, 60).until(
+                #         lambda driver: driver.execute_script("return document.readyState") == "complete"
+                #     )
+                #     logging.info("✓ Page fully loaded")
                     
-                    # Additional wait to ensure all elements are rendered
-                    self._random_delay(0.5, 1.5)
+                #     # Additional wait to ensure all elements are rendered
+                #     self._random_delay(0.5, 1.5)
                     
-                except TimeoutException:
-                    logging.warning("Page load timeout, but proceeding anyway...")
+                # except TimeoutException:
+                #     logging.warning("Page load timeout, but proceeding anyway...")
                 
-                # Step 8.1: Click the EXACT "Claim" button (not "Claim in PRA/KPRA/BRA/SRB")
-                logging.info("STEP 8.1: Clicking Claim button (exact match only)...")
+                # # Step 8.1: Click the EXACT "Claim" button (not "Claim in PRA/KPRA/BRA/SRB")
+                # logging.info("STEP 8.1: Clicking Claim button (exact match only)...")
                 
-                claim_button = None
-                claim_button_selectors = [
-                    # Strategy 1: EXACT text match - span must contain ONLY "Claim" (no other text)
-                    (By.XPATH, "//button[contains(@id, 'loadAnnexAform:j_idt') and .//span[normalize-space(text())='Claim' and not(contains(text(), ' in '))]]"),
+                # claim_button = None
+                # claim_button_selectors = [
+                #     # Strategy 1: EXACT text match - span must contain ONLY "Claim" (no other text)
+                #     (By.XPATH, "//button[contains(@id, 'loadAnnexAform:j_idt') and .//span[normalize-space(text())='Claim' and not(contains(text(), ' in '))]]"),
                     
-                    # Strategy 2: EXACT text match with button in loadAnnexAform context
-                    (By.XPATH, "//button[contains(@id, 'correspondenceTabs:loadAnnexAform:j_idt')]//span[text()='Claim' and string-length(normalize-space())=5]"),
+                #     # Strategy 2: EXACT text match with button in loadAnnexAform context
+                #     (By.XPATH, "//button[contains(@id, 'correspondenceTabs:loadAnnexAform:j_idt')]//span[text()='Claim' and string-length(normalize-space())=5]"),
                     
-                    # Strategy 3: Form-scoped button where span text equals exactly "Claim"
-                    (By.XPATH, "//form[contains(@id, 'loadAnnexAform')]//button[@type='submit' and contains(@class, 'ui-button')]//span[text()='Claim' and not(contains(text(), 'in'))]"),
+                #     # Strategy 3: Form-scoped button where span text equals exactly "Claim"
+                #     (By.XPATH, "//form[contains(@id, 'loadAnnexAform')]//button[@type='submit' and contains(@class, 'ui-button')]//span[text()='Claim' and not(contains(text(), 'in'))]"),
                     
-                    # Strategy 4: Button with calculate class and EXACT "Claim" text (5 characters only)
-                    (By.XPATH, "//button[contains(@class, 'calculate') and .//span[text()='Claim' and string-length(text())=5]]"),
+                #     # Strategy 4: Button with calculate class and EXACT "Claim" text (5 characters only)
+                #     (By.XPATH, "//button[contains(@class, 'calculate') and .//span[text()='Claim' and string-length(text())=5]]"),
                     
-                    # Strategy 5: Any button with span containing ONLY "Claim" word
-                    (By.XPATH, "//button[contains(@id, 'loadAnnexAform') and .//span[normalize-space()='Claim']]"),
+                #     # Strategy 5: Any button with span containing ONLY "Claim" word
+                #     (By.XPATH, "//button[contains(@id, 'loadAnnexAform') and .//span[normalize-space()='Claim']]"),
                     
-                    # Strategy 6: CSS selector with partial ID matching and calculate class
-                    (By.CSS_SELECTOR, "button[id*='loadAnnexAform'][id*='j_idt'].calculate"),
+                #     # Strategy 6: CSS selector with partial ID matching and calculate class
+                #     (By.CSS_SELECTOR, "button[id*='loadAnnexAform'][id*='j_idt'].calculate"),
                     
-                    # Strategy 7: Button where the span text matches exactly "Claim" (case-sensitive)
-                    (By.XPATH, "//form[contains(@id, 'loadAnnexAform')]//button//span[.='Claim']"),
-                ]
+                #     # Strategy 7: Button where the span text matches exactly "Claim" (case-sensitive)
+                #     (By.XPATH, "//form[contains(@id, 'loadAnnexAform')]//button//span[.='Claim']"),
+                # ]
                 
-                for by_type, selector in claim_button_selectors:
-                    try:
-                        # Try to find the element with shorter timeout for faster fallback
-                        claim_button = WebDriverWait(self.driver, 3).until(
-                            EC.presence_of_element_located((by_type, selector))
-                        )
+                # for by_type, selector in claim_button_selectors:
+                #     try:
+                #         # Try to find the element with shorter timeout for faster fallback
+                #         claim_button = WebDriverWait(self.driver, 3).until(
+                #             EC.presence_of_element_located((by_type, selector))
+                #         )
                         
-                        # CRITICAL: Verify the button text is EXACTLY "Claim" (not "Claim in PRA", etc.)
-                        button_text = claim_button.text.strip()
-                        if button_text == "Claim" and claim_button.is_displayed() and claim_button.is_enabled():
-                            logging.info(f"✓ Found EXACT 'Claim' button using selector: {selector}")
-                            logging.info(f"  Button text verified: '{button_text}'")
-                            break
-                        else:
-                            logging.debug(f"Button text mismatch: '{button_text}' (expected 'Claim') or not interactable")
-                            claim_button = None
+                #         # CRITICAL: Verify the button text is EXACTLY "Claim" (not "Claim in PRA", etc.)
+                #         button_text = claim_button.text.strip()
+                #         if button_text == "Claim" and claim_button.is_displayed() and claim_button.is_enabled():
+                #             logging.info(f"✓ Found EXACT 'Claim' button using selector: {selector}")
+                #             logging.info(f"  Button text verified: '{button_text}'")
+                #             break
+                #         else:
+                #             logging.debug(f"Button text mismatch: '{button_text}' (expected 'Claim') or not interactable")
+                #             claim_button = None
                             
-                    except (TimeoutException, NoSuchElementException) as e:
-                        logging.debug(f"Selector failed: {selector} - {type(e).__name__}")
-                        continue
-                    except Exception as e:
-                        logging.debug(f"Unexpected error with selector {selector}: {str(e)}")
-                        continue
+                #     except (TimeoutException, NoSuchElementException) as e:
+                #         logging.debug(f"Selector failed: {selector} - {type(e).__name__}")
+                #         continue
+                #     except Exception as e:
+                #         logging.debug(f"Unexpected error with selector {selector}: {str(e)}")
+                #         continue
                 
-                # Fallback: Use JavaScript to find EXACT "Claim" button if all selectors fail
-                if not claim_button:
-                    logging.warning("All selectors failed, trying JavaScript fallback for EXACT 'Claim' button...")
-                    try:
-                        claim_button = self.driver.execute_script("""
-                            // Find form containing 'loadAnnexAform' in ID
-                            var form = document.querySelector('form[id*="loadAnnexAform"]');
-                            if (!form) return null;
+                # # Fallback: Use JavaScript to find EXACT "Claim" button if all selectors fail
+                # if not claim_button:
+                #     logging.warning("All selectors failed, trying JavaScript fallback for EXACT 'Claim' button...")
+                #     try:
+                #         claim_button = self.driver.execute_script("""
+                #             // Find form containing 'loadAnnexAform' in ID
+                #             var form = document.querySelector('form[id*="loadAnnexAform"]');
+                #             if (!form) return null;
                             
-                            // Find all buttons in the form
-                            var buttons = form.querySelectorAll('button');
-                            for (var i = 0; i < buttons.length; i++) {
-                                var btn = buttons[i];
-                                var btnText = btn.textContent.trim();
+                #             // Find all buttons in the form
+                #             var buttons = form.querySelectorAll('button');
+                #             for (var i = 0; i < buttons.length; i++) {
+                #                 var btn = buttons[i];
+                #                 var btnText = btn.textContent.trim();
                                 
-                                // CRITICAL: Check if button text is EXACTLY "Claim" (not "Claim in PRA", etc.)
-                                if (btnText === 'Claim' && 
-                                    btn.offsetParent !== null && // visible
-                                    !btn.disabled) { // enabled
-                                    return btn;
-                                }
-                            }
+                #                 // CRITICAL: Check if button text is EXACTLY "Claim" (not "Claim in PRA", etc.)
+                #                 if (btnText === 'Claim' && 
+                #                     btn.offsetParent !== null && // visible
+                #                     !btn.disabled) { // enabled
+                #                     return btn;
+                #                 }
+                #             }
                             
-                            // Alternative: Check button span text specifically
-                            var spans = form.querySelectorAll('button span');
-                            for (var i = 0; i < spans.length; i++) {
-                                var span = spans[i];
-                                var spanText = span.textContent.trim();
+                #             // Alternative: Check button span text specifically
+                #             var spans = form.querySelectorAll('button span');
+                #             for (var i = 0; i < spans.length; i++) {
+                #                 var span = spans[i];
+                #                 var spanText = span.textContent.trim();
                                 
-                                if (spanText === 'Claim' && spanText.length === 5) { // Exactly 5 characters
-                                    var parentBtn = span.closest('button');
-                                    if (parentBtn && parentBtn.offsetParent !== null && !parentBtn.disabled) {
-                                        return parentBtn;
-                                    }
-                                }
-                            }
+                #                 if (spanText === 'Claim' && spanText.length === 5) { // Exactly 5 characters
+                #                     var parentBtn = span.closest('button');
+                #                     if (parentBtn && parentBtn.offsetParent !== null && !parentBtn.disabled) {
+                #                         return parentBtn;
+                #                     }
+                #                 }
+                #             }
                             
-                            return null;
-                        """)
+                #             return null;
+                #         """)
                         
-                        if claim_button:
-                            button_text = claim_button.text.strip()
-                            logging.info(f"✓ Found 'Claim' button using JavaScript fallback")
-                            logging.info(f"  Button text verified: '{button_text}'")
+                #         if claim_button:
+                #             button_text = claim_button.text.strip()
+                #             logging.info(f"✓ Found 'Claim' button using JavaScript fallback")
+                #             logging.info(f"  Button text verified: '{button_text}'")
                         
-                    except Exception as js_error:
-                        logging.error(f"JavaScript fallback also failed: {str(js_error)}")
+                #     except Exception as js_error:
+                #         logging.error(f"JavaScript fallback also failed: {str(js_error)}")
                 
-                if not claim_button:
-                    logging.error("STEP 8 FAILED: EXACT 'Claim' button not found after trying all strategies")
-                    return {
-                        'status': '⚠️ Error - Claim button not found',
-                        'value_of_purchases': value_of_purchases
-                    }
+                # if not claim_button:
+                #     logging.error("STEP 8 FAILED: EXACT 'Claim' button not found after trying all strategies")
+                #     return {
+                #         'status': '⚠️ Error - Claim button not found',
+                #         'value_of_purchases': value_of_purchases
+                #     }
                 
-                # Final verification: Ensure button text is exactly "Claim"
-                final_button_text = claim_button.text.strip()
-                if final_button_text != "Claim":
-                    logging.error(f"STEP 8 FAILED: Button text is '{final_button_text}', expected 'Claim'")
-                    return {
-                        'status': '⚠️ Error - Wrong button found',
-                        'value_of_purchases': value_of_purchases
-                    }
+                # # Final verification: Ensure button text is exactly "Claim"
+                # final_button_text = claim_button.text.strip()
+                # if final_button_text != "Claim":
+                #     logging.error(f"STEP 8 FAILED: Button text is '{final_button_text}', expected 'Claim'")
+                #     return {
+                #         'status': '⚠️ Error - Wrong button found',
+                #         'value_of_purchases': value_of_purchases
+                #     }
                 
-                # Human-like click on Claim button
-                self._human_like_click(claim_button)
-                logging.info("✓ STEP 8: EXACT 'Claim' button clicked, waiting for success message...")
-                self._random_delay(1.0, 2.0)
+                # # Human-like click on Claim button
+                # self._human_like_click(claim_button)
+                # logging.info("✓ STEP 8: EXACT 'Claim' button clicked, waiting for success message...")
+                # self._random_delay(1.0, 2.0)
                 
                 ####################################################################################
 
