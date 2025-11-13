@@ -415,6 +415,16 @@ class FBRChecker:
         try:
             logging.info("Starting Annex-A claim workflow...")
             
+            # Wait for page to fully load before processing
+            logging.info("Waiting for page to fully load...")
+            try:
+                WebDriverWait(self.driver, 15).until(
+                    lambda driver: driver.execute_script("return document.readyState") == "complete"
+                )
+                logging.info("✓ Page fully loaded")
+            except TimeoutException:
+                logging.warning("Page load timeout, but proceeding anyway...")
+            
             # Step 1: Click Annex-A tab
             if not self.click_annex_a_tab():
                 logging.warning("Annex-A tab workflow skipped (tab not found)")
@@ -507,12 +517,22 @@ class FBRChecker:
             self.process_claim_workflow()
             
             # Random delay to simulate human reading page
-            self._random_delay(1.0, 2.0)
+            self._random_delay(0.5, 1.0)
             
             # Simulate mouse movement before interacting
             self._simulate_mouse_movement()
             
-            wait = WebDriverWait(self.driver, 15)
+            # Wait for page to fully load
+            logging.info("Waiting for page to fully load...")
+            try:
+                WebDriverWait(self.driver, 60).until(
+                    lambda driver: driver.execute_script("return document.readyState") == "complete"
+                )
+                logging.info("✓ Page fully loaded")
+            except TimeoutException:
+                logging.warning("Page load timeout, but proceeding anyway...")
+            
+            wait = WebDriverWait(self.driver, 60)
             
             # Step 1: Select Source Authority from dropdown if provided
             if source_authority:
@@ -913,7 +933,7 @@ class FBRChecker:
             # Wait for results to load - check for either results table or "no records" message
             # Use explicit wait with multiple conditions
             search_completed = False
-            results_wait = WebDriverWait(self.driver, 5)
+            results_wait = WebDriverWait(self.driver, 60)
             
             try:
                 # CRITICAL: First wait for the AJAX loading dialog to appear and then disappear
@@ -921,7 +941,7 @@ class FBRChecker:
                 try:
                     # Wait for loading dialog to appear (check for both the dialog container and the image)
                     # The loader is inside: <div class="ui-dialog-content ui-widget-content"><img src="/images/ajaxloadingbar.gif"></div>
-                    loading_dialog = WebDriverWait(self.driver, 5).until(
+                    loading_dialog = WebDriverWait(self.driver, 60).until(
                         EC.presence_of_element_located((By.XPATH, 
                             "//div[contains(@class, 'ui-dialog-content') and contains(@class, 'ui-widget-content')]//img[contains(@src, 'ajaxloadingbar.gif')]"))
                     )
@@ -1389,7 +1409,7 @@ class FBRChecker:
                 logging.info("STEP 9: Waiting for 'Purchase Invoice(s) loaded Successfully' message...")
                 
                 success_message_found = False
-                success_wait = WebDriverWait(self.driver, 10)
+                success_wait = WebDriverWait(self.driver, 60)
                 
                 try:
                     # Look for the success message in the growl notification
