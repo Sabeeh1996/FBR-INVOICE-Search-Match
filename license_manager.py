@@ -5,6 +5,7 @@ Handles software expiry management with early notifications and license validati
 
 import json
 import os
+import sys
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -33,36 +34,75 @@ class LicenseManager:
         self.license_config = None
         self.load_or_create_config()
     
-    def load_or_create_config(self):
+    def _get_resource_path(self, relative_path):
         """
-        Load license config from file or create with defaults.
+        Get absolute path to resource, works for dev and for PyInstaller.
+        When running as exe, PyInstaller extracts files to sys._MEIPASS.
         """
         try:
-            if os.path.exists(self.CONFIG_FILE):
-                with open(self.CONFIG_FILE, 'r', encoding='utf-8') as f:
+            # PyInstaller creates a temp folder and stores path in _MEIPASS
+            base_path = sys._MEIPASS
+        except Exception:
+            # Running in normal Python environment
+            base_path = os.path.abspath(".")
+        
+        return os.path.join(base_path, relative_path)
+    
+    def _is_running_as_exe(self):
+        """Check if running as PyInstaller bundled executable."""
+        return getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS')
+    
+    def load_or_create_config(self):
+        """
+        Load license config from bundled file.
+        When running as exe, license is bundled inside and cannot be modified.
+        """
+        try:
+            # When running as exe, always load from bundled resource
+            if self._is_running_as_exe():
+                config_path = self._get_resource_path(self.CONFIG_FILE)
+                with open(config_path, 'r', encoding='utf-8') as f:
                     self.license_config = json.load(f)
                     self.expiry_date = datetime.strptime(
                         self.license_config.get('expiry_date', self.DEFAULT_EXPIRY_DATE),
                         '%Y-%m-%d'
                     ).date()
-                    logging.info(f"License loaded from config. Expiry date: {self.expiry_date}")
+                    logging.info(f"License loaded from bundled config. Expiry date: {self.expiry_date}")
             else:
-                # Create new config with default expiry
-                self.expiry_date = datetime.strptime(self.DEFAULT_EXPIRY_DATE, '%Y-%m-%d').date()
-                self.license_config = {
-                    'expiry_date': self.DEFAULT_EXPIRY_DATE,
-                    'created_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    'software_version': '1.0.0'
-                }
-                self.save_config()
-                logging.info(f"New license created with expiry date: {self.expiry_date}")
+                # Development mode: load or create local config file
+                if os.path.exists(self.CONFIG_FILE):
+                    with open(self.CONFIG_FILE, 'r', encoding='utf-8') as f:
+                        self.license_config = json.load(f)
+                        self.expiry_date = datetime.strptime(
+                            self.license_config.get('expiry_date', self.DEFAULT_EXPIRY_DATE),
+                            '%Y-%m-%d'
+                        ).date()
+                        logging.info(f"License loaded from config. Expiry date: {self.expiry_date}")
+                else:
+                    # Create new config with default expiry (development only)
+                    self.expiry_date = datetime.strptime(self.DEFAULT_EXPIRY_DATE, '%Y-%m-%d').date()
+                    self.license_config = {
+                        'expiry_date': self.DEFAULT_EXPIRY_DATE,
+                        'created_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                        'software_version': '1.0.0'
+                    }
+                    self.save_config()
+                    logging.info(f"New license created with expiry date: {self.expiry_date}")
         except Exception as e:
             logging.error(f"Error loading license config: {str(e)}")
             # Fallback to default
             self.expiry_date = datetime.strptime(self.DEFAULT_EXPIRY_DATE, '%Y-%m-%d').date()
     
     def save_config(self):
-        """Save license config to file."""
+        """
+        Save license config to file.
+        Only works in development mode - bundled exe cannot modify license.
+        """
+        # Prevent saving when running as bundled exe
+        if self._is_running_as_exe():
+            logging.warning("Cannot save license config when running as bundled executable")
+            return
+            
         try:
             with open(self.CONFIG_FILE, 'w', encoding='utf-8') as f:
                 json.dump(self.license_config, f, indent=4)
@@ -73,6 +113,7 @@ class LicenseManager:
     def set_expiry_date(self, expiry_date_str):
         """
         Set a new expiry date for the software.
+        Only works in development mode - bundled exe cannot modify license.
         
         Args:
             expiry_date_str (str): Expiry date in YYYY-MM-DD format
@@ -80,6 +121,11 @@ class LicenseManager:
         Returns:
             bool: True if successful, False otherwise
         """
+        # Prevent modification when running as bundled exe
+        if self._is_running_as_exe():
+            logging.warning("Cannot modify expiry date when running as bundled executable")
+            return False
+            
         try:
             expiry_date = datetime.strptime(expiry_date_str, '%Y-%m-%d').date()
             self.expiry_date = expiry_date
