@@ -1263,31 +1263,31 @@ class FBRChecker:
                 self._random_delay(0.5, 1.0)
                 
                 ####################################################################################
-                # Step 8: Click the Claim button
-                # logging.info("STEP 8: Clicking Claim button...")
+                # Step 8: Click the EXACT "Claim" button (not "Claim in PRA/KPRA/BRA/SRB")
+                logging.info("STEP 8: Clicking Claim button (exact match only)...")
                 
-                # claim_button = None
+                claim_button = None
                 # claim_button_selectors = [
-                #     # Strategy 1: Partial ID match - loadAnnexAform with dynamic j_idt + Claim text
-                #     (By.XPATH, "//button[contains(@id, 'loadAnnexAform:j_idt') and .//span[normalize-space(text())='Claim']]"),
+                #     # Strategy 1: EXACT text match - span must contain ONLY "Claim" (no other text)
+                #     (By.XPATH, "//button[contains(@id, 'loadAnnexAform:j_idt') and .//span[normalize-space(text())='Claim' and not(contains(text(), ' in '))]]"),
                     
-                #     # Strategy 2: Button with calculate class and Claim text
-                #     (By.XPATH, "//button[contains(@class, 'calculate') and .//span[contains(text(), 'Claim')]]"),
+                #     # Strategy 2: EXACT text match with button in loadAnnexAform context
+                #     (By.XPATH, "//button[contains(@id, 'correspondenceTabs:loadAnnexAform:j_idt')]//span[text()='Claim' and string-length(normalize-space())=5]"),
                     
-                #     # Strategy 3: Form-scoped Claim button
-                #     (By.XPATH, "//form[contains(@id, 'loadAnnexAform')]//button[@type='submit' and contains(@class, 'ui-button')]//span[contains(text(), 'Claim')]"),
+                #     # Strategy 3: Form-scoped button where span text equals exactly "Claim"
+                #     (By.XPATH, "//form[contains(@id, 'loadAnnexAform')]//button[@type='submit' and contains(@class, 'ui-button')]//span[text()='Claim' and not(contains(text(), 'in'))]"),
                     
-                #     # Strategy 4: Button with Claim text in loadAnnexAform context
-                #     (By.XPATH, "//button[contains(@id, 'correspondenceTabs:loadAnnexAform:j_idt')]//span[text()='Claim']"),
+                #     # Strategy 4: Button with calculate class and EXACT "Claim" text (5 characters only)
+                #     (By.XPATH, "//button[contains(@class, 'calculate') and .//span[text()='Claim' and string-length(text())=5]]"),
                     
-                #     # Strategy 5: Any button with Claim span text
-                #     (By.XPATH, "//button[contains(@id, 'loadAnnexAform') and .//span[contains(text(), 'Claim')]]"),
+                #     # Strategy 5: Any button with span containing ONLY "Claim" word
+                #     (By.XPATH, "//button[contains(@id, 'loadAnnexAform') and .//span[normalize-space()='Claim']]"),
                     
-                #     # Strategy 6: CSS selector with partial ID matching
+                #     # Strategy 6: CSS selector with partial ID matching and calculate class
                 #     (By.CSS_SELECTOR, "button[id*='loadAnnexAform'][id*='j_idt'].calculate"),
                     
-                #     # Strategy 7: Generic - any button with Claim text in the form
-                #     (By.XPATH, "//form[contains(@id, 'loadAnnexAform')]//button[contains(., 'Claim')]"),
+                #     # Strategy 7: Button where the span text matches exactly "Claim" (case-sensitive)
+                #     (By.XPATH, "//form[contains(@id, 'loadAnnexAform')]//button//span[.='Claim']"),
                 # ]
                 
                 # for by_type, selector in claim_button_selectors:
@@ -1297,12 +1297,14 @@ class FBRChecker:
                 #             EC.presence_of_element_located((by_type, selector))
                 #         )
                         
-                #         # Verify element is actually visible and enabled
-                #         if claim_button.is_displayed() and claim_button.is_enabled():
-                #             logging.info(f"✓ Found Claim button using selector: {selector}")
+                #         # CRITICAL: Verify the button text is EXACTLY "Claim" (not "Claim in PRA", etc.)
+                #         button_text = claim_button.text.strip()
+                #         if button_text == "Claim" and claim_button.is_displayed() and claim_button.is_enabled():
+                #             logging.info(f"✓ Found EXACT 'Claim' button using selector: {selector}")
+                #             logging.info(f"  Button text verified: '{button_text}'")
                 #             break
                 #         else:
-                #             logging.debug(f"Element found but not interactable with selector: {selector}")
+                #             logging.debug(f"Button text mismatch: '{button_text}' (expected 'Claim') or not interactable")
                 #             claim_button = None
                             
                 #     except (TimeoutException, NoSuchElementException) as e:
@@ -1312,9 +1314,9 @@ class FBRChecker:
                 #         logging.debug(f"Unexpected error with selector {selector}: {str(e)}")
                 #         continue
                 
-                # # Fallback: Use JavaScript to find Claim button if all selectors fail
+                # # Fallback: Use JavaScript to find EXACT "Claim" button if all selectors fail
                 # if not claim_button:
-                #     logging.warning("All selectors failed, trying JavaScript fallback...")
+                #     logging.warning("All selectors failed, trying JavaScript fallback for EXACT 'Claim' button...")
                 #     try:
                 #         claim_button = self.driver.execute_script("""
                 #             // Find form containing 'loadAnnexAform' in ID
@@ -1325,19 +1327,27 @@ class FBRChecker:
                 #             var buttons = form.querySelectorAll('button');
                 #             for (var i = 0; i < buttons.length; i++) {
                 #                 var btn = buttons[i];
-                #                 // Check if button contains "Claim" text
-                #                 if (btn.textContent.includes('Claim') && 
+                #                 var btnText = btn.textContent.trim();
+                                
+                #                 // CRITICAL: Check if button text is EXACTLY "Claim" (not "Claim in PRA", etc.)
+                #                 if (btnText === 'Claim' && 
                 #                     btn.offsetParent !== null && // visible
                 #                     !btn.disabled) { // enabled
                 #                     return btn;
                 #                 }
                 #             }
                             
-                #             // Fallback: Find button with calculate class
-                #             var calcButtons = form.querySelectorAll('button.calculate');
-                #             for (var i = 0; i < calcButtons.length; i++) {
-                #                 if (calcButtons[i].offsetParent !== null && !calcButtons[i].disabled) {
-                #                     return calcButtons[i];
+                #             // Alternative: Check button span text specifically
+                #             var spans = form.querySelectorAll('button span');
+                #             for (var i = 0; i < spans.length; i++) {
+                #                 var span = spans[i];
+                #                 var spanText = span.textContent.trim();
+                                
+                #                 if (spanText === 'Claim' && spanText.length === 5) { // Exactly 5 characters
+                #                     var parentBtn = span.closest('button');
+                #                     if (parentBtn && parentBtn.offsetParent !== null && !parentBtn.disabled) {
+                #                         return parentBtn;
+                #                     }
                 #                 }
                 #             }
                             
@@ -1345,121 +1355,130 @@ class FBRChecker:
                 #         """)
                         
                 #         if claim_button:
-                #             logging.info("✓ Found Claim button using JavaScript fallback")
+                #             button_text = claim_button.text.strip()
+                #             logging.info(f"✓ Found 'Claim' button using JavaScript fallback")
+                #             logging.info(f"  Button text verified: '{button_text}'")
                         
                 #     except Exception as js_error:
                 #         logging.error(f"JavaScript fallback also failed: {str(js_error)}")
                 
                 # if not claim_button:
-                #     logging.error("STEP 8 FAILED: Claim button not found after trying all strategies")
+                #     logging.error("STEP 8 FAILED: EXACT 'Claim' button not found after trying all strategies")
                 #     return {
                 #         'status': '⚠️ Error - Claim button not found',
                 #         'value_of_purchases': value_of_purchases
                 #     }
                 
+                # # Final verification: Ensure button text is exactly "Claim"
+                # final_button_text = claim_button.text.strip()
+                # if final_button_text != "Claim":
+                #     logging.error(f"STEP 8 FAILED: Button text is '{final_button_text}', expected 'Claim'")
+                #     return {
+                #         'status': '⚠️ Error - Wrong button found',
+                #         'value_of_purchases': value_of_purchases
+                #     }
+                
                 # # Human-like click on Claim button
                 # self._human_like_click(claim_button)
-                # logging.info("✓ STEP 8: Claim button clicked, waiting for success message...")
+                # logging.info("✓ STEP 8: EXACT 'Claim' button clicked, waiting for success message...")
                 # self._random_delay(1.0, 2.0)
                 
                 ####################################################################################
 
                 # Step 9: Wait for success message
-                # logging.info("STEP 9: Waiting for 'Purchase Invoice(s) loaded Successfully' message...")
+                logging.info("STEP 9: Waiting for 'Purchase Invoice(s) loaded Successfully' message...")
                 
-                # success_message_found = False
-                # success_wait = WebDriverWait(self.driver, 10)
+                success_message_found = False
+                success_wait = WebDriverWait(self.driver, 10)
                 
-                # try:
-                #     # Look for the success message in the growl notification
-                #     success_selectors = [
-                #         # Strategy 1: Growl title with exact text
-                #         (By.XPATH, "//span[@class='ui-growl-title' and contains(text(), 'Purchase Invoice(s) loaded Successfully')]"),
+                try:
+                    # Look for the success message in the growl notification
+                    success_selectors = [
+                        # Strategy 1: Growl title with exact text
+                        (By.XPATH, "//span[@class='ui-growl-title' and contains(text(), 'Purchase Invoice(s) loaded Successfully')]"),
                         
-                #         # Strategy 2: Growl message containing success text
-                #         (By.XPATH, "//div[@class='ui-growl-message']//span[contains(text(), 'loaded Successfully')]"),
+                        # Strategy 2: Growl message containing success text
+                        (By.XPATH, "//div[@class='ui-growl-message']//span[contains(text(), 'loaded Successfully')]"),
                         
-                #         # Strategy 3: Any growl item with success info icon
-                #         (By.XPATH, "//div[@class='ui-growl-item']//span[@class='ui-growl-image ui-growl-image-info']"),
+                        # Strategy 3: Any growl item with success info icon
+                        (By.XPATH, "//div[@class='ui-growl-item']//span[@class='ui-growl-image ui-growl-image-info']"),
                         
-                #         # Strategy 4: Generic growl title
-                #         (By.XPATH, "//span[@class='ui-growl-title']"),
+                        # Strategy 4: Generic growl title
+                        (By.XPATH, "//span[@class='ui-growl-title']"),
                         
-                #         # Strategy 5: CSS selector for growl success
-                #         (By.CSS_SELECTOR, ".ui-growl-title"),
-                #     ]
+                        # Strategy 5: CSS selector for growl success
+                        (By.CSS_SELECTOR, ".ui-growl-title"),
+                    ]
                     
-                #     for by_type, selector in success_selectors:
-                #         try:
-                #             success_element = success_wait.until(
-                #                 EC.visibility_of_element_located((by_type, selector))
-                #             )
+                    for by_type, selector in success_selectors:
+                        try:
+                            success_element = success_wait.until(
+                                EC.visibility_of_element_located((by_type, selector))
+                            )
                             
-                #             if success_element:
-                #                 success_text = success_element.text
-                #                 logging.info(f"✓ Found success message: {success_text}")
+                            if success_element:
+                                success_text = success_element.text
+                                logging.info(f"✓ Found success message: {success_text}")
                                 
-                #                 # Check if it's the expected success message
-                #                 if 'loaded Successfully' in success_text or 'Success' in success_text:
-                #                     success_message_found = True
-                #                     logging.info("✓ STEP 9 COMPLETED: Purchase Invoice(s) loaded Successfully!")
-                #                     break
+                                # Check if it's the expected success message
+                                if 'loaded Successfully' in success_text or 'Success' in success_text:
+                                    success_message_found = True
+                                    logging.info("✓ STEP 9 COMPLETED: Purchase Invoice(s) loaded Successfully!")
+                                    break
                                 
-                #         except TimeoutException:
-                #             continue
-                #         except Exception as e:
-                #             logging.debug(f"Error checking success message with selector {selector}: {str(e)}")
-                #             continue
+                        except TimeoutException:
+                            continue
+                        except Exception as e:
+                            logging.debug(f"Error checking success message with selector {selector}: {str(e)}")
+                            continue
                     
-                #     # If no success message found with selectors, try JavaScript
-                #     if not success_message_found:
-                #         logging.info("Trying JavaScript fallback for success message...")
-                #         try:
-                #             success_text = self.driver.execute_script("""
-                #                 // Look for growl notification
-                #                 var growlTitle = document.querySelector('.ui-growl-title');
-                #                 if (growlTitle) {
-                #                     return growlTitle.textContent;
-                #                 }
+                    # If no success message found with selectors, try JavaScript
+                    if not success_message_found:
+                        logging.info("Trying JavaScript fallback for success message...")
+                        try:
+                            success_text = self.driver.execute_script("""
+                                // Look for growl notification
+                                var growlTitle = document.querySelector('.ui-growl-title');
+                                if (growlTitle) {
+                                    return growlTitle.textContent;
+                                }
                                 
-                #                 // Alternative: Check for any growl message
-                #                 var growlMessages = document.querySelectorAll('.ui-growl-message');
-                #                 if (growlMessages && growlMessages.length > 0) {
-                #                     return growlMessages[0].textContent;
-                #                 }
+                                // Alternative: Check for any growl message
+                                var growlMessages = document.querySelectorAll('.ui-growl-message');
+                                if (growlMessages && growlMessages.length > 0) {
+                                    return growlMessages[0].textContent;
+                                }
                                 
-                #                 return null;
-                #             """)
+                                return null;
+                            """)
                             
-                #             if success_text and ('loaded Successfully' in success_text or 'Success' in success_text):
-                #                 success_message_found = True
-                #                 logging.info(f"✓ STEP 9 COMPLETED (JS): {success_text}")
+                            if success_text and ('loaded Successfully' in success_text or 'Success' in success_text):
+                                success_message_found = True
+                                logging.info(f"✓ STEP 9 COMPLETED (JS): {success_text}")
                             
-                #         except Exception as js_error:
-                #             logging.warning(f"JavaScript fallback for success message failed: {str(js_error)}")
+                        except Exception as js_error:
+                            logging.warning(f"JavaScript fallback for success message failed: {str(js_error)}")
                 
-                # except TimeoutException:
-                #     logging.warning("STEP 9: Timeout waiting for success message, but proceeding...")
-                # except Exception as e:
-                #     logging.warning(f"STEP 9: Error waiting for success message: {str(e)}")
+                except TimeoutException:
+                    logging.warning("STEP 9: Timeout waiting for success message, but proceeding...")
+                except Exception as e:
+                    logging.warning(f"STEP 9: Error waiting for success message: {str(e)}")
                 
-                # # Determine final status
-                # if success_message_found:
-                #     final_status = '✓ Claimed - After Success Message'
-                #     logging.info("=" * 60)
-                #     logging.info("SUCCESS: Invoice claimed successfully!")
-                #     logging.info("=" * 60)
-                # else:
-                #     final_status = '⚠️ Claim attempted (verification pending)'
-                #     logging.warning("Claim button clicked but success message not confirmed")
+                # Determine final status
+                if success_message_found:
+                    final_status = '✓ Claimed - After Success Message'
+                    logging.info("=" * 60)
+                    logging.info("SUCCESS: Invoice claimed successfully!")
+                    logging.info("=" * 60)
+                else:
+                    final_status = '⚠️ Claim attempted (verification pending)'
+                    logging.warning("Claim button clicked but success message not confirmed")
 
-
-                    ####################################################################################
+                ####################################################################################
                 
                 # Return both status and the value
                 return {
-                    'status': "Processed",
-                    #'status': final_status,
+                    'status': final_status,
                     'value_of_purchases': value_of_purchases
                 }
                 
