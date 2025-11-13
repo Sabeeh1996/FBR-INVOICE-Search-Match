@@ -46,12 +46,22 @@ def build_exe():
     
     try:
         PyInstaller.__main__.run(args)
+        
+        # Clean up: Remove license_config.json from dist if it was copied there
+        dist_license = os.path.join(dist_dir, "license_config.json")
+        if os.path.exists(dist_license):
+            os.remove(dist_license)
+            print(f"🗑️  Removed standalone license file from dist (bundled in exe)")
+        
         print("\n✅ Build successful!")
         print(f"📦 Executable location: {dist_dir}\\FBR Invoice Checker Bot.exe")
         print("\n📋 Next steps:")
         print("1. The executable is in the 'dist' folder")
         print("2. You can move it anywhere or create a shortcut")
         print("3. Run it just like any other Windows application")
+        print("\n🔒 Security:")
+        print("- License config is bundled INSIDE the .exe (not modifiable by users)")
+        print("- Users cannot change the expiry date")
         
     except Exception as e:
         print(f"\n❌ Build failed: {str(e)}")
