@@ -16,10 +16,10 @@ class LicenseManager:
     """
     
     # Default expiry date - can be set to any future date
-    DEFAULT_EXPIRY_DATE = "2025-11-25"  # YYYY-MM-DD format
+    DEFAULT_EXPIRY_DATE = "2025-11-30"  # YYYY-MM-DD format
     
     # Days before expiry to show warning
-    EARLY_WARNING_DAYS = 30
+    EARLY_WARNING_DAYS = 15
     
     # Days before expiry to show critical warning
     CRITICAL_WARNING_DAYS = 7
@@ -140,13 +140,16 @@ class LicenseManager:
             status_level = 'OK'
             message = f"✓ Software active. Expires in {days_remaining} days ({self.expiry_date})"
         
+        # Show notification only for WARNING, CRITICAL, and EXPIRED statuses
+        should_show_warning = status_level in ['WARNING', 'CRITICAL', 'EXPIRED']
+        
         return {
             'is_expired': days_remaining < 0,
             'days_remaining': days_remaining,
             'status_level': status_level,
             'message': message,
             'expiry_date': str(self.expiry_date),
-            'should_show_warning': days_remaining <= self.EARLY_WARNING_DAYS
+            'should_show_warning': should_show_warning
         }
     
     def get_expiry_info_text(self):
