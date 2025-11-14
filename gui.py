@@ -467,18 +467,20 @@ class FBRInvoiceCheckerGUI:
                 seller_name = invoice_data.get('seller_name', 'N/A')
                 number = invoice_data.get('number', 'N/A')
                 date = invoice_data.get('date', 'N/A')
+                sales_tax_fed_st_mode = invoice_data.get('sales_tax_fed_st_mode', 'N/A')
                 
                 # Display record details in live logs (table format)
-                self.log_message(f"� RECORD #{self.processed_count + 1}")
+                self.log_message(f"📋 RECORD #{self.processed_count + 1}")
                 self.log_message(f"   Row: {row_number} | Sr.No: {sr_no}")
                 self.log_message(f"   Source: {source_auth} | Name: {seller_name}")
                 self.log_message(f"   Registration No: {registration_no}")
                 self.log_message(f"   Number: {number} | Date: {date}")
+                self.log_message(f"   Sales Tax/FED in ST Mode: {sales_tax_fed_st_mode}")
                 
-                # Verify invoice with source authority, invoice number, and date from Excel
+                # Verify invoice with source authority, invoice number, date, and sales tax from Excel
                 self.log_message(f"🔍 Verifying on FBR portal...")
                 try:
-                    result = fbr_checker.verify_invoice(registration_no, source_authority=source_auth, invoice_no_field=number, date_field=date)
+                    result = fbr_checker.verify_invoice(registration_no, source_authority=source_auth, invoice_no_field=number, date_field=date, sales_tax_fed_st_mode=sales_tax_fed_st_mode)
                     
                     # Handle both dict and string return types for backwards compatibility
                     if isinstance(result, dict):

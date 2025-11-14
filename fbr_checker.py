@@ -629,7 +629,7 @@ class FBRChecker:
             return False
         
     
-    def verify_invoice(self, invoice_number, source_authority=None, invoice_no_field=None, date_field=None):
+    def verify_invoice(self, invoice_number, source_authority=None, invoice_no_field=None, date_field=None, sales_tax_fed_st_mode=None):
         """
         Verify a single invoice number on the FBR portal.
         
@@ -638,9 +638,10 @@ class FBRChecker:
             source_authority (str): Source Authority value (e.g., 'FBR', 'BRA', 'KPRA', 'PRA', 'SRB')
             invoice_no_field (str): Invoice number from 'Number' column in Excel
             date_field (str): Date from 'Date' column in Excel (will be used for both From and To dates)
+            sales_tax_fed_st_mode (str): Sales Tax/FED in ST Mode value from Excel to match with FBR data
             
         Returns:
-            str: Status - "Claimed", "Not Claimed", or "Error"
+            dict: Status and details including matched row information
         """
         try:
             # Check if browser is still alive before proceeding
@@ -1146,8 +1147,8 @@ class FBRChecker:
             # Small delay for human-like behavior
             self._random_delay(0.25, 0.5)
             
-            # Step 6: Click the checkbox in the results table if results found
-            logging.info("STEP 6: Looking for checkbox in results table...")
+            # Step 6: Find and click the checkbox for the row matching Sales Tax/FED in ST Mode
+            logging.info("STEP 6: Looking for matching row in results table...")
             try:
                 # Wait for the results table data to be fully loaded
                 checkbox_wait = WebDriverWait(self.driver, 60)
@@ -1163,104 +1164,188 @@ class FBRChecker:
                     """)
                 )
                 
-                # Multiple selector strategies for the checkbox with dynamic ID support
-                checkbox_selectors = [
-                    # Strategy 1: Partial ID match - purchaseInvoiceTable with dynamic j_idt
-                    (By.XPATH, "//div[contains(@id, 'purchaseInvoiceTable:j_idt')]//div[contains(@class, 'ui-chkbox-box')]"),
-                    
-                    # Strategy 2: First checkbox with ui-chkbox class in the table
-                    (By.XPATH, "//table[contains(@id, 'purchaseInvoiceTable')]//div[contains(@class, 'ui-chkbox')]"),
-                    
-                    # Strategy 3: Checkbox input within table row (first row)
-                    (By.XPATH, "//table[contains(@id, 'purchaseInvoiceTable')]//tbody//tr[1]//div[contains(@class, 'ui-chkbox-box')]"),
-                    
-                    # Strategy 4: Any checkbox div with ui-chkbox-box in table context
-                    (By.XPATH, "//div[contains(@id, 'purchaseInvoiceTable')]//div[contains(@class, 'ui-chkbox-box')]"),
-                    
-                    # Strategy 5: Checkbox with input element inside table
-                    (By.XPATH, "//table[contains(@id, 'purchaseInvoiceTable')]//input[contains(@id, 'j_idt') and @type='checkbox']/preceding-sibling::div[contains(@class, 'ui-chkbox-box')]"),
-                    
-                    # Strategy 6: Generic - first visible checkbox in table
-                    (By.XPATH, "//table[contains(@id, 'purchaseInvoiceTable')]//div[contains(@class, 'ui-chkbox-box')][1]"),
-                    
-                    # Strategy 7: CSS selector with partial attribute matching
-                    (By.CSS_SELECTOR, "div[id*='purchaseInvoiceTable'][id*='j_idt'] .ui-chkbox-box"),
-                    
-                    # Strategy 8: Checkbox in loadAnnexAform table context
-                    (By.XPATH, "//form[contains(@id, 'loadAnnexAform')]//table[contains(@id, 'purchaseInvoiceTable')]//div[contains(@class, 'ui-chkbox-box')]"),
-                ]
+                # Step 6.1: If sales_tax_fed_st_mode is provided, find matching row
+                matching_checkbox = None
                 
-                checkbox_element = None
-                for by_type, selector in checkbox_selectors:
-                    try:
-                        # Try to find the element with shorter timeout for faster fallback
-                        checkbox_element = checkbox_wait.until(EC.visibility_of_element_located((by_type, selector)))
+                if sales_tax_fed_st_mode:
+                    logging.info(f"STEP 6.1: Searching for row with Sales Tax/FED in ST Mode = '{sales_tax_fed_st_mode}'...")
+                    
+                    # Use JavaScript to find all rows and match the Sales Tax/FED in ST Mode column
+                    matching_checkbox = self.driver.execute_script("""
+                        var sales_tax_value = arguments[0];
+                        var table = document.getElementById('correspondenceTabs:loadAnnexAform:purchaseInvoiceTable');
+                        if (!table) {
+                            console.log('Table not found');
+                            return null;
+                        }
                         
-                        # Verify element is actually clickable
-                        checkbox_element = checkbox_wait.until(EC.element_to_be_clickable((by_type, selector)))
-                        logging.info(f"✓ Found checkbox using selector: {selector}")
-                        break
+                        var rows = table.querySelectorAll('tbody tr');
+                        console.log('Total rows found: ' + rows.length);
                         
-                    except (TimeoutException, NoSuchElementException) as e:
-                        logging.debug(f"Selector failed: {selector} - {type(e).__name__}")
-                        continue
-                    except Exception as e:
-                        logging.debug(f"Unexpected error with selector {selector}: {str(e)}")
-                        continue
-                
-                # Fallback: Use JavaScript to find checkbox if all selectors fail
-                if not checkbox_element:
-                    logging.warning("All selectors failed, trying JavaScript fallback...")
-                    try:
-                        checkbox_element = self.driver.execute_script("""
-                            // Find the purchase invoice table
-                            var table = document.querySelector('table[id*="purchaseInvoiceTable"]');
-                            if (!table) return null;
+                        if (!rows || rows.length === 0) {
+                            console.log('No rows found in table body');
+                            return null;
+                        }
+                        
+                        // Get all header cells to find the column index for Sales Tax/FED in ST Mode
+                        var headers = table.querySelectorAll('thead th');
+                        var sales_tax_col_index = -1;
+                        
+                        for (var h = 0; h < headers.length; h++) {
+                            var headerText = headers[h].innerText.trim();
+                            console.log('Header ' + h + ': ' + headerText);
                             
-                            // Find first checkbox in the table
-                            var checkboxDiv = table.querySelector('div[class*="ui-chkbox-box"]');
-                            if (checkboxDiv && checkboxDiv.offsetParent !== null) {
-                                return checkboxDiv;
+                            // Match "Sales Tax/ FED in ST Mode" or similar variations
+                            if (headerText.includes('Sales Tax') && headerText.includes('ST Mode')) {
+                                sales_tax_col_index = h;
+                                console.log('Found Sales Tax column at index: ' + sales_tax_col_index);
+                                break;
                             }
-                            
-                            // Alternative: Find input checkbox and its wrapper
-                            var checkboxInput = table.querySelector('input[type="checkbox"]');
-                            if (checkboxInput) {
-                                var wrapper = checkboxInput.closest('div[class*="ui-chkbox"]');
-                                if (wrapper) {
-                                    var checkBox = wrapper.querySelector('div[class*="ui-chkbox-box"]');
-                                    if (checkBox && checkBox.offsetParent !== null) {
-                                        return checkBox;
+                        }
+                        
+                        if (sales_tax_col_index === -1) {
+                            console.log('Sales Tax/FED in ST Mode column not found');
+                            return null;
+                        }
+                        
+                        // Iterate through rows to find matching value
+                        for (var i = 0; i < rows.length; i++) {
+                            var cells = rows[i].querySelectorAll('td');
+                            if (cells && cells.length > sales_tax_col_index) {
+                                var cellValue = cells[sales_tax_col_index].innerText.trim();
+                                console.log('Row ' + i + ' Sales Tax value: ' + cellValue + ' (looking for: ' + sales_tax_value + ')');
+                                
+                                // Compare values (remove commas and spaces for comparison)
+                                var cellValueClean = cellValue.replace(/,/g, '').replace(/\\s+/g, '');
+                                var searchValueClean = sales_tax_value.replace(/,/g, '').replace(/\\s+/g, '');
+                                
+                                if (cellValueClean === searchValueClean) {
+                                    console.log('MATCH FOUND at row ' + i);
+                                    
+                                    // Find and return the checkbox in this row
+                                    var checkbox = rows[i].querySelector('div[class*="ui-chkbox-box"]');
+                                    if (checkbox && checkbox.offsetParent !== null) {
+                                        return checkbox;
                                     }
                                 }
                             }
-                            
-                            // Last resort: Find any visible checkbox element
-                            var allCheckboxes = table.querySelectorAll('div[class*="ui-chkbox-box"]');
-                            for (var i = 0; i < allCheckboxes.length; i++) {
-                                if (allCheckboxes[i].offsetParent !== null) {
-                                    return allCheckboxes[i];
-                                }
-                            }
-                            
-                            return null;
-                        """)
+                        }
                         
-                        if checkbox_element:
-                            logging.info("✓ Found checkbox using JavaScript fallback")
-                        
-                    except Exception as js_error:
-                        logging.error(f"JavaScript fallback also failed: {str(js_error)}")
+                        console.log('No matching row found');
+                        return null;
+                    """, str(sales_tax_fed_st_mode))
+                    
+                    if matching_checkbox:
+                        logging.info(f"✓ Found matching row for Sales Tax/FED in ST Mode = '{sales_tax_fed_st_mode}'")
+                    else:
+                        logging.warning(f"No row found matching Sales Tax/FED in ST Mode = '{sales_tax_fed_st_mode}', checking for default row...")
+                        # If no match found, fall back to first checkbox
+                        matching_checkbox = None
+                else:
+                    logging.info("STEP 6.1: No Sales Tax/FED value provided, using first row...")
                 
-                if not checkbox_element:
+                # If no matching checkbox found or no sales_tax value provided, use first checkbox
+                if not matching_checkbox:
+                    logging.info("STEP 6.2: Using first available checkbox in results table...")
+                    
+                    checkbox_selectors = [
+                        # Strategy 1: Partial ID match - purchaseInvoiceTable with dynamic j_idt
+                        (By.XPATH, "//div[contains(@id, 'purchaseInvoiceTable:j_idt')]//div[contains(@class, 'ui-chkbox-box')]"),
+                        
+                        # Strategy 2: First checkbox with ui-chkbox class in the table
+                        (By.XPATH, "//table[contains(@id, 'purchaseInvoiceTable')]//div[contains(@class, 'ui-chkbox')]"),
+                        
+                        # Strategy 3: Checkbox input within table row (first row)
+                        (By.XPATH, "//table[contains(@id, 'purchaseInvoiceTable')]//tbody//tr[1]//div[contains(@class, 'ui-chkbox-box')]"),
+                        
+                        # Strategy 4: Any checkbox div with ui-chkbox-box in table context
+                        (By.XPATH, "//div[contains(@id, 'purchaseInvoiceTable')]//div[contains(@class, 'ui-chkbox-box')]"),
+                        
+                        # Strategy 5: Checkbox with input element inside table
+                        (By.XPATH, "//table[contains(@id, 'purchaseInvoiceTable')]//input[contains(@id, 'j_idt') and @type='checkbox']/preceding-sibling::div[contains(@class, 'ui-chkbox-box')]"),
+                        
+                        # Strategy 6: Generic - first visible checkbox in table
+                        (By.XPATH, "//table[contains(@id, 'purchaseInvoiceTable')]//div[contains(@class, 'ui-chkbox-box')][1]"),
+                        
+                        # Strategy 7: CSS selector with partial attribute matching
+                        (By.CSS_SELECTOR, "div[id*='purchaseInvoiceTable'][id*='j_idt'] .ui-chkbox-box"),
+                        
+                        # Strategy 8: Checkbox in loadAnnexAform table context
+                        (By.XPATH, "//form[contains(@id, 'loadAnnexAform')]//table[contains(@id, 'purchaseInvoiceTable')]//div[contains(@class, 'ui-chkbox-box')]"),
+                    ]
+                    
+                    checkbox_element = None
+                    for by_type, selector in checkbox_selectors:
+                        try:
+                            # Try to find the element with shorter timeout for faster fallback
+                            checkbox_element = checkbox_wait.until(EC.visibility_of_element_located((by_type, selector)))
+                            
+                            # Verify element is actually clickable
+                            checkbox_element = checkbox_wait.until(EC.element_to_be_clickable((by_type, selector)))
+                            logging.info(f"✓ Found checkbox using selector: {selector}")
+                            matching_checkbox = checkbox_element
+                            break
+                            
+                        except (TimeoutException, NoSuchElementException) as e:
+                            logging.debug(f"Selector failed: {selector} - {type(e).__name__}")
+                            continue
+                        except Exception as e:
+                            logging.debug(f"Unexpected error with selector {selector}: {str(e)}")
+                            continue
+                    
+                    # Fallback: Use JavaScript to find checkbox if all selectors fail
+                    if not checkbox_element:
+                        logging.warning("All selectors failed, trying JavaScript fallback...")
+                        try:
+                            matching_checkbox = self.driver.execute_script("""
+                                // Find the purchase invoice table
+                                var table = document.querySelector('table[id*="purchaseInvoiceTable"]');
+                                if (!table) return null;
+                                
+                                // Find first checkbox in the table
+                                var checkboxDiv = table.querySelector('div[class*="ui-chkbox-box"]');
+                                if (checkboxDiv && checkboxDiv.offsetParent !== null) {
+                                    return checkboxDiv;
+                                }
+                                
+                                // Alternative: Find input checkbox and its wrapper
+                                var checkboxInput = table.querySelector('input[type="checkbox"]');
+                                if (checkboxInput) {
+                                    var wrapper = checkboxInput.closest('div[class*="ui-chkbox"]');
+                                    if (wrapper) {
+                                        var checkBox = wrapper.querySelector('div[class*="ui-chkbox-box"]');
+                                        if (checkBox && checkBox.offsetParent !== null) {
+                                            return checkBox;
+                                        }
+                                    }
+                                }
+                                
+                                // Last resort: Find any visible checkbox element
+                                var allCheckboxes = table.querySelectorAll('div[class*="ui-chkbox-box"]');
+                                for (var i = 0; i < allCheckboxes.length; i++) {
+                                    if (allCheckboxes[i].offsetParent !== null) {
+                                        return allCheckboxes[i];
+                                    }
+                                }
+                                
+                                return null;
+                            """)
+                            
+                            if matching_checkbox:
+                                logging.info("✓ Found checkbox using JavaScript fallback")
+                            
+                        except Exception as js_error:
+                            logging.error(f"JavaScript fallback also failed: {str(js_error)}")
+                
+                if not matching_checkbox:
                     logging.error("STEP 6 FAILED: Checkbox not found in results table after trying all strategies")
                     return {
-                        'status': '⚠️ No results',
+                        'status': '⚠️ No matching row found',
                         'value_of_purchases': 'N/A'
                     }
                 
-                # Human-like click on the checkbox
-                self._human_like_click(checkbox_element)
+                # Human-like click on the matching checkbox
+                self._human_like_click(matching_checkbox)
                 self._random_delay(0.25, 0.5)
                 
                 # Verify checkbox was clicked by checking its state
@@ -1272,7 +1357,10 @@ class FBRChecker:
                 if not checkbox_checked:
                     logging.warning("STEP 6: Checkbox state not confirmed as checked, but proceeding...")
                 
-                logging.info("✓ STEP 6 COMPLETED: Checkbox clicked in results table")
+                if sales_tax_fed_st_mode:
+                    logging.info(f"✓ STEP 6 COMPLETED: Checkbox clicked for matching row (Sales Tax/FED = '{sales_tax_fed_st_mode}')")
+                else:
+                    logging.info("✓ STEP 6 COMPLETED: Checkbox clicked in results table")
                 self._random_delay(0.25, 0.5)
                 
                 # Step 7: Extract "Value of Purchases" from the table
@@ -1546,122 +1634,122 @@ class FBRChecker:
                 # Step 8.1: Click the EXACT "Claim" button (not "Claim in PRA/KPRA/BRA/SRB")
                 logging.info("STEP 8.1: Clicking Claim button (exact match only)...")
                 
-                claim_button = None
-                claim_button_selectors = [
-                    # Strategy 1: EXACT text match - span must contain ONLY "Claim" (no other text)
-                    (By.XPATH, "//button[contains(@id, 'loadAnnexAform:j_idt') and .//span[normalize-space(text())='Claim' and not(contains(text(), ' in '))]]"),
+                # claim_button = None
+                # claim_button_selectors = [
+                #     # Strategy 1: EXACT text match - span must contain ONLY "Claim" (no other text)
+                #     (By.XPATH, "//button[contains(@id, 'loadAnnexAform:j_idt') and .//span[normalize-space(text())='Claim' and not(contains(text(), ' in '))]]"),
                     
-                    # Strategy 2: EXACT text match with button in loadAnnexAform context
-                    (By.XPATH, "//button[contains(@id, 'correspondenceTabs:loadAnnexAform:j_idt')]//span[text()='Claim' and string-length(normalize-space())=5]"),
+                #     # Strategy 2: EXACT text match with button in loadAnnexAform context
+                #     (By.XPATH, "//button[contains(@id, 'correspondenceTabs:loadAnnexAform:j_idt')]//span[text()='Claim' and string-length(normalize-space())=5]"),
                     
-                    # Strategy 3: Form-scoped button where span text equals exactly "Claim"
-                    (By.XPATH, "//form[contains(@id, 'loadAnnexAform')]//button[@type='submit' and contains(@class, 'ui-button')]//span[text()='Claim' and not(contains(text(), 'in'))]"),
+                #     # Strategy 3: Form-scoped button where span text equals exactly "Claim"
+                #     (By.XPATH, "//form[contains(@id, 'loadAnnexAform')]//button[@type='submit' and contains(@class, 'ui-button')]//span[text()='Claim' and not(contains(text(), 'in'))]"),
                     
-                    # Strategy 4: Button with calculate class and EXACT "Claim" text (5 characters only)
-                    (By.XPATH, "//button[contains(@class, 'calculate') and .//span[text()='Claim' and string-length(text())=5]]"),
+                #     # Strategy 4: Button with calculate class and EXACT "Claim" text (5 characters only)
+                #     (By.XPATH, "//button[contains(@class, 'calculate') and .//span[text()='Claim' and string-length(text())=5]]"),
                     
-                    # Strategy 5: Any button with span containing ONLY "Claim" word
-                    (By.XPATH, "//button[contains(@id, 'loadAnnexAform') and .//span[normalize-space()='Claim']]"),
+                #     # Strategy 5: Any button with span containing ONLY "Claim" word
+                #     (By.XPATH, "//button[contains(@id, 'loadAnnexAform') and .//span[normalize-space()='Claim']]"),
                     
-                    # Strategy 6: CSS selector with partial ID matching and calculate class
-                    (By.CSS_SELECTOR, "button[id*='loadAnnexAform'][id*='j_idt'].calculate"),
+                #     # Strategy 6: CSS selector with partial ID matching and calculate class
+                #     (By.CSS_SELECTOR, "button[id*='loadAnnexAform'][id*='j_idt'].calculate"),
                     
-                    # Strategy 7: Button where the span text matches exactly "Claim" (case-sensitive)
-                    (By.XPATH, "//form[contains(@id, 'loadAnnexAform')]//button//span[.='Claim']"),
-                ]
+                #     # Strategy 7: Button where the span text matches exactly "Claim" (case-sensitive)
+                #     (By.XPATH, "//form[contains(@id, 'loadAnnexAform')]//button//span[.='Claim']"),
+                # ]
                 
-                for by_type, selector in claim_button_selectors:
-                    try:
-                        # Try to find the element with shorter timeout for faster fallback
-                        claim_button = WebDriverWait(self.driver, 3).until(
-                            EC.presence_of_element_located((by_type, selector))
-                        )
+                # for by_type, selector in claim_button_selectors:
+                #     try:
+                #         # Try to find the element with shorter timeout for faster fallback
+                #         claim_button = WebDriverWait(self.driver, 3).until(
+                #             EC.presence_of_element_located((by_type, selector))
+                #         )
                         
-                        # CRITICAL: Verify the button text is EXACTLY "Claim" (not "Claim in PRA", etc.)
-                        button_text = claim_button.text.strip()
-                        if button_text == "Claim" and claim_button.is_displayed() and claim_button.is_enabled():
-                            logging.info(f"✓ Found EXACT 'Claim' button using selector: {selector}")
-                            logging.info(f"  Button text verified: '{button_text}'")
-                            break
-                        else:
-                            logging.debug(f"Button text mismatch: '{button_text}' (expected 'Claim') or not interactable")
-                            claim_button = None
+                #         # CRITICAL: Verify the button text is EXACTLY "Claim" (not "Claim in PRA", etc.)
+                #         button_text = claim_button.text.strip()
+                #         if button_text == "Claim" and claim_button.is_displayed() and claim_button.is_enabled():
+                #             logging.info(f"✓ Found EXACT 'Claim' button using selector: {selector}")
+                #             logging.info(f"  Button text verified: '{button_text}'")
+                #             break
+                #         else:
+                #             logging.debug(f"Button text mismatch: '{button_text}' (expected 'Claim') or not interactable")
+                #             claim_button = None
                             
-                    except (TimeoutException, NoSuchElementException) as e:
-                        logging.debug(f"Selector failed: {selector} - {type(e).__name__}")
-                        continue
-                    except Exception as e:
-                        logging.debug(f"Unexpected error with selector {selector}: {str(e)}")
-                        continue
+                #     except (TimeoutException, NoSuchElementException) as e:
+                #         logging.debug(f"Selector failed: {selector} - {type(e).__name__}")
+                #         continue
+                #     except Exception as e:
+                #         logging.debug(f"Unexpected error with selector {selector}: {str(e)}")
+                #         continue
                 
-                # Fallback: Use JavaScript to find EXACT "Claim" button if all selectors fail
-                if not claim_button:
-                    logging.warning("All selectors failed, trying JavaScript fallback for EXACT 'Claim' button...")
-                    try:
-                        claim_button = self.driver.execute_script("""
-                            // Find form containing 'loadAnnexAform' in ID
-                            var form = document.querySelector('form[id*="loadAnnexAform"]');
-                            if (!form) return null;
+                # # Fallback: Use JavaScript to find EXACT "Claim" button if all selectors fail
+                # if not claim_button:
+                #     logging.warning("All selectors failed, trying JavaScript fallback for EXACT 'Claim' button...")
+                #     try:
+                #         claim_button = self.driver.execute_script("""
+                #             // Find form containing 'loadAnnexAform' in ID
+                #             var form = document.querySelector('form[id*="loadAnnexAform"]');
+                #             if (!form) return null;
                             
-                            // Find all buttons in the form
-                            var buttons = form.querySelectorAll('button');
-                            for (var i = 0; i < buttons.length; i++) {
-                                var btn = buttons[i];
-                                var btnText = btn.textContent.trim();
+                #             // Find all buttons in the form
+                #             var buttons = form.querySelectorAll('button');
+                #             for (var i = 0; i < buttons.length; i++) {
+                #                 var btn = buttons[i];
+                #                 var btnText = btn.textContent.trim();
                                 
-                                // CRITICAL: Check if button text is EXACTLY "Claim" (not "Claim in PRA", etc.)
-                                if (btnText === 'Claim' && 
-                                    btn.offsetParent !== null && // visible
-                                    !btn.disabled) { // enabled
-                                    return btn;
-                                }
-                            }
+                #                 // CRITICAL: Check if button text is EXACTLY "Claim" (not "Claim in PRA", etc.)
+                #                 if (btnText === 'Claim' && 
+                #                     btn.offsetParent !== null && // visible
+                #                     !btn.disabled) { // enabled
+                #                     return btn;
+                #                 }
+                #             }
                             
-                            // Alternative: Check button span text specifically
-                            var spans = form.querySelectorAll('button span');
-                            for (var i = 0; i < spans.length; i++) {
-                                var span = spans[i];
-                                var spanText = span.textContent.trim();
+                #             // Alternative: Check button span text specifically
+                #             var spans = form.querySelectorAll('button span');
+                #             for (var i = 0; i < spans.length; i++) {
+                #                 var span = spans[i];
+                #                 var spanText = span.textContent.trim();
                                 
-                                if (spanText === 'Claim' && spanText.length === 5) { // Exactly 5 characters
-                                    var parentBtn = span.closest('button');
-                                    if (parentBtn && parentBtn.offsetParent !== null && !parentBtn.disabled) {
-                                        return parentBtn;
-                                    }
-                                }
-                            }
+                #                 if (spanText === 'Claim' && spanText.length === 5) { // Exactly 5 characters
+                #                     var parentBtn = span.closest('button');
+                #                     if (parentBtn && parentBtn.offsetParent !== null && !parentBtn.disabled) {
+                #                         return parentBtn;
+                #                     }
+                #                 }
+                #             }
                             
-                            return null;
-                        """)
+                #             return null;
+                #         """)
                         
-                        if claim_button:
-                            button_text = claim_button.text.strip()
-                            logging.info(f"✓ Found 'Claim' button using JavaScript fallback")
-                            logging.info(f"  Button text verified: '{button_text}'")
+                #         if claim_button:
+                #             button_text = claim_button.text.strip()
+                #             logging.info(f"✓ Found 'Claim' button using JavaScript fallback")
+                #             logging.info(f"  Button text verified: '{button_text}'")
                         
-                    except Exception as js_error:
-                        logging.error(f"JavaScript fallback also failed: {str(js_error)}")
+                #     except Exception as js_error:
+                #         logging.error(f"JavaScript fallback also failed: {str(js_error)}")
                 
-                if not claim_button:
-                    logging.error("STEP 8 FAILED: EXACT 'Claim' button not found after trying all strategies")
-                    return {
-                        'status': '⚠️ Error - Claim button not found',
-                        'value_of_purchases': value_of_purchases
-                    }
+                # if not claim_button:
+                #     logging.error("STEP 8 FAILED: EXACT 'Claim' button not found after trying all strategies")
+                #     return {
+                #         'status': '⚠️ Error - Claim button not found',
+                #         'value_of_purchases': value_of_purchases
+                #     }
                 
                 # Final verification: Ensure button text is exactly "Claim"
-                final_button_text = claim_button.text.strip()
-                if final_button_text != "Claim":
-                    logging.error(f"STEP 8 FAILED: Button text is '{final_button_text}', expected 'Claim'")
-                    return {
-                        'status': '⚠️ Error - Wrong button found',
-                        'value_of_purchases': value_of_purchases
-                    }
+                # final_button_text = claim_button.text.strip()
+                # if final_button_text != "Claim":
+                #     logging.error(f"STEP 8 FAILED: Button text is '{final_button_text}', expected 'Claim'")
+                #     return {
+                #         'status': '⚠️ Error - Wrong button found',
+                #         'value_of_purchases': value_of_purchases
+                #     }
                 
-                # Human-like click on Claim button
-                self._human_like_click(claim_button)
-                logging.info("✓ STEP 8: EXACT 'Claim' button clicked, waiting for success message...")
-                self._random_delay(0.25,0.5)
+                # # Human-like click on Claim button
+                # self._human_like_click(claim_button)
+                # logging.info("✓ STEP 8: EXACT 'Claim' button clicked, waiting for success message...")
+                # self._random_delay(0.25,0.5)
                 
                 ####################################################################################
 
@@ -1669,7 +1757,7 @@ class FBRChecker:
                 logging.info("STEP 9: Waiting for 'Purchase Invoice(s) loaded Successfully' message...")
                 
                 success_message_found = False
-                success_wait = WebDriverWait(self.driver, 60)
+                success_wait = WebDriverWait(self.driver, 20)
                 
                 try:
                     # Look for the success message in the growl notification

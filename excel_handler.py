@@ -53,7 +53,11 @@ class ExcelHandler:
                 'number',
                 'date',
                 'source authority',
-                'sr.no'
+                'sr.no',
+                'purchase type',
+                'rate',
+                'value of purchases',
+                'sales tax/ fed in st mode'
             ]
             
             # Find columns in the header (case-insensitive)
@@ -155,6 +159,10 @@ class ExcelHandler:
                         if 'sr.no' in self.column_indices:
                             val = self.worksheet.cell(row=row, column=self.column_indices['sr.no']).value
                             invoice_data['sr_no'] = str(val).strip() if val else str(row - 1)
+                        
+                        if 'sales tax/ fed in st mode' in self.column_indices:
+                            val = self.worksheet.cell(row=row, column=self.column_indices['sales tax/ fed in st mode']).value
+                            invoice_data['sales_tax_fed_st_mode'] = str(val).strip() if val else 'N/A'
                         
                         invoices.append(invoice_data)
             
