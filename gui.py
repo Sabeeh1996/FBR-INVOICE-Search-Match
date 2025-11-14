@@ -74,6 +74,10 @@ class FBRInvoiceCheckerGUI:
         self.not_claimed_count = 0
         self.error_count = 0
         
+        # Timing variables
+        self.start_time = None
+        self.end_time = None
+        
         # Setup GUI
         self.setup_gui()
         
@@ -263,6 +267,20 @@ class FBRInvoiceCheckerGUI:
         self.error_label = ttk.Label(stats_frame, text="0", font=("Arial", 9))
         self.error_label.grid(row=0, column=7, padx=5, sticky=tk.W)
         
+        # Timing frame - show start and end times
+        timing_frame = ttk.Frame(progress_frame)
+        timing_frame.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=(10, 0))
+        timing_frame.columnconfigure(1, weight=1)
+        timing_frame.columnconfigure(3, weight=1)
+        
+        ttk.Label(timing_frame, text="⏱️ Start Time:", font=("Arial", 9, "bold")).grid(row=0, column=0, padx=5, sticky=tk.W)
+        self.start_time_label = ttk.Label(timing_frame, text="--:-- --", font=("Arial", 9))
+        self.start_time_label.grid(row=0, column=1, padx=5, sticky=tk.W)
+        
+        ttk.Label(timing_frame, text="⏱️ End Time:", font=("Arial", 9, "bold")).grid(row=0, column=2, padx=5, sticky=tk.W)
+        self.end_time_label = ttk.Label(timing_frame, text="--:-- --", font=("Arial", 9))
+        self.end_time_label.grid(row=0, column=3, padx=5, sticky=tk.W)
+        
         # Log section - fully expandable
         log_frame = ttk.LabelFrame(main_frame, text="Live Logs", padding="10")
         log_frame.grid(row=(5 if license_frame_created else 4), column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
@@ -349,6 +367,13 @@ class FBRInvoiceCheckerGUI:
         self.claimed_count = 0
         self.not_claimed_count = 0
         self.error_count = 0
+        
+        # Record start time
+        self.start_time = time.time()
+        self.end_time = None
+        start_time_str = time.strftime('%I:%M %p', time.localtime(self.start_time))
+        self.root.after(0, lambda: self.start_time_label.config(text=start_time_str))
+        self.root.after(0, lambda: self.end_time_label.config(text="--:-- --"))
         
         # Clear log
         self.log_text.delete(1.0, tk.END)
@@ -604,6 +629,18 @@ class FBRInvoiceCheckerGUI:
         """
         Show summary popup when processing is complete.
         """
+        # Record end time
+        self.end_time = time.time()
+        end_time_str = time.strftime('%I:%M %p', time.localtime(self.end_time))
+        self.root.after(0, lambda: self.end_time_label.config(text=end_time_str))
+        
+        # Calculate elapsed time
+        elapsed_seconds = int(self.end_time - self.start_time) if self.start_time else 0
+        hours = elapsed_seconds // 3600
+        minutes = (elapsed_seconds % 3600) // 60
+        seconds = elapsed_seconds % 60
+        elapsed_str = f"{hours}h {minutes}m {seconds}s"
+        
         summary_text = f"""
         ✅ Invoice Verification Complete!
         
@@ -616,6 +653,8 @@ class FBRInvoiceCheckerGUI:
         ❌ Not Claimed: {self.not_claimed_count}
         ⚠️ Errors: {self.error_count}
         
+        ⏱️ Time Taken: {elapsed_str}
+        
         Results have been saved to:
         {self.excel_file_path.get()}
         
@@ -625,6 +664,7 @@ class FBRInvoiceCheckerGUI:
         self.root.after(0, lambda: messagebox.showinfo("Completion Summary", summary_text))
         self.log_message("=" * 80)
         self.log_message("✅ All invoices processed successfully!")
+        self.log_message(f"⏱️ Time Taken: {elapsed_str}")
     
     # ============================================================================
     # Recording Feature Helper Methods
@@ -846,6 +886,15 @@ class FBRInvoiceCheckerGUI:
         if self.is_running:
             if messagebox.askyesno("Confirm Exit", "Processing is in progress. Are you sure you want to exit?"):
                 self.is_running = False
+                # Record end time when exiting
+                self.end_time = time.time()
+                end_time_str = time.strftime('%I:%M %p', time.localtime(self.end_time))
+                self.root.after(0, lambda: self.end_time_label.config(text=end_time_str))
                 self.root.destroy()
         else:
+            # Record end time even if not processing
+            if self.start_time:
+                self.end_time = time.time()
+                end_time_str = time.strftime('%I:%M %p', time.localtime(self.end_time))
+                self.root.after(0, lambda: self.end_time_label.config(text=end_time_str))
             self.root.destroy()
