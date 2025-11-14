@@ -143,15 +143,15 @@ class FBRChecker:
             text (str): Text to type
         """
         element.clear()
-        self._random_delay(0.3, 0.7)
+        self._random_delay(0.1, 0.25)
         
         for char in str(text):
             element.send_keys(char)
             # Random typing speed between 50-150ms per character
-            time.sleep(random.uniform(0.05, 0.15))
+            time.sleep(random.uniform(0.02, 0.08))
         
         # Small pause after typing
-        self._random_delay(0.3, 0.8)
+        self._random_delay(0.25, 0.5)
     
     def _human_like_click(self, element):
         """
@@ -170,8 +170,9 @@ class FBRChecker:
             except Exception:
                 # ignore scroll failures
                 pass
-
-            self._random_delay(0.2, 0.6)
+            
+            
+            self._random_delay(0.1, 0.3)  # Reduced from 0.2-0.6 for faster execution
 
             # Check visibility and size — some elements are present but have no size/location
             try:
@@ -196,7 +197,7 @@ class FBRChecker:
             # Try ActionChains move+click (preferred human-like interaction)
             try:
                 self.actions.move_to_element(element).perform()
-                self._random_delay(0.15, 0.4)
+                self._random_delay(0.05, 0.15)  # Reduced from 0.10-0.25 for faster execution
                 self.actions.click(element).perform()
                 logging.debug("Performed human-like click via ActionChains")
                 return
@@ -309,7 +310,7 @@ class FBRChecker:
             
             # Click the tab
             self._human_like_click(annex_a_tab)
-            self._random_delay(1.5, 2.5)
+            self._random_delay(0.25, 0.5)
             logging.info("✅ Clicked Annex-A (Purchases) tab")
             return True
             
@@ -362,10 +363,18 @@ class FBRChecker:
             
             for by_type, selector in selectors:
                 try:
-                    # Try to find the element with shorter timeout for faster fallback
-                    claim_button = WebDriverWait(self.driver, 3).until(
-                        EC.presence_of_element_located((by_type, selector))
-                    )
+                    # Try to find the element immediately (button is usually already present)
+                    claim_button = None
+                    try:
+                        found = self.driver.find_elements(by_type, selector)
+                        if found:
+                            claim_button = found[0]
+                        else:
+                            # element not found immediately; continue to next selector
+                            raise NoSuchElementException()
+                    except NoSuchElementException:
+                        # move to next selector quickly
+                        raise
                     
                     # Verify element is actually visible and enabled
                     if claim_button.is_displayed() and claim_button.is_enabled():
@@ -476,7 +485,7 @@ class FBRChecker:
             
             # Click the button
             self._human_like_click(claim_button)
-            self._random_delay(0.5, 1.0)
+            self._random_delay(0.05, 0.1)  # Reduced from 0.15-0.25 to 0.05-0.1 for faster execution
             logging.info("✅ Clicked 'Claim Invoices' button")
             return True
             
@@ -519,7 +528,7 @@ class FBRChecker:
             
             # Click the menu item
             self._human_like_click(claim_fbr_item)
-            self._random_delay(1.0, 2.0)
+            self._random_delay(0.25, 0.5)
             logging.info("✅ Clicked 'Claim in FBR' menu item")
             return True
             
@@ -643,11 +652,11 @@ class FBRChecker:
                 }
             
             # Process the claim workflow (Annex-A steps)
-            self._random_delay(0.5, 1.0)
+            self._random_delay(0.25, 0.5)
             self.process_claim_workflow()
             
             # Random delay to simulate human reading page
-            self._random_delay(0.5, 1.0)
+            self._random_delay(0.25, 0.5)
             
             # Simulate mouse movement before interacting
             self._simulate_mouse_movement()
@@ -695,7 +704,7 @@ class FBRChecker:
                 
                 # Click the dropdown to open it
                 self._human_like_click(dropdown)
-                self._random_delay(0.5, 1.0)
+                self._random_delay(0.25, 0.5)
                 
                 # Select the option by text (source_authority value from Excel)
                 # Map option values: 7=BRA, 1=FBR, 6=KPRA, 5=PRA, 8=SRB
@@ -732,7 +741,7 @@ class FBRChecker:
                         self._human_like_click(option)
                         logging.info(f"✓ STEP 1 COMPLETED: Selected Source Authority: {source_auth_normalized}")
                         option_selected = True
-                        self._random_delay(0.5, 1.0)
+                        self._random_delay(0.25,0.5)
                         break
                     except TimeoutException:
                         continue
@@ -745,7 +754,7 @@ class FBRChecker:
                     }
                 
                 # Verify selection was applied
-                self._random_delay(0.3, 0.5)
+                self._random_delay(0.1, 0.25)
                 selected_value = self.driver.execute_script("""
                     var dropdown = document.getElementById('correspondenceTabs:loadAnnexAform:sourceAuthorityFilter');
                     if (dropdown) {
@@ -798,7 +807,7 @@ class FBRChecker:
                 # Human-like interaction: move to field and type naturally
                 self._human_like_click(seller_ntn_input)
                 self._human_like_type(seller_ntn_input, invoice_number)
-                self._random_delay(0.3, 0.5)
+                self._random_delay(0.1, 0.25)
                 
                 # Verify the value was entered
                 entered_value = seller_ntn_input.get_attribute('value')
@@ -810,7 +819,7 @@ class FBRChecker:
                     }
                 
                 logging.info(f"✓ STEP 2 COMPLETED & VERIFIED: Seller NTN = '{entered_value}'")
-                self._random_delay(0.5, 1.0)
+                self._random_delay(0.25, 0.5)
             
             # Step 3: Enter Invoice Number in the annexAinvoiceNoId field
             if invoice_no_field:
@@ -846,7 +855,7 @@ class FBRChecker:
                 # Human-like interaction: move to field and type naturally
                 self._human_like_click(invoice_no_input)
                 self._human_like_type(invoice_no_input, invoice_no_field)
-                self._random_delay(0.3, 0.5)
+                self._random_delay(0.1, 0.25)
                 
                 # Verify the value was entered
                 entered_value = invoice_no_input.get_attribute('value')
@@ -858,7 +867,7 @@ class FBRChecker:
                     }
                 
                 logging.info(f"✓ STEP 3 COMPLETED & VERIFIED: Invoice Number = '{entered_value}'")
-                self._random_delay(0.5, 1.0)
+                self._random_delay(0.25, 0.5)
             
             # Step 4: Select From Date and To Date from datepickers
             if date_field and date_field != 'N/A':
@@ -903,7 +912,7 @@ class FBRChecker:
                 # Click to open datepicker, then use JavaScript to set value directly
                 # (readonly fields require JS to set value)
                 self.driver.execute_script(f"arguments[0].value = '{date_formatted}';", from_date_input)
-                self._random_delay(0.3, 0.5)
+                self._random_delay(0.1, 0.25)
                 
                 # Verify From Date was set
                 from_date_value = from_date_input.get_attribute('value')
@@ -942,7 +951,7 @@ class FBRChecker:
                 
                 # Use JavaScript to set value directly
                 self.driver.execute_script(f"arguments[0].value = '{date_formatted}';", to_date_input)
-                self._random_delay(0.3, 0.5)
+                self._random_delay(0.1, 0.25)
                 
                 # Verify To Date was set
                 to_date_value = to_date_input.get_attribute('value')
@@ -954,7 +963,7 @@ class FBRChecker:
                     }
                 
                 logging.info(f"✓ STEP 4 COMPLETED & VERIFIED: Dates set to '{date_formatted}'")
-                self._random_delay(0.5, 1.0)
+                self._random_delay(0.25, 0.5)
             
             # Step 5: Click the Search button in Annex-A form
             logging.info("STEP 5: Clicking Search button in Annex-A form...")
@@ -1088,7 +1097,7 @@ class FBRChecker:
                 logging.info("✓ AJAX loading dialog has disappeared")
                 
                 # Additional wait to ensure DOM is stable after loader disappears
-                self._random_delay(0.5, 1.0)
+                self._random_delay(0.25, 0.5)
                 
                 # Wait for either the results table to be visible OR "no records" message
                 logging.info("Waiting for search results or 'no data' message...")
@@ -1135,7 +1144,7 @@ class FBRChecker:
                 }
             
             # Small delay for human-like behavior
-            self._random_delay(0.5, 1.0)
+            self._random_delay(0.25, 0.5)
             
             # Step 6: Click the checkbox in the results table if results found
             logging.info("STEP 6: Looking for checkbox in results table...")
@@ -1252,7 +1261,7 @@ class FBRChecker:
                 
                 # Human-like click on the checkbox
                 self._human_like_click(checkbox_element)
-                self._random_delay(0.5, 1.0)
+                self._random_delay(0.25, 0.5)
                 
                 # Verify checkbox was clicked by checking its state
                 checkbox_checked = self.driver.execute_script("""
@@ -1264,7 +1273,7 @@ class FBRChecker:
                     logging.warning("STEP 6: Checkbox state not confirmed as checked, but proceeding...")
                 
                 logging.info("✓ STEP 6 COMPLETED: Checkbox clicked in results table")
-                self._random_delay(0.5, 1.0)
+                self._random_delay(0.25, 0.5)
                 
                 # Step 7: Extract "Value of Purchases" from the table
                 logging.info("STEP 7: Extracting 'Value of Purchases' from results table...")
@@ -1515,7 +1524,7 @@ class FBRChecker:
                     logging.warning("STEP 7: Could not find 'Value of Purchases' header in results table")
                 
                 logging.info(f"✓ STEP 7 COMPLETED: Value of Purchases = {value_of_purchases}")
-                self._random_delay(0.5, 1.0)
+                self._random_delay(0.25, 0.5)
                 
                 ####################################################################################
                 # Step 8: Wait for page to fully load before attempting to find Claim button
@@ -1529,7 +1538,7 @@ class FBRChecker:
                     logging.info("✓ Page fully loaded")
                     
                     # Additional wait to ensure all elements are rendered
-                    self._random_delay(0.5, 1.5)
+                    self._random_delay(0.25, 0.75)
                     
                 except TimeoutException:
                     logging.warning("Page load timeout, but proceeding anyway...")
@@ -1652,7 +1661,7 @@ class FBRChecker:
                 # Human-like click on Claim button
                 self._human_like_click(claim_button)
                 logging.info("✓ STEP 8: EXACT 'Claim' button clicked, waiting for success message...")
-                self._random_delay(1.0, 2.0)
+                self._random_delay(0.25,0.5)
                 
                 ####################################################################################
 

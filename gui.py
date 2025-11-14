@@ -527,7 +527,7 @@ class FBRInvoiceCheckerGUI:
                 self.log_message("-" * 80)
                 
                 # Random delay between requests (human-like behavior)
-                delay = random.uniform(0.5, 1.0)
+                delay = random.uniform(0.25, 0.5)
                 self.log_message(f"⏱️ Waiting {delay:.1f}s before next invoice...")
                 time.sleep(delay)
             
