@@ -23,6 +23,40 @@ except ImportError:
     PIL_AVAILABLE = False
     logging.warning("PIL not installed. Logo will not be displayed. Install with: pip install Pillow")
 
+# -----------------------------
+# Theme 1 - Modern Light Colors
+# -----------------------------
+WINDOW_BG = "#F5F6FA"          # main app background
+PANEL_BG = "#FFFFFF"           # panels, frames, group boxes
+TITLE_TEXT = "#2C3E50"         # main headings
+NORMAL_TEXT = "#2C3E50"        # labels, small headings
+SUB_TEXT = "#7F8C8D"           # status text or helper labels
+BORDER_COLOR = "#D5D8DC"       # frame borders, separators
+INPUT_BG = "#FFFFFF"           # entry, textbox background
+INPUT_BORDER = "#D0D3D4"       # entry borders
+SCROLLBAR_COLOR = "#BDC3C7"
+
+# Buttons
+BTN_START_BG = "#27AE60"
+BTN_START_HOVER = "#1E8449"
+BTN_EXIT_BG = "#E74C3C"
+BTN_EXIT_HOVER = "#C0392B"
+BTN_BROWSE_BG = "#3498DB"
+BTN_BROWSE_HOVER = "#216FAD"
+BTN_TEXT = "#FFFFFF"
+
+# Progress display colors
+CLAIMED_COLOR = "#27AE60"
+NOT_CLAIMED_COLOR = "#E74C3C"
+ERROR_COLOR = "#F39C12"
+PROGRESS_TRACK = "#E5E7E9"
+PROGRESS_FILL = "#3498DB"
+
+# Default fonts
+DEFAULT_FONT = ("Arial", 10)
+TITLE_FONT = ("Arial", 18, "bold")
+# -----------------------------
+
 try:
     from playwright.async_api import async_playwright, Page
     PLAYWRIGHT_AVAILABLE = True
@@ -102,12 +136,54 @@ class FBRInvoiceCheckerGUI:
         """
         Setup all GUI components with responsive layout.
         """
-        # Configure root window to expand properly
+        # Apply global background and configure root for theming
+        self.root.configure(bg=WINDOW_BG)
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
-        
+
+        # Setup ttk style for theme
+        style = ttk.Style()
+        # Use default theme as base then override
+        try:
+            style.theme_use('clam')
+        except Exception:
+            pass
+
+        # Frame and panel styles
+        style.configure('Main.TFrame', background=WINDOW_BG)
+        style.configure('Panel.TLabelframe', background=PANEL_BG, bordercolor=BORDER_COLOR)
+        style.configure('Panel.TLabelframe.Label', background=PANEL_BG, foreground=TITLE_TEXT, font=DEFAULT_FONT)
+        style.configure('Panel.TFrame', background=PANEL_BG)
+
+        # Label styles
+        style.configure('Title.TLabel', background=WINDOW_BG, foreground=TITLE_TEXT, font=TITLE_FONT)
+        style.configure('Normal.TLabel', background=PANEL_BG, foreground=NORMAL_TEXT, font=DEFAULT_FONT)
+        style.configure('Sub.TLabel', background=PANEL_BG, foreground=SUB_TEXT, font=("Arial", 9))
+
+        # Entry style
+        style.configure('Custom.TEntry', fieldbackground=INPUT_BG, background=INPUT_BG, foreground=NORMAL_TEXT, bordercolor=INPUT_BORDER, padding=6)
+
+        # Progressbar style
+        style.configure('Custom.Horizontal.TProgressbar', troughcolor=PROGRESS_TRACK, background=PROGRESS_FILL, thickness=14)
+
+        # Button styles (normal and hover variants)
+        style.configure('Start.TButton', foreground=BTN_TEXT, background=BTN_START_BG, padding=8, relief='flat')
+        style.map('Start.TButton', background=[('active', BTN_START_HOVER)])
+        style.configure('StartHover.TButton', foreground=BTN_TEXT, background=BTN_START_HOVER)
+
+        style.configure('Exit.TButton', foreground=BTN_TEXT, background=BTN_EXIT_BG, padding=8, relief='flat')
+        style.map('Exit.TButton', background=[('active', BTN_EXIT_HOVER)])
+        style.configure('ExitHover.TButton', foreground=BTN_TEXT, background=BTN_EXIT_HOVER)
+
+        style.configure('Browse.TButton', foreground=BTN_TEXT, background=BTN_BROWSE_BG, padding=6, relief='flat')
+        style.map('Browse.TButton', background=[('active', BTN_BROWSE_HOVER)])
+        style.configure('BrowseHover.TButton', foreground=BTN_TEXT, background=BTN_BROWSE_HOVER)
+
+        # Scrollbar style
+        style.configure('Vertical.TScrollbar', background=SCROLLBAR_COLOR, troughcolor=SCROLLBAR_COLOR)
+
         # Main container with padding - responsive
-        main_frame = ttk.Frame(self.root, padding="15")
+        main_frame = ttk.Frame(self.root, padding="15", style='Main.TFrame')
         main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         
         # Configure main frame columns and rows for responsiveness
@@ -118,7 +194,7 @@ class FBRInvoiceCheckerGUI:
         title_label = ttk.Label(
             main_frame, 
             text="🧾 FBR Invoice Checker Bot", 
-            font=("Arial", 18, "bold"),
+            style='Title.TLabel',
             wraplength=600
         )
         title_label.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 15))
@@ -137,7 +213,7 @@ class FBRInvoiceCheckerGUI:
                 }
                 bg_color = status_color.get(status['status_level'], '#CCCCCC')
                 
-                license_frame = ttk.Frame(main_frame)
+                license_frame = ttk.Frame(main_frame, style='Panel.TFrame')
                 license_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
                 license_frame_created = True
                 
@@ -146,7 +222,7 @@ class FBRInvoiceCheckerGUI:
                     license_frame,
                     text=f"📋 {status['message']}",
                     bg=bg_color,
-                    fg='white',
+                    fg=BTN_TEXT,
                     font=("Arial", 9),
                     pady=5,
                     padx=10,
@@ -170,20 +246,36 @@ class FBRInvoiceCheckerGUI:
                 help_btn.pack(side=tk.RIGHT, padx=5)
         
         # File selection section
-        file_frame = ttk.LabelFrame(main_frame, text="Excel File Selection", padding="10")
+        file_frame = ttk.LabelFrame(main_frame, text="Excel File Selection", padding="10", style='Panel.TLabelframe')
         file_frame.grid(row=(2 if license_frame_created else 1), column=0, sticky=(tk.W, tk.E), pady=(0, 15))
         file_frame.columnconfigure(1, weight=1)
         
-        ttk.Label(file_frame, text="Excel File:").grid(row=0, column=0, sticky=tk.W, padx=(0, 10))
+        ttk.Label(file_frame, text="Excel File:", style='Normal.TLabel').grid(row=0, column=0, sticky=tk.W, padx=(0, 10))
         
-        file_entry = ttk.Entry(file_frame, textvariable=self.excel_file_path, state='readonly')
+        file_entry = ttk.Entry(file_frame, textvariable=self.excel_file_path, state='readonly', style='Custom.TEntry')
         file_entry.grid(row=0, column=1, sticky=(tk.W, tk.E), padx=(0, 10))
         
-        browse_btn = ttk.Button(file_frame, text="Browse...", command=self.browse_file)
+        browse_btn = ttk.Button(file_frame, text="Browse...", command=self.browse_file, style='Browse.TButton')
         browse_btn.grid(row=0, column=2, padx=(5, 0))
+
+        # Hover effects for browse
+        def _on_enter(btn, hover_style):
+            try:
+                btn.configure(style=hover_style)
+            except Exception:
+                pass
+
+        def _on_leave(btn, normal_style):
+            try:
+                btn.configure(style=normal_style)
+            except Exception:
+                pass
+
+        browse_btn.bind('<Enter>', lambda e: _on_enter(browse_btn, 'BrowseHover.TButton'))
+        browse_btn.bind('<Leave>', lambda e: _on_leave(browse_btn, 'Browse.TButton'))
         
         # Control buttons - centered with proper spacing
-        button_frame = ttk.Frame(main_frame)
+        button_frame = ttk.Frame(main_frame, style='Main.TFrame')
         button_frame.grid(row=(3 if license_frame_created else 2), column=0, pady=(0, 15))
         
         # Create inner frame for centered buttons
@@ -194,7 +286,8 @@ class FBRInvoiceCheckerGUI:
             inner_button_frame, 
             text="▶ Start", 
             command=self.start_processing,
-            width=12
+            width=12,
+            style='Start.TButton'
         )
         self.start_btn.grid(row=0, column=0, padx=8, pady=5)
         
@@ -235,76 +328,90 @@ class FBRInvoiceCheckerGUI:
             inner_button_frame, 
             text="✖ Exit", 
             command=self.exit_application,
-            width=12
+            width=12,
+            style='Exit.TButton'
         )
         self.exit_btn.grid(row=0, column=5, padx=8, pady=5)
+
+        # Hover effects for start and exit
+        self.start_btn.bind('<Enter>', lambda e: _on_enter(self.start_btn, 'StartHover.TButton'))
+        self.start_btn.bind('<Leave>', lambda e: _on_leave(self.start_btn, 'Start.TButton'))
+        self.exit_btn.bind('<Enter>', lambda e: _on_enter(self.exit_btn, 'ExitHover.TButton'))
+        self.exit_btn.bind('<Leave>', lambda e: _on_leave(self.exit_btn, 'Exit.TButton'))
         
         # Recording controls have been removed from the UI
         
         # Progress section - fully responsive
-        progress_frame = ttk.LabelFrame(main_frame, text="Progress", padding="10")
+        progress_frame = ttk.LabelFrame(main_frame, text="Progress", padding="10", style='Panel.TLabelframe')
         progress_frame.grid(row=(4 if license_frame_created else 3), column=0, sticky=(tk.W, tk.E), pady=(0, 15))
         progress_frame.columnconfigure(0, weight=1)
         
         # Let progress bar expand horizontally with the window
         self.progress_bar = ttk.Progressbar(
             progress_frame,
-            mode='determinate'
+            mode='determinate',
+            style='Custom.Horizontal.TProgressbar'
         )
         self.progress_bar.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
         
         # Progress label - responsive
-        self.progress_label = ttk.Label(progress_frame, text="Ready to start", font=("Arial", 10), wraplength=600)
+        self.progress_label = ttk.Label(progress_frame, text="Ready to start", style='Normal.TLabel', wraplength=600)
         self.progress_label.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
         
         # Statistics frame - responsive with wrapping
-        stats_frame = ttk.Frame(progress_frame)
+        stats_frame = ttk.Frame(progress_frame, style='Panel.TFrame')
         stats_frame.grid(row=2, column=0, sticky=(tk.W, tk.E))
         stats_frame.columnconfigure(1, weight=1)
         stats_frame.columnconfigure(3, weight=1)
         stats_frame.columnconfigure(5, weight=1)
         stats_frame.columnconfigure(7, weight=1)
         
-        ttk.Label(stats_frame, text="Total:", font=("Arial", 9, "bold")).grid(row=0, column=0, padx=5, sticky=tk.W)
-        self.total_label = ttk.Label(stats_frame, text="0", font=("Arial", 9))
+        tk.Label(stats_frame, text="Total:", font=("Arial", 9, "bold"), bg=PANEL_BG, fg=NORMAL_TEXT).grid(row=0, column=0, padx=5, sticky=tk.W)
+        self.total_label = tk.Label(stats_frame, text="0", font=("Arial", 9), bg=PANEL_BG, fg=NORMAL_TEXT)
         self.total_label.grid(row=0, column=1, padx=5, sticky=tk.W)
         
-        ttk.Label(stats_frame, text="✅ Claimed:", font=("Arial", 9, "bold"), foreground="green").grid(row=0, column=2, padx=5, sticky=tk.W)
-        self.claimed_label = ttk.Label(stats_frame, text="0", font=("Arial", 9))
+        tk.Label(stats_frame, text="✅ Claimed:", font=("Arial", 9, "bold"), bg=PANEL_BG, fg=CLAIMED_COLOR).grid(row=0, column=2, padx=5, sticky=tk.W)
+        self.claimed_label = tk.Label(stats_frame, text="0", font=("Arial", 9), bg=PANEL_BG, fg=CLAIMED_COLOR)
         self.claimed_label.grid(row=0, column=3, padx=5, sticky=tk.W)
         
-        ttk.Label(stats_frame, text="❌ Not Claimed:", font=("Arial", 9, "bold"), foreground="red").grid(row=0, column=4, padx=5, sticky=tk.W)
-        self.not_claimed_label = ttk.Label(stats_frame, text="0", font=("Arial", 9))
+        tk.Label(stats_frame, text="❌ Not Claimed:", font=("Arial", 9, "bold"), bg=PANEL_BG, fg=NOT_CLAIMED_COLOR).grid(row=0, column=4, padx=5, sticky=tk.W)
+        self.not_claimed_label = tk.Label(stats_frame, text="0", font=("Arial", 9), bg=PANEL_BG, fg=NOT_CLAIMED_COLOR)
         self.not_claimed_label.grid(row=0, column=5, padx=5, sticky=tk.W)
         
-        ttk.Label(stats_frame, text="⚠️ Errors:", font=("Arial", 9, "bold"), foreground="orange").grid(row=0, column=6, padx=5, sticky=tk.W)
-        self.error_label = ttk.Label(stats_frame, text="0", font=("Arial", 9))
+        tk.Label(stats_frame, text="⚠️ Errors:", font=("Arial", 9, "bold"), bg=PANEL_BG, fg=ERROR_COLOR).grid(row=0, column=6, padx=5, sticky=tk.W)
+        self.error_label = tk.Label(stats_frame, text="0", font=("Arial", 9), bg=PANEL_BG, fg=ERROR_COLOR)
         self.error_label.grid(row=0, column=7, padx=5, sticky=tk.W)
         
         # Timing frame - show start and end times
-        timing_frame = ttk.Frame(progress_frame)
+        timing_frame = ttk.Frame(progress_frame, style='Panel.TFrame')
         timing_frame.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=(10, 0))
         timing_frame.columnconfigure(1, weight=1)
         timing_frame.columnconfigure(3, weight=1)
         
-        ttk.Label(timing_frame, text="⏱️ Start Time:", font=("Arial", 9, "bold")).grid(row=0, column=0, padx=5, sticky=tk.W)
-        self.start_time_label = ttk.Label(timing_frame, text="--:-- --", font=("Arial", 9))
+        tk.Label(timing_frame, text="⏱️ Start Time:", font=("Arial", 9, "bold"), bg=PANEL_BG, fg=SUB_TEXT).grid(row=0, column=0, padx=5, sticky=tk.W)
+        self.start_time_label = tk.Label(timing_frame, text="--:-- --", font=("Arial", 9), bg=PANEL_BG, fg=NORMAL_TEXT)
         self.start_time_label.grid(row=0, column=1, padx=5, sticky=tk.W)
         
-        ttk.Label(timing_frame, text="⏱️ End Time:", font=("Arial", 9, "bold")).grid(row=0, column=2, padx=5, sticky=tk.W)
-        self.end_time_label = ttk.Label(timing_frame, text="--:-- --", font=("Arial", 9))
+        tk.Label(timing_frame, text="⏱️ End Time:", font=("Arial", 9, "bold"), bg=PANEL_BG, fg=SUB_TEXT).grid(row=0, column=2, padx=5, sticky=tk.W)
+        self.end_time_label = tk.Label(timing_frame, text="--:-- --", font=("Arial", 9), bg=PANEL_BG, fg=NORMAL_TEXT)
         self.end_time_label.grid(row=0, column=3, padx=5, sticky=tk.W)
         
         # Log section - fully expandable
-        log_frame = ttk.LabelFrame(main_frame, text="Live Logs", padding="10")
+        log_frame = ttk.LabelFrame(main_frame, text="Live Logs", padding="10", style='Panel.TLabelframe')
         log_frame.grid(row=(5 if license_frame_created else 4), column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
         
         # Make log expand with the window; set a reasonable height but allow width to grow
+        # Use ScrolledText but configure colors to match theme
         self.log_text = scrolledtext.ScrolledText(
             log_frame,
             height=15,
             wrap=tk.WORD,
-            font=("Consolas", 9)
+            font=("Consolas", 9),
+            bg=INPUT_BG,
+            fg=NORMAL_TEXT,
+            bd=0,
+            highlightthickness=0,
+            insertbackground=NORMAL_TEXT
         )
         self.log_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         
@@ -330,7 +437,7 @@ class FBRInvoiceCheckerGUI:
                 self.logo_photo = ImageTk.PhotoImage(logo_image)
                 
                 # Create logo label
-                logo_label = tk.Label(footer_frame, image=self.logo_photo, bg=self.root.cget('bg'))
+                logo_label = tk.Label(footer_frame, image=self.logo_photo, bg=WINDOW_BG)
                 logo_label.grid(row=0, column=0, pady=5)
             except Exception as e:
                 logging.warning(f"Could not load logo: {e}")
@@ -344,18 +451,24 @@ class FBRInvoiceCheckerGUI:
         company_label = ttk.Label(
             footer_frame,
             text="Software Provided by Codium Edge",
-            font=("Arial", 9, "bold"),
-            foreground="#6A5ACD"
+            style='Normal.TLabel'
         )
         company_label.grid(row=1, column=0, pady=(0, 2))
         
         tagline_label = ttk.Label(
             footer_frame,
             text="Innovating Automation Solutions",
-            font=("Arial", 8, "italic"),
-            foreground="#888888"
+            style='Sub.TLabel'
         )
         tagline_label.grid(row=2, column=0, pady=(0, 5))
+
+        # Style scrollbars inside log_frame (if any) to match theme
+        for child in log_frame.winfo_children():
+            try:
+                if isinstance(child, tk.Scrollbar):
+                    child.configure(bg=SCROLLBAR_COLOR, troughcolor=SCROLLBAR_COLOR)
+            except Exception:
+                pass
     
     def _create_text_footer(self, parent_frame):
         """
@@ -368,7 +481,7 @@ class FBRInvoiceCheckerGUI:
             parent_frame,
             text="🔷 CODIUM EDGE 🔷",
             font=("Arial", 11, "bold"),
-            foreground="#6A5ACD"
+            foreground=TITLE_TEXT
         )
         text_logo.grid(row=0, column=0, pady=5)
     
