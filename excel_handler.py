@@ -29,6 +29,7 @@ class ExcelHandler:
         self.status_column = None
         self.timestamp_column = None
         self.value_of_purchases_column = None
+        self.fbr_sales_tax_column = None  # Column to store FBR Sales Tax/FED values
         
     def load_excel(self):
         """
@@ -104,6 +105,16 @@ class ExcelHandler:
             else:
                 self.value_of_purchases_column = headers.index('Value_of_Purchases') + 1
             
+            # Add FBR SALE TAX column if it doesn't exist
+            headers = [cell.value for cell in self.worksheet[1]]  # Refresh headers
+            if 'FBR SALE TAX' not in headers:
+                fbr_tax_col_idx = len(headers) + 1
+                self.worksheet.cell(row=1, column=fbr_tax_col_idx, value='FBR SALE TAX')
+                self.fbr_sales_tax_column = fbr_tax_col_idx
+                logging.info("Added 'FBR SALE TAX' column to Excel file")
+            else:
+                self.fbr_sales_tax_column = headers.index('FBR SALE TAX') + 1
+            
             self.workbook.save(self.file_path)
             logging.info(f"Excel file loaded successfully: {self.file_path}")
             logging.info(f"Column mapping: {self.column_indices}")
@@ -173,14 +184,15 @@ class ExcelHandler:
             logging.error(f"Error reading invoice data: {str(e)}")
             return []
     
-    def update_invoice_status(self, row_number, status, value_of_purchases=None):
+    def update_invoice_status(self, row_number, status, value_of_purchases=None, fbr_sales_tax=None):
         """
         Update the status of an invoice in the Excel file.
         
         Args:
             row_number (int): Row number in Excel (1-indexed)
             status (str): Status to update (Claimed/Not Claimed/Error)
-            value_of_purchases (str, optional): Value of Purchases from FBR portal
+            value_of_purchases (str, optional): Value of Purchases from Excel
+            fbr_sales_tax (str, optional): Sales Tax/FED value from FBR portal
         """
         try:
             # Update Status column
@@ -190,10 +202,15 @@ class ExcelHandler:
             timestamp = datetime.now().strftime('%Y-%m-%d %I:%M:%S %p')
             self.worksheet.cell(row=row_number, column=self.timestamp_column, value=timestamp)
             
-            # Update Value of Purchases if provided
-            if value_of_purchases and self.value_of_purchases_column:
+            # Update Value of Purchases if provided (allow "0" but not "N/A")
+            if value_of_purchases is not None and value_of_purchases != 'N/A' and self.value_of_purchases_column:
                 self.worksheet.cell(row=row_number, column=self.value_of_purchases_column, value=value_of_purchases)
                 logging.info(f"Updated row {row_number} with Value of Purchases: {value_of_purchases}")
+            
+            # Update FBR Sales Tax if provided (allow "0" but not "N/A")
+            if fbr_sales_tax is not None and fbr_sales_tax != 'N/A' and self.fbr_sales_tax_column:
+                self.worksheet.cell(row=row_number, column=self.fbr_sales_tax_column, value=fbr_sales_tax)
+                logging.info(f"Updated row {row_number} with FBR Sales Tax: {fbr_sales_tax}")
             
             # Save immediately to prevent data loss
             self.workbook.save(self.file_path)

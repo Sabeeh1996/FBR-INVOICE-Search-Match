@@ -486,6 +486,7 @@ class FBRInvoiceCheckerGUI:
                     if isinstance(result, dict):
                         status = result.get('status', '⚠️ Error')
                         value_of_purchases = result.get('value_of_purchases', 'N/A')
+                        fbr_sales_tax = result.get('fbr_sales_tax', 'N/A')
                         
                         # Check if browser was closed by user
                         if 'Browser Closed' in status:
@@ -496,6 +497,7 @@ class FBRInvoiceCheckerGUI:
                         # Backwards compatibility: if result is a string
                         status = result
                         value_of_purchases = 'N/A'
+                        fbr_sales_tax = 'N/A'
                         
                 except Exception as e:
                     # If verify_invoice fails or hangs, catch it and allow loop to continue
@@ -503,9 +505,10 @@ class FBRInvoiceCheckerGUI:
                     self.log_message(f"❌ Exception during verification: {str(e)}")
                     status = "⚠️ Error"
                     value_of_purchases = 'N/A'
+                    fbr_sales_tax = 'N/A'
                 
-                # Update Excel with status and value of purchases
-                excel_handler.update_invoice_status(row_number, status, value_of_purchases)
+                # Update Excel with status, value of purchases, and FBR Sales Tax
+                excel_handler.update_invoice_status(row_number, status, value_of_purchases, fbr_sales_tax)
                 
                 # Update statistics
                 self.processed_count += 1
