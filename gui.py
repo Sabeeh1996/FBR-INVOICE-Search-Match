@@ -246,8 +246,8 @@ class FBRInvoiceCheckerGUI:
                 help_btn.pack(side=tk.RIGHT, padx=5)
         
         # Set expandable row for logs (row index depends on whether license frame is shown)
-        # Logs will be at row 5 if license shown, row 4 if not
-        main_frame.rowconfigure((5 if license_frame_created else 4), weight=1)
+        # Logs will be at row 6 if license shown, row 5 if not (since we added elapsed time row)
+        main_frame.rowconfigure((6 if license_frame_created else 5), weight=1)
         
         # File selection section
         file_frame = ttk.LabelFrame(main_frame, text="Excel File Selection", padding="10", style='Panel.TLabelframe')
@@ -400,9 +400,23 @@ class FBRInvoiceCheckerGUI:
         self.end_time_label = tk.Label(timing_frame, text="--:-- --", font=("Arial", 9), bg=PANEL_BG, fg=NORMAL_TEXT)
         self.end_time_label.grid(row=0, column=3, padx=5, sticky=tk.W)
         
+        # Elapsed time and average time frame
+        elapsed_frame = ttk.Frame(progress_frame, style='Panel.TFrame')
+        elapsed_frame.grid(row=4, column=0, sticky=(tk.W, tk.E), pady=(10, 0))
+        elapsed_frame.columnconfigure(1, weight=1)
+        elapsed_frame.columnconfigure(3, weight=1)
+        
+        tk.Label(elapsed_frame, text="⏳ Total Time:", font=("Arial", 9, "bold"), bg=PANEL_BG, fg=SUB_TEXT).grid(row=0, column=0, padx=5, sticky=tk.W)
+        self.elapsed_time_label = tk.Label(elapsed_frame, text="--:-- --", font=("Arial", 9), bg=PANEL_BG, fg=NORMAL_TEXT)
+        self.elapsed_time_label.grid(row=0, column=1, padx=5, sticky=tk.W)
+        
+        tk.Label(elapsed_frame, text="⏱️ Avg/Invoice:", font=("Arial", 9, "bold"), bg=PANEL_BG, fg=SUB_TEXT).grid(row=0, column=2, padx=5, sticky=tk.W)
+        self.avg_time_label = tk.Label(elapsed_frame, text="-- s", font=("Arial", 9), bg=PANEL_BG, fg=NORMAL_TEXT)
+        self.avg_time_label.grid(row=0, column=3, padx=5, sticky=tk.W)
+        
         # Log section - fully expandable
         log_frame = ttk.LabelFrame(main_frame, text="Live Logs", padding="10", style='Panel.TLabelframe')
-        log_frame.grid(row=(5 if license_frame_created else 4), column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
+        log_frame.grid(row=(6 if license_frame_created else 5), column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
         
         # Make log expand with the window; set a reasonable height but allow width to grow
         # Use ScrolledText but configure colors to match theme
@@ -424,7 +438,7 @@ class FBRInvoiceCheckerGUI:
         
         # Footer with company logo
         footer_frame = ttk.Frame(main_frame)
-        footer_frame.grid(row=(6 if license_frame_created else 5), column=0, sticky=(tk.W, tk.E), pady=(5, 0))
+        footer_frame.grid(row=(7 if license_frame_created else 6), column=0, sticky=(tk.W, tk.E), pady=(5, 0))
         footer_frame.columnconfigure(0, weight=1)
         
         # Try to load and display the company logo
@@ -757,6 +771,9 @@ class FBRInvoiceCheckerGUI:
                 total_elapsed_time = time.time() - start_time
                 average_time_per_invoice = total_elapsed_time / self.processed_count
                 
+                # Update timing display in GUI
+                self.update_timing_display(total_elapsed_time, average_time_per_invoice)
+                
                 self.log_message(f"   ⏱️ Invoice Time: {invoice_elapsed_time:.1f}s | Total Time: {self._format_time(total_elapsed_time)} | Avg/Invoice: {average_time_per_invoice:.1f}s")
                 self.log_message("-" * 80)
                 
@@ -835,6 +852,19 @@ class FBRInvoiceCheckerGUI:
             self.root.after(0, lambda: self.progress_label.config(
                 text=f"Progress: {self.processed_count}/{self.total_invoices} ({progress_percent:.1f}%)"
             ))
+    
+    def update_timing_display(self, elapsed_time, avg_time_per_invoice):
+        """
+        Update elapsed time and average time per invoice in GUI.
+        
+        Args:
+            elapsed_time (float): Total elapsed time in seconds
+            avg_time_per_invoice (float): Average time per invoice in seconds
+        """
+        formatted_elapsed = self._format_time(elapsed_time)
+        formatted_avg = f"{avg_time_per_invoice:.1f}s"
+        self.root.after(0, lambda: self.elapsed_time_label.config(text=formatted_elapsed))
+        self.root.after(0, lambda: self.avg_time_label.config(text=formatted_avg))
     
     def log_message(self, message):
         """
