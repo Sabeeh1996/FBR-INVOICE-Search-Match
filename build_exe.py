@@ -23,7 +23,7 @@ def build_exe():
     # PyInstaller arguments
     args = [
         main_file,
-        '--name=FBR Invoice Checker Bot',
+        '--name=FBR Invoice Checker',  # Generic name to avoid firewall blocking
         '--onefile',  # Create single executable file
         '--windowed',  # No console window
         f'--distpath={dist_dir}',
@@ -39,7 +39,7 @@ def build_exe():
         '--collect-all=openpyxl',  # Ensure all openpyxl data files are included
     ]
     
-    print("🔨 Building FBR Invoice Checker Bot executable...")
+    print("🔨 Building InvoiceChecker executable...")
     print(f"📂 Project root: {project_root}")
     print(f"📁 Output directory: {dist_dir}")
     print()
@@ -54,7 +54,7 @@ def build_exe():
             print(f"🗑️  Removed standalone license file from dist (bundled in exe)")
         
         print("\n✅ Build successful!")
-        print(f"📦 Executable location: {dist_dir}\\FBR Invoice Checker Bot.exe")
+        print(f"📦 Executable location: {dist_dir}\\InvoiceChecker.exe")
         print("\n📋 Next steps:")
         print("1. The executable is in the 'dist' folder")
         print("2. You can move it anywhere or create a shortcut")
@@ -62,6 +62,7 @@ def build_exe():
         print("\n🔒 Security:")
         print("- License config is bundled INSIDE the .exe (not modifiable by users)")
         print("- Users cannot change the expiry date")
+        print("- Generic name to prevent firewall blocking")
         
     except Exception as e:
         print(f"\n❌ Build failed: {str(e)}")

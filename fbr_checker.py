@@ -30,6 +30,7 @@ class FBRChecker:
         self.driver = None
         self.max_retries = 3
         self.actions = None  # ActionChains for mouse movements
+        self.annex_a_tab_clicked = False  # Flag to ensure Annex-A tab is clicked only once
         
     def initialize_browser(self):
         """
@@ -549,10 +550,15 @@ class FBRChecker:
             except TimeoutException:
                 logging.warning("Page load timeout, but proceeding anyway...")
             
-            # Step 1: Click Annex-A tab
-            if not self.click_annex_a_tab():
-                logging.warning("Annex-A tab workflow skipped (tab not found)")
-                return False
+            # Step 1: Click Annex-A tab (RUN ONLY ONCE)
+            if not self.annex_a_tab_clicked:
+                if not self.click_annex_a_tab():
+                    logging.warning("Annex-A tab workflow skipped (tab not found)")
+                    return False
+                self.annex_a_tab_clicked = True
+                logging.info("✅ Annex-A tab clicked and will not be clicked again for this session")
+            else:
+                logging.info("ℹ️ Annex-A tab already clicked in this session, skipping...")
             
             # Step 2: Click Claim Invoices button
             if not self.click_claim_invoices_button():

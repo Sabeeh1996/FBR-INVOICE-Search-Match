@@ -31,7 +31,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='FBR Invoice Checker Bot',
+    name='InvoiceChecker',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
