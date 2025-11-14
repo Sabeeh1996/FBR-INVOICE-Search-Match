@@ -14,6 +14,14 @@ import random
 import json
 import asyncio
 from pathlib import Path
+import os
+
+try:
+    from PIL import Image, ImageTk
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
+    logging.warning("PIL not installed. Logo will not be displayed. Install with: pip install Pillow")
 
 try:
     from playwright.async_api import async_playwright, Page
@@ -174,56 +182,62 @@ class FBRInvoiceCheckerGUI:
         browse_btn = ttk.Button(file_frame, text="Browse...", command=self.browse_file)
         browse_btn.grid(row=0, column=2, padx=(5, 0))
         
-        # Control buttons - with wrapping support
+        # Control buttons - centered with proper spacing
         button_frame = ttk.Frame(main_frame)
-        button_frame.grid(row=(3 if license_frame_created else 2), column=0, sticky=(tk.W, tk.E), pady=(0, 15))
-        button_frame.columnconfigure(0, weight=1)
+        button_frame.grid(row=(3 if license_frame_created else 2), column=0, pady=(0, 15))
+        
+        # Create inner frame for centered buttons
+        inner_button_frame = ttk.Frame(button_frame)
+        inner_button_frame.pack(expand=True)
         
         self.start_btn = ttk.Button(
-            button_frame, 
+            inner_button_frame, 
             text="▶ Start", 
             command=self.start_processing,
             width=12
         )
-        self.start_btn.grid(row=0, column=0, padx=3, pady=5)
+        self.start_btn.grid(row=0, column=0, padx=8, pady=5)
         
         self.pause_btn = ttk.Button(
-            button_frame, 
+            inner_button_frame, 
             text="⏸ Pause", 
             command=self.pause_processing,
             width=12,
             state='disabled'
         )
-        self.pause_btn.grid(row=0, column=1, padx=3, pady=5)
+        self.pause_btn.grid(row=0, column=1, padx=8, pady=5)
         self.pause_btn.grid_remove()  # Hide initially
         
         self.resume_btn = ttk.Button(
-            button_frame, 
+            inner_button_frame, 
             text="▶ Resume", 
             command=self.resume_processing,
             width=12,
             state='disabled'
         )
-        self.resume_btn.grid(row=0, column=2, padx=3, pady=5)
+        self.resume_btn.grid(row=0, column=2, padx=8, pady=5)
         self.resume_btn.grid_remove()  # Hide initially
         
         self.stop_btn = ttk.Button(
-            button_frame, 
+            inner_button_frame, 
             text="⏹ Stop", 
             command=self.stop_processing,
             width=12,
             state='disabled'
         )
-        self.stop_btn.grid(row=0, column=3, padx=3, pady=5)
+        self.stop_btn.grid(row=0, column=3, padx=8, pady=5)
         self.stop_btn.grid_remove()  # Hide initially
         
+        # Separator space before Exit button
+        ttk.Frame(inner_button_frame, width=30).grid(row=0, column=4)
+        
         self.exit_btn = ttk.Button(
-            button_frame, 
+            inner_button_frame, 
             text="✖ Exit", 
             command=self.exit_application,
             width=12
         )
-        self.exit_btn.grid(row=0, column=4, padx=3, pady=5)
+        self.exit_btn.grid(row=0, column=5, padx=8, pady=5)
         
         # Recording controls have been removed from the UI
         
@@ -296,6 +310,67 @@ class FBRInvoiceCheckerGUI:
         
         log_frame.columnconfigure(0, weight=1)
         log_frame.rowconfigure(0, weight=1)
+        
+        # Footer with company logo
+        footer_frame = ttk.Frame(main_frame)
+        footer_frame.grid(row=(6 if license_frame_created else 5), column=0, sticky=(tk.W, tk.E), pady=(5, 0))
+        footer_frame.columnconfigure(0, weight=1)
+        
+        # Try to load and display the company logo
+        logo_path = os.path.join(os.path.dirname(__file__), 'assets', 'codium_edge_logo.png')
+        if PIL_AVAILABLE and os.path.exists(logo_path):
+            try:
+                # Load and resize logo
+                logo_image = Image.open(logo_path)
+                # Resize to appropriate size for footer (height ~40px)
+                logo_height = 40
+                aspect_ratio = logo_image.width / logo_image.height
+                logo_width = int(logo_height * aspect_ratio)
+                logo_image = logo_image.resize((logo_width, logo_height), Image.Resampling.LANCZOS)
+                self.logo_photo = ImageTk.PhotoImage(logo_image)
+                
+                # Create logo label
+                logo_label = tk.Label(footer_frame, image=self.logo_photo, bg=self.root.cget('bg'))
+                logo_label.grid(row=0, column=0, pady=5)
+            except Exception as e:
+                logging.warning(f"Could not load logo: {e}")
+                # Fallback to text-only footer
+                self._create_text_footer(footer_frame)
+        else:
+            # Fallback to text-only footer
+            self._create_text_footer(footer_frame)
+        
+        # Company name and tagline below logo
+        company_label = ttk.Label(
+            footer_frame,
+            text="Software Provided by Codium Edge",
+            font=("Arial", 9, "bold"),
+            foreground="#6A5ACD"
+        )
+        company_label.grid(row=1, column=0, pady=(0, 2))
+        
+        tagline_label = ttk.Label(
+            footer_frame,
+            text="Innovating Automation Solutions",
+            font=("Arial", 8, "italic"),
+            foreground="#888888"
+        )
+        tagline_label.grid(row=2, column=0, pady=(0, 5))
+    
+    def _create_text_footer(self, parent_frame):
+        """
+        Create a text-based footer when logo is not available.
+        
+        Args:
+            parent_frame: Parent frame to place the footer in
+        """
+        text_logo = ttk.Label(
+            parent_frame,
+            text="🔷 CODIUM EDGE 🔷",
+            font=("Arial", 11, "bold"),
+            foreground="#6A5ACD"
+        )
+        text_logo.grid(row=0, column=0, pady=5)
     
     def show_welcome_message(self):
         """
@@ -423,6 +498,9 @@ class FBRInvoiceCheckerGUI:
         Main worker function to process all invoices.
         Runs in a separate thread.
         """
+        import time
+        start_time = time.time()  # Track overall start time
+        
         excel_handler = None
         fbr_checker = None
         
@@ -475,6 +553,8 @@ class FBRInvoiceCheckerGUI:
             # Process each invoice
             
             for invoice_data in invoices:
+                invoice_start_time = time.time()  # Track individual invoice start time
+                
                 # Check if paused
                 while self.is_paused and self.is_running:
                     time.sleep(0.5)
@@ -554,6 +634,13 @@ class FBRInvoiceCheckerGUI:
                 self.log_message(f"   ✓ Result: {status}")
                 if value_of_purchases and value_of_purchases != 'N/A':
                     self.log_message(f"   💰 Value of Purchases: {value_of_purchases}")
+                
+                # Calculate and display timing information
+                invoice_elapsed_time = time.time() - invoice_start_time
+                total_elapsed_time = time.time() - start_time
+                average_time_per_invoice = total_elapsed_time / self.processed_count
+                
+                self.log_message(f"   ⏱️ Invoice Time: {invoice_elapsed_time:.1f}s | Total Time: {self._format_time(total_elapsed_time)} | Avg/Invoice: {average_time_per_invoice:.1f}s")
                 self.log_message("-" * 80)
                 
                 # Random delay between requests (human-like behavior)
@@ -590,6 +677,27 @@ class FBRInvoiceCheckerGUI:
             # Reset UI
             self.is_running = False
             self.start_btn.config(state='normal')
+    
+    def _format_time(self, seconds):
+        """
+        Format seconds into a human-readable time string (HH:MM:SS).
+        
+        Args:
+            seconds (float): Time in seconds
+            
+        Returns:
+            str: Formatted time string
+        """
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        secs = int(seconds % 60)
+        
+        if hours > 0:
+            return f"{hours}h {minutes}m {secs}s"
+        elif minutes > 0:
+            return f"{minutes}m {secs}s"
+        else:
+            return f"{secs}s"
     
     def update_statistics(self):
         """
@@ -641,6 +749,9 @@ class FBRInvoiceCheckerGUI:
         seconds = elapsed_seconds % 60
         elapsed_str = f"{hours}h {minutes}m {seconds}s"
         
+        # Calculate average time per invoice
+        avg_time_per_invoice = elapsed_seconds / self.processed_count if self.processed_count > 0 else 0
+        
         summary_text = f"""
         ✅ Invoice Verification Complete!
         
@@ -654,6 +765,7 @@ class FBRInvoiceCheckerGUI:
         ⚠️ Errors: {self.error_count}
         
         ⏱️ Time Taken: {elapsed_str}
+        ⏱️ Average per Invoice: {avg_time_per_invoice:.1f}s
         
         Results have been saved to:
         {self.excel_file_path.get()}
@@ -665,6 +777,7 @@ class FBRInvoiceCheckerGUI:
         self.log_message("=" * 80)
         self.log_message("✅ All invoices processed successfully!")
         self.log_message(f"⏱️ Time Taken: {elapsed_str}")
+        self.log_message(f"⏱️ Average per Invoice: {avg_time_per_invoice:.1f}s")
     
     # ============================================================================
     # Recording Feature Helper Methods
