@@ -188,7 +188,7 @@ class FBRInvoiceCheckerGUI:
         
         # Configure main frame columns and rows for responsiveness
         main_frame.columnconfigure(0, weight=1)
-        main_frame.rowconfigure(4, weight=1)  # Make log section expandable
+        # Row weights will be set after we know if license frame is created
         
         # Title
         title_label = ttk.Label(
@@ -244,6 +244,10 @@ class FBRInvoiceCheckerGUI:
                     width=10
                 )
                 help_btn.pack(side=tk.RIGHT, padx=5)
+        
+        # Set expandable row for logs (row index depends on whether license frame is shown)
+        # Logs will be at row 5 if license shown, row 4 if not
+        main_frame.rowconfigure((5 if license_frame_created else 4), weight=1)
         
         # File selection section
         file_frame = ttk.LabelFrame(main_frame, text="Excel File Selection", padding="10", style='Panel.TLabelframe')
