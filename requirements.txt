@@ -9,5 +9,8 @@ playwright==1.40.0
 # Excel Operations
 openpyxl==3.1.2
 
+# Image Processing (for logo display in GUI)
+Pillow>=9.0.0
+
 # GUI is built-in with Python (tkinter)
 # threading, time, logging, os, asyncio, json, pathlib are built-in modules
