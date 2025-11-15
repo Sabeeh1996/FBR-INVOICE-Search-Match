@@ -190,7 +190,7 @@ if __name__ == "__main__":
     checker = UpdateChecker("Sabeeh1996", "FBR-INVOICE-Search-Match")
     
     # Check for updates
-    current_version = "1.0"
+    current_version = "1.1"
     update_info = checker.check_for_updates(current_version)
     
     if update_info:

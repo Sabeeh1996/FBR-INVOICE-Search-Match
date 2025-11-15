@@ -248,7 +248,7 @@ if __name__ == "__main__":
     downloader = UpdateDownloader()
     
     # Note: Replace with actual URL for testing
-    test_url = "https://github.com/Sabeeh1996/FBR-INVOICE-Search-Match/releases/download/v1.0/update.zip"
+    test_url = "https://github.com/Sabeeh1996/FBR-INVOICE-Search-Match/releases/download/v1.1/update.zip"
     
     print(f"Attempting to download from: {test_url}")
     result = downloader.download_file(test_url, progress_callback=show_progress)
