@@ -4,11 +4,13 @@ FBR Invoice Checker Bot - Automated invoice verification with GUI
 """
 
 import tkinter as tk
+from tkinter import messagebox
 import logging
 import os
 from datetime import datetime
 from gui import FBRInvoiceCheckerGUI
 from license_manager import LicenseManager
+from version_manager import read_version, is_version_tampered, get_version_info
 
 
 def setup_logging():
@@ -41,12 +43,49 @@ def setup_logging():
     logging.info("=" * 80)
 
 
+def check_version_integrity():
+    """
+    Check if version.txt was manually edited by user (tampered with).
+    
+    If tampering is detected, show warning and attempt auto-fix.
+    
+    Returns:
+        bool: True if version is valid, False if tampered (but continuing anyway)
+    """
+    if is_version_tampered():
+        logging.warning("[SECURITY] Version file was tampered with!")
+        version_info = get_version_info()
+        logging.warning(f"Version info: {version_info}")
+        
+        # Show warning to user
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showwarning(
+            "Security Notice",
+            "⚠️ VERSION FILE WAS MODIFIED\n\n"
+            "The version.txt file was manually edited.\n"
+            "For security reasons, only the update system should change versions.\n\n"
+            "The application will continue with the locked/secure version."
+        )
+        root.destroy()
+        return False
+    
+    return True
+
+
 def main():
     """
     Main function to initialize and run the application.
     """
     # Setup logging
     setup_logging()
+    
+    # Check version integrity (detect tampering)
+    check_version_integrity()
+    
+    # Log version info
+    current_version, is_valid = read_version()
+    logging.info(f"Current version: {current_version} (Valid: {is_valid})")
     
     # Initialize and validate license
     license_manager = LicenseManager()

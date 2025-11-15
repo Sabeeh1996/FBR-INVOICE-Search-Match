@@ -23,6 +23,7 @@ from typing import Optional, Tuple, Callable
 from update_checker import UpdateChecker
 from update_downloader import UpdateDownloader
 from update_installer import UpdateInstaller
+from version_manager import read_version, update_version_secure, is_version_tampered
 
 # Configure logging
 logging.basicConfig(
@@ -63,24 +64,22 @@ class Updater:
     
     def get_current_version(self) -> str:
         """
-        Read current version from version.txt file.
+        Read current version from version.txt file (now using secure version manager).
+        
+        Uses version_manager.read_version() which detects tampering and reverts
+        to locked version if user manually edited the file.
         
         Returns:
             str: Current version (e.g., "1.0")
-                 Returns "0.0" if file not found or error occurs
         """
         try:
-            if os.path.exists(self.version_file):
-                with open(self.version_file, 'r') as f:
-                    version = f.read().strip()
-                    logger.info(f"Current version: {version}")
-                    return version
-            else:
-                logger.warning("version.txt not found, assuming version 0.0")
-                return "0.0"
-                
+            version, is_valid = read_version()
+            if not is_valid:
+                logger.warning("[SECURITY] Version file was tampered. Using locked version.")
+            logger.info(f"Current version: {version}")
+            return version
         except Exception as e:
-            logger.error(f"Error reading version file: {str(e)}")
+            logger.error(f"Error reading version: {str(e)}")
             return "0.0"
     
     def check_for_updates(self) -> Tuple[bool, Optional[dict]]:
@@ -160,7 +159,7 @@ class Updater:
     
     def install_update(self, update_file: str, new_version: str) -> bool:
         """
-        Install downloaded update.
+        Install downloaded update and securely update version.
         
         Args:
             update_file (str): Path to downloaded update ZIP
@@ -175,7 +174,15 @@ class Updater:
             success = self.installer.install_update(update_file, new_version)
             
             if success:
-                logger.info("Installation completed successfully")
+                # SECURE VERSION UPDATE: Only updater can change version
+                success, msg = update_version_secure(
+                    new_version,
+                    updater_token="updater_secure_token_2025_fbr_invoice"
+                )
+                if not success:
+                    logger.error(f"Failed to update version: {msg}")
+                    return False
+                logger.info("Installation and version update completed successfully")
             else:
                 logger.error("Installation failed")
             

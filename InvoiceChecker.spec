@@ -3,9 +3,9 @@ from PyInstaller.utils.hooks import collect_all
 import os
 
 # Bundle config files inside EXE
+# Note: version.txt is kept EXTERNAL (not bundled) so updater.py can modify it at runtime
 datas = [
     ('license_config.json', '.'),
-    ('version.txt', '.'),
 ]
 
 # Include logo if it exists
