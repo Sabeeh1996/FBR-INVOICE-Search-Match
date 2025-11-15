@@ -1,17 +1,25 @@
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_submodules
 from PyInstaller.utils.hooks import collect_all
+import os
 
-datas = [('license_config.json', '.')]
+# Bundle config files inside EXE
+datas = [
+    ('license_config.json', '.'),
+    ('version.txt', '.'),
+]
+
+# Include logo if it exists
+if os.path.exists('assets/codium_edge_logo.png'):
+    datas.append(('assets/codium_edge_logo.png', 'assets'))
+
 binaries = []
-hiddenimports = ['tkinter', 'openpyxl', 'et_xmlfile', 'selenium', 'playwright', 'undetected_chromedriver']
-hiddenimports += collect_submodules('openpyxl')
+hiddenimports = ['tkinter', 'tkinter.ttk', 'tkinter.messagebox', 'tkinter.filedialog', 'openpyxl', 'openpyxl.cell', 'openpyxl.styles', 'selenium', 'selenium.webdriver', 'requests', 'PIL', 'PIL.Image', 'PIL.ImageTk']
 tmp_ret = collect_all('openpyxl')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 
 a = Analysis(
-    ['C:\\xampp\\htdocs\\FBR-INVOICE-STATUS-MATCHING\\main.py'],
+    ['main.py'],
     pathex=[],
     binaries=binaries,
     datas=datas,
@@ -19,7 +27,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=['matplotlib', 'pandas', 'numpy', 'scipy', 'pytest'],
     noarchive=False,
     optimize=0,
 )

@@ -468,7 +468,7 @@ class FBRInvoiceCheckerGUI:
         # Company name and tagline below logo
         company_label = ttk.Label(
             footer_frame,
-            text="Software Provided by Codium Edge",
+            text="◇ Software Provided by Codium Edge ◇",
             style='Normal.TLabel'
         )
         company_label.grid(row=1, column=0, pady=(0, 2))
@@ -497,7 +497,7 @@ class FBRInvoiceCheckerGUI:
         """
         text_logo = ttk.Label(
             parent_frame,
-            text="🔷 CODIUM EDGE 🔷",
+            text="◇ CODIUM EDGE ◇",
             font=("Arial", 11, "bold"),
             foreground=TITLE_TEXT
         )
