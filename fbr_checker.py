@@ -1233,8 +1233,17 @@ class FBRChecker:
                                 var cellValueClean = cellValue.replace(/,/g, '').replace(/\\s+/g, '');
                                 var searchValueClean = sales_tax_value.replace(/,/g, '').replace(/\\s+/g, '');
                                 
-                                if (cellValueClean === searchValueClean) {
-                                    console.log('MATCH FOUND at row ' + i);
+                                // Allow margin of 1 rupee for matching
+                                var cellNum = parseFloat(cellValueClean);
+                                var searchNum = parseFloat(searchValueClean);
+                                var margin = 1.0; // 1 rupee margin
+                                
+                                var isMatch = cellValueClean === searchValueClean || 
+                                             ((!isNaN(cellNum) && !isNaN(searchNum)) && 
+                                              Math.abs(cellNum - searchNum) <= margin);
+                                
+                                if (isMatch) {
+                                    console.log('MATCH FOUND at row ' + i + ' (difference: ' + Math.abs(cellNum - searchNum) + ' rupees)');
                                     
                                     // Find the checkbox in this row
                                     var checkbox = rows[i].querySelector('div[class*="ui-chkbox-box"]');
