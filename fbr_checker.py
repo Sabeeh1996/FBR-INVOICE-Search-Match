@@ -672,7 +672,7 @@ class FBRChecker:
             except TimeoutException:
                 logging.warning("Page load timeout, but proceeding anyway...")
             
-            wait = WebDriverWait(self.driver, 60)
+            wait = WebDriverWait(self.driver, 30)
             
             # Step 1: Select Source Authority from dropdown if provided
             if source_authority:
@@ -1248,12 +1248,10 @@ class FBRChecker:
                                     // Find the checkbox in this row
                                     var checkbox = rows[i].querySelector('div[class*="ui-chkbox-box"]');
                                     
-                                    // Extract FBR Sales Tax value from the same row
-                                    var fbr_sales_tax = 'N/A';
-                                    if (fbr_sales_tax_col_index >= 0 && cells.length > fbr_sales_tax_col_index) {
-                                        fbr_sales_tax = cells[fbr_sales_tax_col_index].innerText.trim();
-                                        console.log('Extracted FBR Sales Tax: ' + fbr_sales_tax);
-                                    }
+                                    // Return the cellValue (Sales Tax/FED in ST Mode from FBR) to write to Excel
+                                    // This is the FBR portal's value that we want to capture
+                                    var fbr_sales_tax = cellValue;  // Use the actual cellValue from FBR
+                                    console.log('Captured FBR Sales Tax from matched row: ' + fbr_sales_tax);
                                     
                                     if (checkbox && checkbox.offsetParent !== null) {
                                         return {checkbox: checkbox, fbr_sales_tax: fbr_sales_tax};
@@ -1269,16 +1267,16 @@ class FBRChecker:
                     if result and result.get('checkbox'):
                         matching_checkbox = result['checkbox']
                         
-                        # Get the actual FBR Sales Tax value from the matched row
+                        # Get the FBR Sales Tax value (cellValue from FBR portal)
                         matched_row_sales_tax = result.get('fbr_sales_tax', 'N/A')
                         logging.info(f"✓ Found matching row for Sales Tax/FED in ST Mode = '{sales_tax_fed_st_mode}'")
-                        logging.info(f"✓ FBR Sales Tax/FED value extracted: {matched_row_sales_tax}")
+                        logging.info(f"✓ FBR Sales Tax value captured from portal: {matched_row_sales_tax}")
                     else:
                         logging.warning(f"No row found matching Sales Tax/FED in ST Mode = '{sales_tax_fed_st_mode}', checking for default row...")
                         matching_checkbox = None
                 else:
                     logging.info("STEP 6.1: No Sales Tax/FED value provided, using first row...")
-                    # Try to extract FBR Sales Tax from first row if available
+                    # Extract Sales Tax/FED in ST Mode value from first row (this is what we write to Excel)
                     matched_row_sales_tax = self.driver.execute_script("""
                         var table = document.getElementById('correspondenceTabs:loadAnnexAform:purchaseInvoiceTable');
                         if (!table) return 'N/A';
@@ -1287,28 +1285,26 @@ class FBRChecker:
                         if (!rows || rows.length === 0) return 'N/A';
                         
                         var headers = table.querySelectorAll('thead th');
-                        var fbr_sales_tax_col_index = -1;
+                        var sales_tax_col_index = -1;
                         
-                        // Find FBR Sales Tax column (OUTPUT column, not input)
+                        // Find "Sales Tax/ FED in ST Mode" column (the value from FBR portal we want to capture)
                         for (var h = 0; h < headers.length; h++) {
                             var headerText = headers[h].innerText.trim();
                             console.log('First row - Header ' + h + ': ' + headerText);
                             
-                            // Match Sales Tax/FED ONLY (not "ST Mode" which is input)
-                            if ((headerText.includes('Sales Tax') || headerText.includes('FED')) && 
-                                !headerText.includes('ST Mode') && 
-                                !headerText.includes('Input')) {
-                                fbr_sales_tax_col_index = h;
-                                console.log('Found FBR Sales Tax column at index: ' + fbr_sales_tax_col_index);
+                            // Match "Sales Tax/ FED in ST Mode" column
+                            if (headerText.includes('Sales Tax') && headerText.includes('ST Mode')) {
+                                sales_tax_col_index = h;
+                                console.log('Found Sales Tax/FED in ST Mode column at index: ' + sales_tax_col_index);
                                 break;
                             }
                         }
                         
-                        if (fbr_sales_tax_col_index >= 0) {
+                        if (sales_tax_col_index >= 0) {
                             var cells = rows[0].querySelectorAll('td');
-                            if (cells && cells.length > fbr_sales_tax_col_index) {
-                                var value = cells[fbr_sales_tax_col_index].innerText.trim();
-                                console.log('Extracted FBR Sales Tax from first row: ' + value);
+                            if (cells && cells.length > sales_tax_col_index) {
+                                var value = cells[sales_tax_col_index].innerText.trim();
+                                console.log('Extracted Sales Tax/FED in ST Mode from first row: ' + value);
                                 return value;
                             }
                         }
@@ -1325,7 +1321,7 @@ class FBRChecker:
                         'fbr_sales_tax': 'N/A'
                     }
                 
-                # Extract FBR Sales Tax from the row containing the checkbox if not already set
+                # Extract Sales Tax/FED in ST Mode from the row containing the checkbox if not already set
                 if matched_row_sales_tax == 'N/A':
                     try:
                         matched_row_sales_tax = self.driver.execute_script("""
@@ -1336,39 +1332,37 @@ class FBRChecker:
                             var row = checkbox.closest('tr');
                             if (!row) return 'N/A';
                             
-                            // Get table headers to find FBR Sales Tax column
+                            // Get table headers to find Sales Tax/FED in ST Mode column
                             var table = row.closest('table');
                             if (!table) return 'N/A';
                             
                             var headers = table.querySelectorAll('thead th');
-                            var fbr_sales_tax_col_index = -1;
+                            var sales_tax_col_index = -1;
                             
-                            // Find FBR Sales Tax column
+                            // Find "Sales Tax/ FED in ST Mode" column (the value we want to capture)
                             for (var h = 0; h < headers.length; h++) {
                                 var headerText = headers[h].innerText.trim();
-                                if ((headerText.includes('Sales Tax') || headerText.includes('FED')) && 
-                                    !headerText.includes('ST Mode') && 
-                                    !headerText.includes('Input')) {
-                                    fbr_sales_tax_col_index = h;
-                                    console.log('Found FBR Sales Tax column at index: ' + fbr_sales_tax_col_index);
+                                if (headerText.includes('Sales Tax') && headerText.includes('ST Mode')) {
+                                    sales_tax_col_index = h;
+                                    console.log('Found Sales Tax/FED in ST Mode column at index: ' + sales_tax_col_index);
                                     break;
                                 }
                             }
                             
-                            if (fbr_sales_tax_col_index >= 0) {
+                            if (sales_tax_col_index >= 0) {
                                 var cells = row.querySelectorAll('td');
-                                if (cells && cells.length > fbr_sales_tax_col_index) {
-                                    var value = cells[fbr_sales_tax_col_index].innerText.trim();
-                                    console.log('Extracted FBR Sales Tax from clicked row: ' + value);
+                                if (cells && cells.length > sales_tax_col_index) {
+                                    var value = cells[sales_tax_col_index].innerText.trim();
+                                    console.log('Extracted Sales Tax/FED in ST Mode from clicked row: ' + value);
                                     return value;
                                 }
                             }
                             
                             return 'N/A';
                         """, matching_checkbox)
-                        logging.info(f"✓ Extracted FBR Sales Tax from checkbox row: {matched_row_sales_tax}")
+                        logging.info(f"✓ Extracted Sales Tax/FED in ST Mode from checkbox row: {matched_row_sales_tax}")
                     except Exception as e:
-                        logging.warning(f"Could not extract FBR Sales Tax from checkbox row: {str(e)}")
+                        logging.warning(f"Could not extract Sales Tax/FED in ST Mode from checkbox row: {str(e)}")
                         matched_row_sales_tax = 'N/A'
                 
                 # Human-like click on the matching checkbox
