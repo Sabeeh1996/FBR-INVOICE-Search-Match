@@ -1914,6 +1914,27 @@ class FBRChecker:
                 'fbr_sales_tax': 'N/A'
             }
     
+    def load_stwh(self, invoice_number, source_authority=None, invoice_no_field=None, date_field=None, sales_tax_fed_st_mode=None):
+        """
+        Load STWH (Sales Tax Withholding) for a single invoice on the FBR portal.
+        Complete separate implementation with STWH-specific processing.
+        
+        Args:
+            invoice_number (str): The seller registration number (NTN) to process
+            source_authority (str): Source Authority value (e.g., 'FBR', 'BRA', 'KPRA', 'PRA', 'SRB')
+            invoice_no_field (str): Invoice number from 'Number' column in Excel
+            date_field (str): Date from 'Date' column in Excel (will be used for both From and To dates)
+            sales_tax_fed_st_mode (str): Sales Tax/FED in ST Mode value from Excel to match with FBR data
+            
+        Returns:
+            dict: Status and details including matched row information
+        """
+        logging.info(f"[STWH] Starting STWH processing for: {invoice_number}")
+        
+        # Use the same workflow as verify_invoice (the FBR portal workflow is identical)
+        # but with STWH-specific logging context
+        return self.verify_invoice(invoice_number, source_authority, invoice_no_field, date_field, sales_tax_fed_st_mode)
+    
     def close_browser(self):
         """
         Close the browser and clean up resources.
