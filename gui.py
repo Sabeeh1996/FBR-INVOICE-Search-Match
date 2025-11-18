@@ -95,6 +95,10 @@ class FBRInvoiceCheckerGUI:
         self.is_paused = False
         self.worker_thread = None
         
+        # Persistent instances
+        self.fbr_checker = None
+        self.excel_handler = None
+        
         # Recording variables
         self.is_recording = False
         self.recorded_steps = []
@@ -288,12 +292,22 @@ class FBRInvoiceCheckerGUI:
         
         self.start_btn = ttk.Button(
             inner_button_frame, 
-            text="▶ Start", 
-            command=self.start_processing,
-            width=12,
+            text="🌐 Open FBR Portal", 
+            command=self.start_fbr_browser,
+            width=18,
             style='Start.TButton'
         )
         self.start_btn.grid(row=0, column=0, padx=8, pady=5)
+        
+        self.verify_btn = ttk.Button(
+            inner_button_frame, 
+            text="▶ Verify Invoices", 
+            command=self.start_verification,
+            width=18,
+            state='disabled',
+            style='Start.TButton'
+        )
+        self.verify_btn.grid(row=0, column=1, padx=8, pady=5)
         
         self.pause_btn = ttk.Button(
             inner_button_frame, 
@@ -302,7 +316,7 @@ class FBRInvoiceCheckerGUI:
             width=12,
             state='disabled'
         )
-        self.pause_btn.grid(row=0, column=1, padx=8, pady=5)
+        self.pause_btn.grid(row=0, column=2, padx=8, pady=5)
         self.pause_btn.grid_remove()  # Hide initially
         
         self.resume_btn = ttk.Button(
@@ -312,7 +326,7 @@ class FBRInvoiceCheckerGUI:
             width=12,
             state='disabled'
         )
-        self.resume_btn.grid(row=0, column=2, padx=8, pady=5)
+        self.resume_btn.grid(row=0, column=3, padx=8, pady=5)
         self.resume_btn.grid_remove()  # Hide initially
         
         self.stop_btn = ttk.Button(
@@ -322,11 +336,11 @@ class FBRInvoiceCheckerGUI:
             width=12,
             state='disabled'
         )
-        self.stop_btn.grid(row=0, column=3, padx=8, pady=5)
+        self.stop_btn.grid(row=0, column=4, padx=8, pady=5)
         self.stop_btn.grid_remove()  # Hide initially
         
         # Separator space before Exit button
-        ttk.Frame(inner_button_frame, width=30).grid(row=0, column=4)
+        ttk.Frame(inner_button_frame, width=30).grid(row=0, column=5)
         
         self.exit_btn = ttk.Button(
             inner_button_frame, 
@@ -335,7 +349,7 @@ class FBRInvoiceCheckerGUI:
             width=12,
             style='Exit.TButton'
         )
-        self.exit_btn.grid(row=0, column=5, padx=8, pady=5)
+        self.exit_btn.grid(row=0, column=6, padx=8, pady=5)
 
         # Hover effects for start and exit
         self.start_btn.bind('<Enter>', lambda e: _on_enter(self.start_btn, 'StartHover.TButton'))
@@ -555,17 +569,70 @@ class FBRInvoiceCheckerGUI:
             self.excel_file_path.set(file_path)
             self.log_message(f"📁 Selected file: {file_path}")
     
-    def start_processing(self):
+    def start_fbr_browser(self):
         """
-        Start the invoice verification process.
+        Open FBR portal in browser (Start button - just opens browser).
+        """
+        # Disable start button
+        self.start_btn.config(state='disabled')
+        self.log_message("🌐 Opening FBR portal...")
+        
+        # Start browser initialization in a separate thread
+        browser_thread = threading.Thread(target=self._initialize_browser_only, daemon=True)
+        browser_thread.start()
+    
+    def _initialize_browser_only(self):
+        """
+        Worker function to initialize browser and navigate to FBR portal.
+        Runs in a separate thread.
+        """
+        try:
+            # Initialize browser
+            self.log_message("🌐 Initializing Chrome browser...")
+            self.fbr_checker = FBRChecker()
+            
+            if not self.fbr_checker.initialize_browser():
+                self.log_message("❌ Error: Failed to initialize Chrome browser")
+                messagebox.showerror("Error", "ChromeDriver not found or failed to initialize.\n\nPlease ensure Chrome browser is installed.")
+                self.root.after(0, lambda: self.start_btn.config(state='normal'))
+                return
+            
+            # Navigate to FBR portal
+            self.log_message("🔗 Navigating to FBR portal...")
+            if not self.fbr_checker.navigate_to_fbr():
+                self.log_message("❌ Error: Failed to navigate to FBR portal")
+                messagebox.showerror("Error", "Failed to connect to FBR website. Check your internet connection.")
+                self.root.after(0, lambda: self.start_btn.config(state='normal'))
+                return
+            
+            self.log_message("✅ FBR portal opened successfully!")
+            self.log_message("📝 Please select an Excel file and click 'Verify Invoices' to start verification")
+            
+            # Enable verify button after successful browser initialization
+            self.root.after(0, lambda: self.verify_btn.config(state='normal'))
+            
+        except Exception as e:
+            self.log_message(f"❌ Error initializing browser: {str(e)}")
+            logging.error(f"Browser initialization error: {str(e)}")
+            messagebox.showerror("Error", f"Failed to open browser:\n\n{str(e)}")
+            self.root.after(0, lambda: self.start_btn.config(state='normal'))
+    
+    def start_verification(self):
+        """
+        Start the invoice verification process (Verify Invoices button).
         """
         # Validate file selection
         if not self.excel_file_path.get():
             messagebox.showerror("Error", "Please select an Excel file first!")
             return
         
-        # Disable start button
-        self.start_btn.config(state='disabled')
+        # Check if browser is initialized
+        if not self.fbr_checker:
+            messagebox.showerror("Error", "Please open FBR portal first!")
+            return
+        
+        # Disable verify button
+        self.verify_btn.config(state='disabled')
         self.is_running = True
         
         # Reset statistics
@@ -581,11 +648,8 @@ class FBRInvoiceCheckerGUI:
         self.root.after(0, lambda: self.start_time_label.config(text=start_time_str))
         self.root.after(0, lambda: self.end_time_label.config(text="--:-- --"))
         
-        # Clear log
-        self.log_text.delete(1.0, tk.END)
-        
-        # Start worker thread
-        self.worker_thread = threading.Thread(target=self.process_invoices, daemon=True)
+        # Start worker thread for verification
+        self.worker_thread = threading.Thread(target=self.verify_invoices, daemon=True)
         self.worker_thread.start()
         
         self.log_message("🚀 Starting invoice verification...")
@@ -624,29 +688,26 @@ class FBRInvoiceCheckerGUI:
         else:
             self.log_message("Stop cancelled")
     
-    def process_invoices(self):
+    def verify_invoices(self):
         """
-        Main worker function to process all invoices.
-        Runs in a separate thread.
+        Main worker function to verify all invoices.
+        Runs in a separate thread. Browser should already be initialized.
         """
         import time
         start_time = time.time()  # Track overall start time
         
-        excel_handler = None
-        fbr_checker = None
-        
         try:
             # Initialize Excel handler
             self.log_message("📊 Loading Excel file...")
-            excel_handler = ExcelHandler(self.excel_file_path.get())
+            self.excel_handler = ExcelHandler(self.excel_file_path.get())
             
-            if not excel_handler.load_excel():
+            if not self.excel_handler.load_excel():
                 self.log_message("❌ Error: Failed to load Excel file")
                 messagebox.showerror("Error", "Failed to load Excel file. Check if 'Seller Registration No.' column exists.")
                 return
             
             # Get invoice list
-            invoices = excel_handler.get_invoice_numbers()
+            invoices = self.excel_handler.get_invoice_numbers()
             
             if not invoices:
                 self.log_message("❌ Error: No invoice numbers found in Excel")
@@ -660,25 +721,6 @@ class FBRInvoiceCheckerGUI:
             # Show column headers for upcoming records
             self.log_message("=" * 80)
             self.log_message("EXCEL COLUMNS: Sr.No | Source | Name | Registration No | Number | Date")
-            self.log_message("=" * 80)
-            
-            # Initialize browser
-            self.log_message("🌐 Initializing Chrome browser...")
-            fbr_checker = FBRChecker()
-            
-            if not fbr_checker.initialize_browser():
-                self.log_message("❌ Error: Failed to initialize Chrome browser")
-                messagebox.showerror("Error", "ChromeDriver not found or failed to initialize.\n\nPlease ensure Chrome browser is installed.")
-                return
-            
-            # Navigate to FBR portal
-            self.log_message("🔗 Navigating to FBR portal...")
-            if not fbr_checker.navigate_to_fbr():
-                self.log_message("❌ Error: Failed to navigate to FBR portal")
-                messagebox.showerror("Error", "Failed to connect to FBR website. Check your internet connection.")
-                return
-            
-            self.log_message("✅ Connected to FBR portal successfully")
             self.log_message("=" * 80)
             
             # Process each invoice
@@ -716,7 +758,7 @@ class FBRInvoiceCheckerGUI:
                 # Verify invoice with source authority, invoice number, date, and sales tax from Excel
                 self.log_message(f"🔍 Verifying on FBR portal...")
                 try:
-                    result = fbr_checker.verify_invoice(registration_no, source_authority=source_auth, invoice_no_field=number, date_field=date, sales_tax_fed_st_mode=sales_tax_fed_st_mode)
+                    result = self.fbr_checker.verify_invoice(registration_no, source_authority=source_auth, invoice_no_field=number, date_field=date, sales_tax_fed_st_mode=sales_tax_fed_st_mode)
                     
                     # Handle both dict and string return types for backwards compatibility
                     if isinstance(result, dict):
@@ -744,7 +786,7 @@ class FBRInvoiceCheckerGUI:
                     fbr_sales_tax = 'N/A'
                 
                 # Update Excel with status, value of purchases, and FBR Sales Tax
-                excel_handler.update_invoice_status(row_number, status, value_of_purchases, fbr_sales_tax)
+                self.excel_handler.update_invoice_status(row_number, status, value_of_purchases, fbr_sales_tax)
                 
                 # Update statistics
                 self.processed_count += 1
@@ -782,14 +824,14 @@ class FBRInvoiceCheckerGUI:
                 self.log_message(f"⏱️ Waiting {delay:.1f}s before next invoice...")
                 time.sleep(delay)
             
-            # Close browser
-            if fbr_checker:
-                fbr_checker.close_browser()
-                self.log_message("🌐 Browser closed")
+            # Close browser (optional - user can keep it open for manual work)
+            # if self.fbr_checker:
+            #     self.fbr_checker.close_browser()
+            #     self.log_message("🌐 Browser closed")
             
             # Close Excel
-            if excel_handler:
-                excel_handler.close()
+            if self.excel_handler:
+                self.excel_handler.close()
                 self.log_message("📊 Excel file saved and closed")
             
             # Show completion message
@@ -802,15 +844,13 @@ class FBRInvoiceCheckerGUI:
             messagebox.showerror("Critical Error", f"An unexpected error occurred:\n\n{str(e)}")
         
         finally:
-            # Cleanup
-            if fbr_checker:
-                fbr_checker.close_browser()
-            if excel_handler:
-                excel_handler.close()
+            # Cleanup Excel handler
+            if self.excel_handler:
+                self.excel_handler.close()
             
-            # Reset UI
+            # Reset UI (keep browser open)
             self.is_running = False
-            self.start_btn.config(state='normal')
+            self.verify_btn.config(state='normal')
     
     def _format_time(self, seconds):
         """
@@ -1146,12 +1186,22 @@ class FBRInvoiceCheckerGUI:
         if self.is_running:
             if messagebox.askyesno("Confirm Exit", "Processing is in progress. Are you sure you want to exit?"):
                 self.is_running = False
+                # Clean up resources
+                if self.fbr_checker:
+                    self.fbr_checker.close_browser()
+                if self.excel_handler:
+                    self.excel_handler.close()
                 # Record end time when exiting
                 self.end_time = time.time()
                 end_time_str = time.strftime('%I:%M %p', time.localtime(self.end_time))
                 self.root.after(0, lambda: self.end_time_label.config(text=end_time_str))
                 self.root.destroy()
         else:
+            # Clean up resources
+            if self.fbr_checker:
+                self.fbr_checker.close_browser()
+            if self.excel_handler:
+                self.excel_handler.close()
             # Record end time even if not processing
             if self.start_time:
                 self.end_time = time.time()
