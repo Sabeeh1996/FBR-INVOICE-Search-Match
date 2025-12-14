@@ -1,7 +1,21 @@
 {
   "_comment": "GitHub-hosted MAC Address Whitelist - Edit this file to control device access",
+  "_instructions": [
+    "To AUTHORIZE: Set status to 'active'",
+    "To REVOKE: Set status to 'revoked'",
+    "Empty devices array = first-time use (auto-authorization enabled)",
+    "Status values: 'active' = authorized, 'revoked' = blocked"
+  ],
   "mode": "github_whitelist",
-  "authorized_macs": [],
-  "last_updated": "2025-12-14T13:45:03.264387",
+  "devices": [
+    {
+      "mac_hash": "65158b05d949d8d5afb6472965bcefcde59a8671ef106d3150886e6e7b0e493a",
+      "status": "active",
+      "authorized_date": "2025-12-14T13:55:01.834744",
+      "last_updated": "2025-12-14T13:55:01.834744",
+      "notes": "Auto-authorized on first run"
+    }
+  ],
+  "last_updated": "2025-12-14T13:55:01.834744",
   "updated_by": "auto-authorize"
 }
