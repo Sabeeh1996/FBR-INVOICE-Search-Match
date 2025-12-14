@@ -10,6 +10,7 @@ import logging
 import hashlib
 import urllib.request
 import urllib.error
+from datetime import datetime
 from typing import List, Optional, Tuple
 
 
@@ -19,15 +20,17 @@ class MACAuthenticator:
     Supports both whitelist mode and license binding mode.
     """
     
-    def __init__(self, config_file="mac_config.json", github_url=None):
+    def __init__(self, config_file="mac_config.json", github_url=None, whitelist_file="mac_whitelist.json"):
         """
         Initialize MAC authenticator.
         
         Args:
             config_file (str): Path to MAC address configuration file
             github_url (str): GitHub raw URL for mac_whitelist.json (optional)
+            whitelist_file (str): Path to local GitHub whitelist file
         """
         self.config_file = config_file
+        self.whitelist_file = whitelist_file
         self.config_existed_before = os.path.exists(config_file)  # Track if config existed
         self.github_url = github_url or "https://raw.githubusercontent.com/Sabeeh1996/FBR-INVOICE-Search-Match/develop/mac_whitelist.json"
         self.config = self._load_config()
@@ -152,6 +155,50 @@ class MACAuthenticator:
                 json.dump(config_to_save, f, indent=4)
         except Exception as e:
             logging.error(f"Error saving MAC config: {str(e)}")
+    
+    def _update_github_whitelist_file(self, mac_hash: str) -> bool:
+        """
+        Update local GitHub whitelist file (to be committed/pushed later).
+        
+        Args:
+            mac_hash (str): MAC address hash to add
+            
+        Returns:
+            bool: True if successful
+        """
+        try:
+            # Load existing whitelist
+            if os.path.exists(self.whitelist_file):
+                with open(self.whitelist_file, 'r') as f:
+                    whitelist = json.load(f)
+            else:
+                whitelist = {
+                    "_comment": "GitHub-hosted MAC Address Whitelist - Edit this file to control device access",
+                    "mode": "github_whitelist",
+                    "authorized_macs": [],
+                    "last_updated": "",
+                    "updated_by": "auto-authorize"
+                }
+            
+            # Add MAC if not already present
+            if mac_hash not in whitelist.get('authorized_macs', []):
+                whitelist['authorized_macs'].append(mac_hash)
+                whitelist['last_updated'] = datetime.now().isoformat()
+                whitelist['updated_by'] = 'auto-authorize'
+                
+                # Save updated whitelist
+                with open(self.whitelist_file, 'w') as f:
+                    json.dump(whitelist, f, indent=2)
+                
+                logging.info(f"Added MAC to GitHub whitelist file: {self.whitelist_file}")
+                logging.info(f"→ Commit and push this file to GitHub to sync authorization")
+                return True
+            
+            return False
+            
+        except Exception as e:
+            logging.error(f"Error updating GitHub whitelist file: {str(e)}")
+            return False
     
     def _fetch_github_whitelist(self) -> Optional[dict]:
         """
@@ -298,6 +345,7 @@ class MACAuthenticator:
     def authorize_current_mac(self) -> bool:
         """
         Add current MAC address to authorized list.
+        Also updates local GitHub whitelist file for easy syncing.
         
         Returns:
             bool: True if successful
@@ -310,6 +358,10 @@ class MACAuthenticator:
                 self.config["authorized_macs"].append(self.current_mac_hash)
                 self._save_config()
                 logging.info(f"Authorized MAC address: {self.current_mac}")
+                
+                # Also update GitHub whitelist file locally
+                self._update_github_whitelist_file(self.current_mac_hash)
+                logging.info(f"💡 TIP: Run 'git add mac_whitelist.json && git commit -m \"Auto-authorize device\" && git push' to sync to GitHub")
             
             return True
         except Exception as e:

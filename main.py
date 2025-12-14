@@ -143,9 +143,21 @@ def main():
             "✅ DEVICE SUCCESSFULLY AUTHORIZED\n\n"
             f"MAC Address: {mac_auth.current_mac}\n\n"
             "This device is now authorized to run the application.\n"
-            "The administrator has been notified of this activation."
+            "The administrator has been notified of this activation.\n\n"
+            "💡 Note: Local whitelist updated.\n"
+            "Administrator: run 'python sync_whitelist.py' to sync to GitHub."
         )
         root.destroy()
+        
+        # Log sync instructions for admin
+        logging.info("="*60)
+        logging.info("📋 ADMIN ACTION REQUIRED:")
+        logging.info("   mac_whitelist.json has been updated locally")
+        logging.info("   To sync authorization to GitHub, run:")
+        logging.info("   python sync_whitelist.py")
+        logging.info("   OR manually:")
+        logging.info("   git add mac_whitelist.json && git commit -m 'Auto-authorize device' && git push")
+        logging.info("="*60)
     
     # Check version integrity (detect tampering)
     check_version_integrity()
