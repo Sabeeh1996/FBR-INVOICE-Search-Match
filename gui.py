@@ -791,18 +791,13 @@ class FBRInvoiceCheckerGUI:
         if messagebox.askyesno("Stop Processing", "Are you sure you want to stop processing?\nThe Excel file will be saved with current progress."):
             self.is_running = False
             self.pause_requested = False
-            self.log_message("⏹️ Stop requested... Cleaning up")
+            self.log_message("⏹️ Stop requested... Will stop after current invoice completes")
             
-            # Save and close Excel
-            if self.excel_handler:
-                try:
-                    self.excel_handler.close()
-                    self.log_message("📊 Excel file saved successfully")
-                except Exception as e:
-                    self.log_message(f"⚠️ Error saving Excel: {str(e)}")
+            # Disable stop button to prevent multiple clicks
+            self.stop_btn.config(state='disabled')
+            self.pause_btn.config(state='disabled')
             
-            # Hide pause/stop buttons, show verify buttons
-            self._reset_ui_after_stop()
+            # Note: Excel will be saved and UI reset by the worker thread's finally block
         else:
             self.log_message("Stop cancelled")
     
@@ -913,6 +908,21 @@ class FBRInvoiceCheckerGUI:
                 try:
                     result = self.fbr_checker.verify_invoice(registration_no, source_authority=source_auth, invoice_no_field=number, date_field=date, sales_tax_fed_st_mode=sales_tax_fed_st_mode)
                     
+                    # Check if stopped immediately after verification (before updating Excel)
+                    if not self.is_running:
+                        self.log_message("⏹️ Processing stopped by user")
+                        # Save current invoice result before stopping
+                        if isinstance(result, dict):
+                            status = result.get('status', '⚠️ Error')
+                            value_of_purchases = result.get('value_of_purchases', 'N/A')
+                            fbr_sales_tax = result.get('fbr_sales_tax', 'N/A')
+                        else:
+                            status = result
+                            value_of_purchases = 'N/A'
+                            fbr_sales_tax = 'N/A'
+                        self.excel_handler.update_invoice_status(row_number, status, value_of_purchases, fbr_sales_tax)
+                        break
+                    
                     # Handle both dict and string return types for backwards compatibility
                     if isinstance(result, dict):
                         status = result.get('status', '⚠️ Error')
@@ -978,9 +988,12 @@ class FBRInvoiceCheckerGUI:
                     self.log_message(f"⏸️ Paused at row {row_number}")
                     self.log_message(f"✅ Progress saved. You can resume later from row {row_number + 1}")
                     
-                    # Save current state
+                    # Save and close current state safely
                     if self.excel_handler:
-                        self.excel_handler.close()
+                        try:
+                            self.excel_handler.close()
+                        except Exception as e:
+                            logging.error(f"Error closing Excel on pause: {str(e)}")
                     
                     # Update UI to show resume button
                     self.root.after(0, self._show_resume_ui)
@@ -1001,10 +1014,14 @@ class FBRInvoiceCheckerGUI:
             #     self.fbr_checker.close_browser()
             #     self.log_message("🌐 Browser closed")
             
-            # Close Excel
+            # Close Excel safely
             if self.excel_handler:
-                self.excel_handler.close()
-                self.log_message("📊 Excel file saved and closed")
+                try:
+                    self.excel_handler.close()
+                    self.log_message("📊 Excel file saved and closed")
+                except Exception as e:
+                    logging.error(f"Error closing Excel: {str(e)}")
+                    self.log_message(f"⚠️ Warning: Excel close error (data should be saved)")
             
             # Show completion message
             if self.is_running:
@@ -1016,9 +1033,13 @@ class FBRInvoiceCheckerGUI:
             messagebox.showerror("Critical Error", f"An unexpected error occurred:\n\n{str(e)}")
         
         finally:
-            # Cleanup Excel handler
+            # Cleanup Excel handler - ensure it's saved and closed
             if self.excel_handler:
-                self.excel_handler.close()
+                try:
+                    self.excel_handler.close()
+                    logging.info("Excel handler closed successfully in finally block")
+                except Exception as close_error:
+                    logging.error(f"Error closing Excel in finally block: {str(close_error)}")
             
             # Reset UI (keep browser open)
             self.is_running = False
@@ -1135,6 +1156,12 @@ class FBRInvoiceCheckerGUI:
                 # Update Excel with status, value of purchases, and FBR Sales Tax
                 self.excel_handler.update_invoice_status(row_number, status, value_of_purchases, fbr_sales_tax)
                 
+                # Check if user stopped processing (immediate check after STWH processing completes)
+                if not self.is_running:
+                    self.log_message("⏹️ [STWH] Processing stopped by user")
+                    self.log_message(f"✅ Progress saved up to row {row_number}")
+                    break
+                
                 # Update statistics
                 self.processed_count += 1
                 
@@ -1170,28 +1197,30 @@ class FBRInvoiceCheckerGUI:
                     self.log_message(f"⏸️ [STWH] Paused at row {row_number}")
                     self.log_message(f"✅ Progress saved. You can resume later from row {row_number + 1}")
                     
-                    # Save current state
+                    # Save and close current state safely
                     if self.excel_handler:
-                        self.excel_handler.close()
+                        try:
+                            self.excel_handler.close()
+                        except Exception as e:
+                            logging.error(f"Error closing Excel on pause: {str(e)}")
                     
                     # Update UI to show resume button
                     self.root.after(0, self._show_resume_ui)
                     return  # Exit the processing loop
-                
-                # Check if user stopped processing
-                if not self.is_running:
-                    self.log_message("⏹️ [STWH] Processing stopped by user")
-                    break
                 
                 # Random delay between requests (human-like behavior)
                 delay = random.uniform(0.25, 0.5)
                 self.log_message(f"⏱️ Waiting {delay:.1f}s before next invoice...")
                 time.sleep(delay)
             
-            # Close Excel
+            # Close Excel safely
             if self.excel_handler:
-                self.excel_handler.close()
-                self.log_message("📊 Excel file saved and closed")
+                try:
+                    self.excel_handler.close()
+                    self.log_message("📊 Excel file saved and closed")
+                except Exception as e:
+                    logging.error(f"Error closing Excel: {str(e)}")
+                    self.log_message(f"⚠️ Warning: Excel close error (data should be saved)")
             
             # Show completion message
             if self.is_running:
@@ -1203,9 +1232,13 @@ class FBRInvoiceCheckerGUI:
             messagebox.showerror("Critical Error", f"An unexpected error occurred:\n\n{str(e)}")
         
         finally:
-            # Cleanup Excel handler
+            # Cleanup Excel handler - ensure it's saved and closed
             if self.excel_handler:
-                self.excel_handler.close()
+                try:
+                    self.excel_handler.close()
+                    logging.info("Excel handler closed successfully in finally block")
+                except Exception as close_error:
+                    logging.error(f"Error closing Excel in finally block: {str(close_error)}")
             
             # Reset UI (keep browser open)
             self.is_running = False

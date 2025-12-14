@@ -2514,18 +2514,90 @@ class FBRChecker:
             
             # Wait for results table
             logging.info("[STWH] Waiting for results table to appear...")
-            try:
-                WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.XPATH, "//table[contains(@class, 'ui-datatable')]"))
-                )
-                logging.info("[STWH] Results table found")
-            except TimeoutException:
-                logging.error("[STWH] Results table did not appear")
+            
+            results_table = None
+            results_table_selectors = [
+                # Strategy 1: Table with ui-datatable class
+                (By.XPATH, "//table[contains(@class, 'ui-datatable')]"),
+                
+                # Strategy 2: Table with role='grid'
+                (By.XPATH, "//table[@role='grid']"),
+                
+                # Strategy 3: Table with purchaseInvoiceTable ID
+                (By.ID, "correspondenceTabs:loadStwhAnnexAform:purchaseInvoiceTable"),
+                
+                # Strategy 4: Table with ui-datatable-data class
+                (By.XPATH, "//table[contains(@class, 'ui-datatable-data')]"),
+                
+                # Strategy 5: Table within loadStwhAnnexAform form
+                (By.XPATH, "//form[contains(@id, 'loadStwhAnnexAform')]//table[contains(@class, 'ui-datatable')]"),
+                
+                # Strategy 6: Table with ui-datatable-scrollable-body wrapper
+                (By.XPATH, "//div[contains(@class, 'ui-datatable-scrollable-body')]//table"),
+                
+                # Strategy 7: Table with thead and tbody (generic data table structure)
+                (By.XPATH, "//table[contains(@id, 'purchaseInvoiceTable') and .//thead and .//tbody]"),
+                
+                # Strategy 8: CSS selector with ui-datatable class
+                (By.CSS_SELECTOR, "table.ui-datatable"),
+                
+                # Strategy 9: Table with ui-widget class
+                (By.XPATH, "//table[contains(@class, 'ui-widget') and contains(@class, 'ui-datatable')]"),
+                
+                # Strategy 10: Generic table in results area
+                (By.XPATH, "//div[contains(@class, 'ui-datatable')]//table"),
+            ]
+            
+            for by_type, selector in results_table_selectors:
+                try:
+                    results_table = WebDriverWait(self.driver, 2).until(
+                        EC.presence_of_element_located((by_type, selector))
+                    )
+                    logging.info(f"[STWH] Results table found using selector: {selector}")
+                    break
+                except TimeoutException:
+                    continue
+            
+            # JavaScript fallback
+            if not results_table:
+                logging.info("[STWH] Trying JavaScript fallback for results table...")
+                try:
+                    results_table = self.driver.execute_script("""
+                        // Try multiple strategies to find the table
+                        var table = document.querySelector('table.ui-datatable') || 
+                                   document.querySelector('table[role="grid"]') ||
+                                   document.querySelector('table[id*="purchaseInvoiceTable"]') ||
+                                   document.querySelector('form[id*="loadStwhAnnexAform"] table');
+                        
+                        if (table && table.querySelector('tbody tr')) {
+                            return table;
+                        }
+                        
+                        // Last resort: find any table with data rows
+                        var tables = document.querySelectorAll('table');
+                        for (var i = 0; i < tables.length; i++) {
+                            if (tables[i].querySelector('tbody tr')) {
+                                return tables[i];
+                            }
+                        }
+                        
+                        return null;
+                    """)
+                    
+                    if results_table:
+                        logging.info("[STWH] Results table found using JavaScript fallback")
+                except Exception as js_error:
+                    logging.error(f"[STWH] JavaScript fallback failed: {str(js_error)}")
+            
+            if not results_table:
+                logging.error("[STWH] Results table did not appear after trying all strategies")
                 return {
                     'status': '⚠️ Error - No results table',
                     'value_of_purchases': 'N/A',
                     'fbr_sales_tax': 'N/A'
                 }
+            
+            logging.info("[STWH] ✓ Results table verified and ready")
             
             self._random_delay(0.5, 1.0)
             
@@ -2579,6 +2651,75 @@ class FBRChecker:
                 logging.error(f"[STWH] Error finding matching row: {str(e)}")
                 return {
                     'status': '⚠️ Error - Row matching failed',
+                    'value_of_purchases': 'N/A',
+                    'fbr_sales_tax': 'N/A'
+                }
+            
+            # Step 6.5: Click the checkbox in the matched row
+            logging.info("[STWH] STEP 6.5: Clicking checkbox in matched row")
+            
+            try:
+                checkbox_clicked = self.driver.execute_script("""
+                    var row = document.querySelector('tr[data-matched-row="true"]');
+                    if (!row) {
+                        console.error('Matched row not found');
+                        return {success: false, error: 'Row not found'};
+                    }
+                    
+                    // Strategy 1: Find checkbox input in the row
+                    var checkbox = row.querySelector('input[type="checkbox"]');
+                    if (checkbox && !checkbox.checked) {
+                        checkbox.click();
+                        console.log('Checkbox clicked via input element');
+                        return {success: true, method: 'input'};
+                    }
+                    
+                    // Strategy 2: Find div with ui-chkbox class (PrimeFaces checkbox wrapper)
+                    var chkboxDiv = row.querySelector('div.ui-chkbox-box, div[role="checkbox"]');
+                    if (chkboxDiv) {
+                        chkboxDiv.click();
+                        console.log('Checkbox clicked via PrimeFaces div');
+                        return {success: true, method: 'primefaces-div'};
+                    }
+                    
+                    // Strategy 3: Find any clickable element in first cell (usually checkbox column)
+                    var firstCell = row.querySelector('td:first-child');
+                    if (firstCell) {
+                        var clickable = firstCell.querySelector('input, div[role="checkbox"], span.ui-chkbox-icon');
+                        if (clickable) {
+                            clickable.click();
+                            console.log('Checkbox clicked via first cell element');
+                            return {success: true, method: 'first-cell'};
+                        }
+                    }
+                    
+                    // Strategy 4: Look for checkbox by ID pattern
+                    var inputs = row.querySelectorAll('input[id*="checkbox"], input[id*="chk"]');
+                    if (inputs.length > 0) {
+                        inputs[0].click();
+                        console.log('Checkbox clicked via ID pattern');
+                        return {success: true, method: 'id-pattern'};
+                    }
+                    
+                    return {success: false, error: 'No checkbox found in row'};
+                """)
+                
+                if checkbox_clicked and checkbox_clicked.get('success'):
+                    logging.info(f"[STWH] ✓ STEP 6.5 COMPLETED: Checkbox clicked using method '{checkbox_clicked.get('method')}'")
+                    self._random_delay(0.5, 0.75)
+                else:
+                    error_msg = checkbox_clicked.get('error', 'Unknown error') if checkbox_clicked else 'Script returned null'
+                    logging.error(f"[STWH] STEP 6.5 FAILED: {error_msg}")
+                    return {
+                        'status': f'⚠️ Error - Checkbox not clickable ({error_msg})',
+                        'value_of_purchases': 'N/A',
+                        'fbr_sales_tax': 'N/A'
+                    }
+                    
+            except Exception as e:
+                logging.error(f"[STWH] Error clicking checkbox: {str(e)}")
+                return {
+                    'status': '⚠️ Error - Checkbox click failed',
                     'value_of_purchases': 'N/A',
                     'fbr_sales_tax': 'N/A'
                 }

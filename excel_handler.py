@@ -7,6 +7,7 @@ import openpyxl
 from openpyxl import load_workbook, Workbook
 import xlrd
 import os
+import shutil
 import logging
 from datetime import datetime
 
@@ -33,6 +34,26 @@ class ExcelHandler:
         self.value_of_purchases_column = None
         self.fbr_sales_tax_column = None  # Column to store FBR Sales Tax/FED values
         self.is_xls = file_path.lower().endswith('.xls') and not file_path.lower().endswith('.xlsx')
+        self.backup_path = None  # Store backup file path
+    
+    def _create_backup(self):
+        """
+        Create a backup of the Excel file before processing.
+        """
+        try:
+            import shutil
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            file_dir = os.path.dirname(self.file_path)
+            file_name = os.path.basename(self.file_path)
+            file_base, file_ext = os.path.splitext(file_name)
+            
+            self.backup_path = os.path.join(file_dir, f"{file_base}_backup_{timestamp}{file_ext}")
+            shutil.copy2(self.file_path, self.backup_path)
+            logging.info(f"✓ Backup created: {self.backup_path}")
+            return True
+        except Exception as e:
+            logging.warning(f"Could not create backup: {str(e)}")
+            return False
         
     def load_excel(self):
         """
@@ -70,6 +91,9 @@ class ExcelHandler:
                 # Update file path to .xlsx version
                 self.file_path = xlsx_path
                 self.is_xls = False
+            
+            # Create backup before loading
+            self._create_backup()
             
             # Now load with openpyxl (works for .xlsx)
             self.workbook = load_workbook(self.file_path)
@@ -245,21 +269,70 @@ class ExcelHandler:
                 self.worksheet.cell(row=row_number, column=self.fbr_sales_tax_column, value=fbr_sales_tax)
                 logging.info(f"Updated row {row_number} with FBR Sales Tax: {fbr_sales_tax}")
             
-            # Save immediately to prevent data loss
-            self.workbook.save(self.file_path)
+            # Save immediately with retry logic to prevent data loss
+            self._safe_save()
             
             logging.info(f"Updated row {row_number} with status: {status}")
             
         except Exception as e:
             logging.error(f"Error updating invoice status: {str(e)}")
+            # Try to save anyway to prevent complete data loss
+            try:
+                self._safe_save()
+            except:
+                pass
+    
+    def _safe_save(self, max_retries=3):
+        """
+        Safely save the workbook with retry logic to prevent corruption.
+        
+        Args:
+            max_retries (int): Maximum number of save attempts
+        """
+        import time
+        
+        for attempt in range(max_retries):
+            try:
+                self.workbook.save(self.file_path)
+                return True
+            except PermissionError:
+                if attempt < max_retries - 1:
+                    logging.warning(f"Excel file locked, retry {attempt + 1}/{max_retries}...")
+                    time.sleep(0.5)
+                else:
+                    logging.error("Failed to save Excel: File is locked by another process")
+                    raise
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    logging.warning(f"Save error, retry {attempt + 1}/{max_retries}: {str(e)}")
+                    time.sleep(0.5)
+                else:
+                    logging.error(f"Failed to save Excel after {max_retries} attempts: {str(e)}")
+                    raise
+        return False
     
     def close(self):
         """
-        Close the Excel workbook.
+        Safely close the Excel workbook with final save.
         """
         try:
             if self.workbook:
-                self.workbook.close()
-                logging.info("Excel workbook closed")
+                # Final save before closing
+                try:
+                    self._safe_save()
+                    logging.info("Excel file saved successfully before closing")
+                except Exception as save_error:
+                    logging.error(f"Error during final save: {str(save_error)}")
+                
+                # Close the workbook
+                try:
+                    self.workbook.close()
+                    logging.info("Excel workbook closed successfully")
+                except Exception as close_error:
+                    logging.error(f"Error closing workbook: {str(close_error)}")
+                    # Even if close fails, set to None to prevent reuse
+                    self.workbook = None
         except Exception as e:
-            logging.error(f"Error closing workbook: {str(e)}")
+            logging.error(f"Error in close method: {str(e)}")
+            # Ensure workbook is set to None even on error
+            self.workbook = None
