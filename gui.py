@@ -80,7 +80,7 @@ class FBRInvoiceCheckerGUI:
             license_manager: License manager instance for expiry checks
         """
         self.root = root
-        self.root.title("🧾 FBR Invoice Checker Bot")
+        self.root.title("🧾 FBR Invoice Checker Bot v2.1")
         # Start with a reasonable default size but allow resizing for responsiveness
         self.root.geometry("900x650")
         self.root.minsize(720, 480)
@@ -208,10 +208,10 @@ class FBRInvoiceCheckerGUI:
         main_frame.columnconfigure(0, weight=1)
         # Row weights will be set after we know if license frame is created
         
-        # Title
+        # Title with version
         title_label = ttk.Label(
             main_frame, 
-            text="🧾 FBR Invoice Checker Bot", 
+            text="🧾 FBR Invoice Checker Bot v2.1", 
             style='Title.TLabel',
             wraplength=600
         )

@@ -2628,51 +2628,51 @@ class FBRChecker:
             # Step 8: Click the "Claim" button in the matching row
             logging.info("[STWH] STEP 8: Clicking 'Claim' button")
             
-            try:
-                claim_button = self.driver.execute_script("""
-                    var row = document.querySelector('tr[data-matched-row="true"]');
-                    if (!row) return null;
+            # try:
+            #     claim_button = self.driver.execute_script("""
+            #         var row = document.querySelector('tr[data-matched-row="true"]');
+            #         if (!row) return null;
                     
-                    var buttons = row.querySelectorAll('button, a.ui-button, input[type="button"]');
-                    for (var i = 0; i < buttons.length; i++) {
-                        var btnText = buttons[i].textContent.trim().toLowerCase();
-                        var btnId = buttons[i].id.toLowerCase();
+            #         var buttons = row.querySelectorAll('button, a.ui-button, input[type="button"]');
+            #         for (var i = 0; i < buttons.length; i++) {
+            #             var btnText = buttons[i].textContent.trim().toLowerCase();
+            #             var btnId = buttons[i].id.toLowerCase();
                         
-                        if (btnText === 'claim' || btnId.includes('claim')) {
-                            if (!btnText.includes('pra') && !btnText.includes('kpra') && 
-                                !btnText.includes('bra') && !btnText.includes('srb')) {
-                                buttons[i].setAttribute('data-claim-button', 'true');
-                                return true;
-                            }
-                        }
-                    }
-                    return null;
-                """)
+            #             if (btnText === 'claim' || btnId.includes('claim')) {
+            #                 if (!btnText.includes('pra') && !btnText.includes('kpra') && 
+            #                     !btnText.includes('bra') && !btnText.includes('srb')) {
+            #                     buttons[i].setAttribute('data-claim-button', 'true');
+            #                     return true;
+            #                 }
+            #             }
+            #         }
+            #         return null;
+            #     """)
                 
-                if not claim_button:
-                    logging.error("[STWH] STEP 8 FAILED: 'Claim' button not found in row")
-                    return {
-                        'status': '⚠️ Error - Claim button not found',
-                        'value_of_purchases': value_of_purchases,
-                        'fbr_sales_tax': sales_tax_fed_st_mode
-                    }
+            #     if not claim_button:
+            #         logging.error("[STWH] STEP 8 FAILED: 'Claim' button not found in row")
+            #         return {
+            #             'status': '⚠️ Error - Claim button not found',
+            #             'value_of_purchases': value_of_purchases,
+            #             'fbr_sales_tax': sales_tax_fed_st_mode
+            #         }
                 
-                # Click the button
-                self.driver.execute_script("""
-                    var btn = document.querySelector('[data-claim-button="true"]');
-                    if (btn) btn.click();
-                """)
+            #     # Click the button
+            #     self.driver.execute_script("""
+            #         var btn = document.querySelector('[data-claim-button="true"]');
+            #         if (btn) btn.click();
+            #     """)
                 
-                logging.info("[STWH] ✓ STEP 8 COMPLETED: 'Claim' button clicked")
-                self._random_delay(1.0, 1.5)
+                # logging.info("[STWH] ✓ STEP 8 COMPLETED: 'Claim' button clicked")
+                # self._random_delay(1.0, 1.5)
                 
-            except Exception as e:
-                logging.error(f"[STWH] Error clicking claim button: {str(e)}")
-                return {
-                    'status': '⚠️ Error - Claim click failed',
-                    'value_of_purchases': value_of_purchases,
-                    'fbr_sales_tax': sales_tax_fed_st_mode
-                }
+            # except Exception as e:
+            #     logging.error(f"[STWH] Error clicking claim button: {str(e)}")
+            #     return {
+            #         'status': '⚠️ Error - Claim click failed',
+            #         'value_of_purchases': value_of_purchases,
+            #         'fbr_sales_tax': sales_tax_fed_st_mode
+            #     }
             
             # Step 9: Wait for success message
             logging.info("[STWH] STEP 9: Waiting for success message...")
