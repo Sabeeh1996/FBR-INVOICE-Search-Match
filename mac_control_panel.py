@@ -69,13 +69,15 @@ class MACControlPanel:
             print("\n" + "-"*60)
             
             for i, device in enumerate(devices, 1):
+                mac_address = device.get('mac_address', 'N/A')
                 mac_hash = device.get('mac_hash', 'unknown')
                 status = device.get('status', 'unknown')
                 status_icon = "✅" if status == 'active' else "❌" if status == 'revoked' else "⚠️"
                 notes = device.get('notes', '')
                 auth_date = device.get('authorized_date', 'N/A')[:10]
                 
-                print(f"{i}. {status_icon} [{status.upper()}] {mac_hash[:16]}...{mac_hash[-8:]}")
+                print(f"{i}. {status_icon} [{status.upper()}] {mac_address}")
+                print(f"   Hash: {mac_hash[:16]}...{mac_hash[-8:]}")
                 print(f"   Authorized: {auth_date}")
                 if notes:
                     print(f"   Notes: {notes}")
@@ -120,8 +122,15 @@ class MACControlPanel:
                 print(f"\n✓ Device status changed to: ACTIVE")
                 print(f"   Device is now authorized")
         else:
-            # Add new device
+            # Add new device - need to ask for MAC address
+            mac_address = input("\nEnter actual MAC address (e.g., AA:BB:CC:DD:EE:FF): ").strip().upper()
+            
+            if not mac_address or len(mac_address) < 17:
+                print("\n✗ Invalid MAC address format")
+                return
+            
             devices.append({
+                'mac_address': mac_address,
                 'mac_hash': mac_hash,
                 'status': 'active',
                 'authorized_date': datetime.now().isoformat(),
@@ -133,7 +142,6 @@ class MACControlPanel:
             print(f"\n✓ Device authorized successfully!")
         
         print(f"Total devices: {len(devices)}")
-        print(f"Total authorized devices: {len(data['authorized_macs'])}")
     
     def remove_device(self):
         """Revoke device access (set status to revoked)"""
@@ -149,10 +157,10 @@ class MACControlPanel:
         print("="*60)
         
         for i, device in enumerate(devices, 1):
-            mac_hash = device.get('mac_hash', 'unknown')
+            mac_address = device.get('mac_address', 'unknown')
             status = device.get('status', 'unknown')
             status_icon = "✅" if status == 'active' else "❌"
-            print(f"{i}. {status_icon} [{status.upper()}] {mac_hash[:16]}...{mac_hash[-8:]}")
+            print(f"{i}. {status_icon} [{status.upper()}] {mac_address}")
         
         try:
             choice = input("\nEnter device number to REVOKE (or 0 to cancel): ").strip()
@@ -164,7 +172,7 @@ class MACControlPanel:
             
             if 1 <= choice <= len(devices):
                 device = devices[choice - 1]
-                mac_hash = device.get('mac_hash', '')
+                mac_address = device.get('mac_address', '')
                 
                 if device.get('status') == 'revoked':
                     print(f"\n⚠ Device already revoked")
@@ -178,7 +186,7 @@ class MACControlPanel:
                     
                     self.save_whitelist(data)
                     
-                    print(f"\n✓ Device access REVOKED: {mac_hash[:16]}...{mac_hash[-8:]}")
+                    print(f"\n✓ Device access REVOKED: {mac_address}")
                     print(f"   Status changed to: REVOKED")
                     print(f"   Device will be blocked on next app startup")
             else:
@@ -208,12 +216,12 @@ class MACControlPanel:
             try:
                 with open(filepath, 'r') as f:
                     notif = json.load(f)
-                    mac_hash = notif.get('mac_address_hash', 'unknown')
+                    mac_address = notif.get('mac_address', 'unknown')
                     computer = notif.get('computer_name', 'unknown')
                     user = notif.get('username', 'unknown')
                     
                     print(f"\n📱 {computer} ({user})")
-                    print(f"   Hash: {mac_hash}")
+                    print(f"   MAC: {mac_address}")
             except:
                 pass
         
@@ -276,9 +284,9 @@ class MACControlPanel:
         print("To temporarily block access, use option 3 (Revoke) instead.\n")
         
         for i, device in enumerate(devices, 1):
-            mac_hash = device.get('mac_hash', 'unknown')
+            mac_address = device.get('mac_address', 'unknown')
             status = device.get('status', 'unknown')
-            print(f"{i}. [{status.upper()}] {mac_hash[:16]}...{mac_hash[-8:]}")
+            print(f"{i}. [{status.upper()}] {mac_address}")
         
         try:
             choice = input("\nEnter device number to DELETE (or 0 to cancel): ").strip()
@@ -296,8 +304,8 @@ class MACControlPanel:
                     data['devices'] = devices
                     self.save_whitelist(data)
                     
-                    mac_hash = device.get('mac_hash', '')
-                    print(f"\n✓ Device deleted: {mac_hash[:16]}...{mac_hash[-8:]}")
+                    mac_address = device.get('mac_address', '')
+                    print(f"\n✓ Device deleted: {mac_address}")
                     print(f"Remaining devices: {len(devices)}")
                 else:
                     print("\nCancelled (confirmation failed)")

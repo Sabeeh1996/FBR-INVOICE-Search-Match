@@ -183,7 +183,9 @@ class MACAuthenticator:
                         "To AUTHORIZE: Set status to 'active'",
                         "To REVOKE: Set status to 'revoked'",
                         "Empty devices array = first-time use (auto-authorization enabled)",
-                        "Status values: 'active' = authorized, 'revoked' = blocked"
+                        "Status values: 'active' = authorized, 'revoked' = blocked",
+                        "mac_address field is for admin reference (readable MAC address)",
+                        "mac_hash field is used for device matching (do not edit)"
                     ],
                     "mode": "github_whitelist",
                     "devices": [],
@@ -195,6 +197,7 @@ class MACAuthenticator:
             if 'authorized_macs' in whitelist and 'devices' not in whitelist:
                 whitelist['devices'] = [
                     {
+                        "mac_address": "[Hash only - MAC unknown]",
                         "mac_hash": mac,
                         "status": "active",
                         "authorized_date": whitelist.get('last_updated', ''),
@@ -211,13 +214,14 @@ class MACAuthenticator:
             if existing_device:
                 # Update existing device
                 if existing_device.get('status') == 'revoked':
-                    logging.warning(f"Device was previously revoked, re-activating: {mac_hash[:16]}...")
+                    logging.warning(f"Device was previously revoked, re-activating: {self.current_mac}")
                 existing_device['status'] = 'active'
                 existing_device['last_updated'] = datetime.now().isoformat()
             else:
                 # Add new device
                 devices.append({
-                    "mac_hash": mac_hash,
+                    "mac_address": self.current_mac,  # Actual MAC for admin visibility
+                    "mac_hash": mac_hash,  # Hash for comparison
                     "status": "active",
                     "authorized_date": datetime.now().isoformat(),
                     "last_updated": datetime.now().isoformat(),
