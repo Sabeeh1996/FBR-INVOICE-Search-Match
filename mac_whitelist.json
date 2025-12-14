@@ -7,7 +7,7 @@
     "Status values: 'active' = authorized, 'revoked' = blocked"
   ],
   "mode": "github_whitelist",
-  "devices": [ ],
+  "devices": [],
   "last_updated": "2025-12-14T15:51:38.085124",
   "updated_by": "auto-authorize"
 }
