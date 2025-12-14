@@ -75,18 +75,67 @@ class FBRChecker:
                 "download.prompt_for_download": False
             }
             options.add_experimental_option("prefs", prefs)
-            # Note: undetected-chromedriver handles excludeSwitches internally, don't add it manually
             
             # Initialize undetected Chrome driver with optimized settings
-            # Auto-detect Chrome version for compatibility
             logging.info("🚀 Initializing Chrome browser (optimized for speed)...")
-            self.driver = uc.Chrome(
-                options=options, 
-                use_subprocess=False,
-                driver_executable_path=None,
-                browser_executable_path=None,
-                suppress_welcome=False
-            )
+            
+            try:
+                # Try with timeout wrapper
+                import threading
+                import queue
+                
+                result_queue = queue.Queue()
+                
+                def init_driver():
+                    try:
+                        driver = uc.Chrome(
+                            options=options, 
+                            use_subprocess=True,
+                            headless=False
+                        )
+                        result_queue.put(("success", driver))
+                    except Exception as e:
+                        result_queue.put(("error", str(e)))
+                
+                # Start initialization in separate thread
+                init_thread = threading.Thread(target=init_driver)
+                init_thread.daemon = True
+                init_thread.start()
+                
+                # Wait for initialization with timeout
+                init_thread.join(timeout=30)
+                
+                if init_thread.is_alive():
+                    logging.error("Browser initialization timeout after 30 seconds")
+                    raise TimeoutError("Chrome initialization timed out")
+                
+                # Check result
+                if not result_queue.empty():
+                    status, result = result_queue.get()
+                    if status == "success":
+                        self.driver = result
+                    else:
+                        raise Exception(result)
+                else:
+                    raise Exception("Browser initialization failed silently")
+                    
+            except Exception as init_error:
+                logging.warning(f"Undetected Chrome failed: {str(init_error)}")
+                logging.info("Falling back to standard Chrome WebDriver...")
+                
+                # Fallback to standard Chrome
+                from selenium import webdriver
+                from selenium.webdriver.chrome.service import Service
+                from selenium.webdriver.chrome.options import Options
+                
+                chrome_options = Options()
+                chrome_options.add_argument('--start-maximized')
+                chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+                chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+                chrome_options.add_experimental_option('useAutomationExtension', False)
+                
+                self.driver = webdriver.Chrome(options=chrome_options)
+                logging.info("✓ Standard Chrome initialized successfully")
             
             # Minimal stealth JavaScript (faster execution)
             self.driver.execute_script("""
@@ -101,12 +150,12 @@ class FBRChecker:
             # Initialize ActionChains
             self.actions = ActionChains(self.driver)
             
-            logging.info("✅ Chrome browser initialized successfully (optimized mode)")
+            logging.info("✅ Chrome browser initialized successfully")
             return True
             
         except Exception as e:
             logging.error(f"Failed to initialize Chrome browser: {str(e)}")
-            logging.error("Make sure to run: pip install undetected-chromedriver")
+            logging.error("Make sure Chrome is installed and chromedriver is accessible")
             return False
     
     def _random_delay(self, min_seconds=0.5, max_seconds=2.0):
