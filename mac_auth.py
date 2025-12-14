@@ -8,6 +8,8 @@ import json
 import os
 import logging
 import hashlib
+import urllib.request
+import urllib.error
 from typing import List, Optional, Tuple
 
 
@@ -17,15 +19,17 @@ class MACAuthenticator:
     Supports both whitelist mode and license binding mode.
     """
     
-    def __init__(self, config_file="mac_config.json"):
+    def __init__(self, config_file="mac_config.json", github_url=None):
         """
         Initialize MAC authenticator.
         
         Args:
             config_file (str): Path to MAC address configuration file
+            github_url (str): GitHub raw URL for mac_whitelist.json (optional)
         """
         self.config_file = config_file
         self.config_existed_before = os.path.exists(config_file)  # Track if config existed
+        self.github_url = github_url or "https://raw.githubusercontent.com/Sabeeh1996/FBR-INVOICE-Search-Match/develop/mac_whitelist.json"
         self.config = self._load_config()
         self.current_mac = self.get_mac_address()
         self.current_mac_hash = self._hash_mac(self.current_mac) if self.current_mac else None
@@ -149,15 +153,75 @@ class MACAuthenticator:
         except Exception as e:
             logging.error(f"Error saving MAC config: {str(e)}")
     
+    def _fetch_github_whitelist(self) -> Optional[dict]:
+        """
+        Fetch MAC whitelist from GitHub repository.
+        
+        Returns:
+            dict: GitHub whitelist config or None if fetch fails
+        """
+        try:
+            logging.info(f"Fetching MAC whitelist from GitHub...")
+            
+            # Add timeout and user agent
+            req = urllib.request.Request(
+                self.github_url,
+                headers={'User-Agent': 'FBR-Invoice-Checker'}
+            )
+            
+            with urllib.request.urlopen(req, timeout=10) as response:
+                data = json.loads(response.read().decode())
+                logging.info(f"Successfully fetched GitHub whitelist (mode: {data.get('mode', 'unknown')})")
+                return data
+                
+        except urllib.error.URLError as e:
+            logging.warning(f"Failed to fetch GitHub whitelist (network error): {str(e)}")
+            return None
+        except json.JSONDecodeError as e:
+            logging.error(f"Failed to parse GitHub whitelist JSON: {str(e)}")
+            return None
+        except Exception as e:
+            logging.error(f"Unexpected error fetching GitHub whitelist: {str(e)}")
+            return None
+    
+    def _merge_github_config(self, github_config: dict):
+        """
+        Merge GitHub whitelist with local config.
+        GitHub settings take precedence for authorization.
+        
+        Args:
+            github_config (dict): Configuration from GitHub
+        """
+        if github_config.get('mode') == 'github_whitelist':
+            # Use GitHub whitelist mode
+            self.config['mode'] = 'whitelist'
+            self.config['authorized_macs'] = github_config.get('authorized_macs', [])
+            logging.info(f"Using GitHub whitelist with {len(self.config['authorized_macs'])} authorized MACs")
+        elif github_config.get('mode') in ['whitelist', 'binding', 'disabled']:
+            # Direct mode override
+            self.config['mode'] = github_config['mode']
+            if 'authorized_macs' in github_config:
+                self.config['authorized_macs'] = github_config['authorized_macs']
+            if 'bound_mac' in github_config:
+                self.config['bound_mac'] = github_config['bound_mac']
+    
     def is_authorized(self) -> Tuple[bool, str]:
         """
         Check if current MAC address is authorized to run the application.
+        Fetches latest whitelist from GitHub if available.
         
         Returns:
             tuple: (is_authorized: bool, message: str)
         """
         if not self.current_mac:
             return False, "Unable to detect MAC address"
+        
+        # Try to fetch GitHub whitelist (falls back to local if unavailable)
+        github_config = self._fetch_github_whitelist()
+        if github_config:
+            self._merge_github_config(github_config)
+        else:
+            logging.info("Using local MAC configuration (GitHub unavailable)")
         
         mode = self.config.get("mode", "whitelist")
         

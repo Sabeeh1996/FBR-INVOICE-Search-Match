@@ -1,0 +1,14 @@
+{
+  "_comment": "GitHub-hosted MAC Address Whitelist - Edit this file to control device access",
+  "_instructions": [
+    "To AUTHORIZE a device: Add its MAC address hash to 'authorized_macs' array",
+    "To REVOKE access: Remove the MAC address hash from the array",
+    "To find MAC hash: Check first_run_notifications folder after first device run",
+    "MAC addresses are stored as SHA256 hashes for security",
+    "Changes take effect on next application startup"
+  ],
+  "mode": "github_whitelist",
+  "authorized_macs": [],
+  "last_updated": "2025-12-14T00:00:00Z",
+  "updated_by": "admin"
+}
