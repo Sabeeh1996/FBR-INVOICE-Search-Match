@@ -214,30 +214,53 @@ class FBRChecker:
         Parse date string and select date from datepicker calendar.
         
         Args:
-            date_string: Date in format like '07-Apr-2025' or similar
+            date_string: Date in various formats including datetime objects
             
         Returns:
             dict: Parsed date with 'day', 'month', 'year' keys, or None if parsing failed
         """
         try:
             from datetime import datetime
+            import pandas as pd
             
-            # Try multiple date formats
-            date_formats = [
-                '%d-%b-%Y',      # 07-Apr-2025
-                '%d-%B-%Y',      # 07-April-2025
-                '%Y-%m-%d',      # 2025-04-07
-                '%d/%m/%Y',      # 07/04/2025
-                '%m/%d/%Y',      # 04/07/2025
-            ]
-            
-            parsed_date = None
-            for date_format in date_formats:
-                try:
-                    parsed_date = datetime.strptime(str(date_string), date_format)
-                    break
-                except ValueError:
-                    continue
+            # Handle datetime objects directly
+            if isinstance(date_string, datetime):
+                parsed_date = date_string
+            elif hasattr(date_string, 'to_pydatetime'):  # pandas Timestamp
+                parsed_date = date_string.to_pydatetime()
+            else:
+                # Convert to string and try parsing
+                date_str = str(date_string).strip()
+                
+                # Try multiple date formats
+                date_formats = [
+                    '%d-%b-%Y',           # 07-Apr-2025
+                    '%d-%B-%Y',           # 07-April-2025
+                    '%Y-%m-%d',           # 2025-04-07
+                    '%d/%m/%Y',           # 07/04/2025
+                    '%m/%d/%Y',           # 04/07/2025
+                    '%Y-%m-%d %H:%M:%S',  # 2025-07-07 00:00:00
+                    '%Y-%m-%d %H:%M:%S.%f',  # 2025-07-07 00:00:00.000
+                ]
+                
+                parsed_date = None
+                for date_format in date_formats:
+                    try:
+                        parsed_date = datetime.strptime(date_str, date_format)
+                        break
+                    except ValueError:
+                        continue
+                
+                # If all formats fail, try pandas parser as last resort
+                if not parsed_date:
+                    try:
+                        parsed_date = pd.to_datetime(date_str, errors='coerce')
+                        if pd.isna(parsed_date):
+                            parsed_date = None
+                        else:
+                            parsed_date = parsed_date.to_pydatetime()
+                    except Exception:
+                        pass
             
             if parsed_date:
                 return {
