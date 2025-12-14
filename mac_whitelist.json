@@ -11,10 +11,10 @@
     {
       "mac_address": "95:11:BD:A6:21:5B",
       "mac_hash": "65158b05d949d8d5afb6472965bcefcde59a8671ef106d3150886e6e7b0e493a",
-      "status": "revoked",
+      "status": "active",
       "authorized_date": "2025-12-14T13:55:01.834744",
-      "last_updated": "2025-12-14T14:30:00.000000",
-      "notes": "Updated with readable MAC address - activated"
+      "last_updated": "2025-12-14T14:50:00.000000",
+      "notes": "Activated for testing - GitHub sync enabled"
     }
   ],
   "last_updated": "2025-12-14T13:55:01.834744",
