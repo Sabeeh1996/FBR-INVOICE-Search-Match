@@ -2046,9 +2046,9 @@ class FBRChecker:
                 
                 # Find the dropdown element
                 dropdown_selectors = [
-                    (By.ID, "correspondenceTabs:loadAnnexAform:sourceAuthorityFilter"),
-                    (By.XPATH, "//div[@id='correspondenceTabs:loadAnnexAform:sourceAuthorityFilter']"),
-                    (By.XPATH, "//div[contains(@class, 'ui-selectonemenu') and contains(@id, 'sourceAuthorityFilter')]"),
+                    (By.ID, "correspondenceTabs:loadStwhAnnexAform:sourceAuthority"),
+                    (By.XPATH, "//div[@id='correspondenceTabs:loadStwhAnnexAform:sourceAuthority']"),
+                    (By.XPATH, "//div[contains(@class, 'ui-selectonemenu') and contains(@id, 'loadStwhAnnexAform:sourceAuthority')]"),
                 ]
                 
                 dropdown = None
@@ -2092,9 +2092,9 @@ class FBRChecker:
                     }
                 
                 option_selectors = [
-                    (By.XPATH, f"//div[@id='correspondenceTabs:loadAnnexAform:sourceAuthorityFilter_panel']//li[@data-label='{source_auth_normalized}']"),
-                    (By.XPATH, f"//div[contains(@id, 'sourceAuthorityFilter_panel')]//li[contains(text(), '{source_auth_normalized}')]"),
-                    (By.XPATH, f"//select[@id='correspondenceTabs:loadAnnexAform:sourceAuthorityFilter_input']/option[@value='{option_value}']"),
+                    (By.XPATH, f"//div[@id='correspondenceTabs:loadStwhAnnexAform:sourceAuthority_panel']//li[@data-label='{source_auth_normalized}']"),
+                    (By.XPATH, f"//div[contains(@id, 'loadStwhAnnexAform:sourceAuthority_panel')]//li[contains(text(), '{source_auth_normalized}')]"),
+                    (By.XPATH, f"//select[@id='correspondenceTabs:loadStwhAnnexAform:sourceAuthority_input']/option[@value='{option_value}']"),
                 ]
                 
                 option_selected = False
@@ -2119,7 +2119,7 @@ class FBRChecker:
                 # Verify selection
                 self._random_delay(0.1, 0.25)
                 selected_value = self.driver.execute_script("""
-                    var dropdown = document.getElementById('correspondenceTabs:loadAnnexAform:sourceAuthorityFilter');
+                    var dropdown = document.getElementById('correspondenceTabs:loadStwhAnnexAform:sourceAuthority');
                     if (dropdown) {
                         var label = dropdown.querySelector('.ui-selectonemenu-label');
                         return label ? label.innerText.trim() : '';
@@ -2142,11 +2142,35 @@ class FBRChecker:
                 
                 seller_ntn_input = None
                 seller_ntn_selectors = [
-                    (By.ID, "correspondenceTabs:loadAnnexAform:annexASellerRegNo"),
-                    (By.NAME, "correspondenceTabs:loadAnnexAform:annexASellerRegNo"),
-                    (By.XPATH, "//input[@id='correspondenceTabs:loadAnnexAform:annexASellerRegNo']"),
-                    (By.XPATH, "//input[@name='correspondenceTabs:loadAnnexAform:annexASellerRegNo']"),
-                    (By.XPATH, "//input[@type='text' and @maxlength='13']"),
+                    # Strategy 1: Exact ID match
+                    (By.ID, "correspondenceTabs:loadStwhAnnexAform:annexASellerRegNo"),
+                    
+                    # Strategy 2: Name attribute match
+                    (By.NAME, "correspondenceTabs:loadStwhAnnexAform:annexASellerRegNo"),
+                    
+                    # Strategy 3: XPath with ID
+                    (By.XPATH, "//input[@id='correspondenceTabs:loadStwhAnnexAform:annexASellerRegNo']"),
+                    
+                    # Strategy 4: XPath with name
+                    (By.XPATH, "//input[@name='correspondenceTabs:loadStwhAnnexAform:annexASellerRegNo']"),
+                    
+                    # Strategy 5: XPath with form context and ID pattern
+                    (By.XPATH, "//form[contains(@id, 'loadStwhAnnexAform')]//input[contains(@id, 'annexASellerRegNo')]"),
+                    
+                    # Strategy 6: XPath with type and maxlength (specific to seller NTN)
+                    (By.XPATH, "//input[@type='text' and @maxlength='13' and contains(@id, 'loadStwhAnnexAform')]"),
+                    
+                    # Strategy 7: XPath with ui-inputtext class and maxlength
+                    (By.XPATH, "//input[contains(@class, 'ui-inputtext') and @maxlength='13' and @type='text']"),
+                    
+                    # Strategy 8: CSS selector with partial ID
+                    (By.CSS_SELECTOR, "input[id*='loadStwhAnnexAform'][id*='annexASellerRegNo']"),
+                    
+                    # Strategy 9: CSS selector with mediumTextField class and maxlength
+                    (By.CSS_SELECTOR, "input.mediumTextField[maxlength='13'][type='text']"),
+                    
+                    # Strategy 10: Generic text input with maxlength 13
+                   
                 ]
                 
                 for by_type, selector in seller_ntn_selectors:
@@ -2186,10 +2210,34 @@ class FBRChecker:
                 
                 invoice_no_input = None
                 invoice_no_selectors = [
-                    (By.ID, "correspondenceTabs:loadAnnexAform:annexAinvoiceNoId"),
-                    (By.NAME, "correspondenceTabs:loadAnnexAform:annexAinvoiceNoId"),
-                    (By.XPATH, "//input[@id='correspondenceTabs:loadAnnexAform:annexAinvoiceNoId']"),
-                    (By.XPATH, "//input[@name='correspondenceTabs:loadAnnexAform:annexAinvoiceNoId']"),
+                    # Strategy 1: Exact ID match
+                    (By.ID, "correspondenceTabs:loadStwhAnnexAform:annexAinvoiceNoId"),
+                    
+                    # Strategy 2: Name attribute match
+                    (By.NAME, "correspondenceTabs:loadStwhAnnexAform:annexAinvoiceNoId"),
+                    
+                    # Strategy 3: XPath with ID
+                    (By.XPATH, "//input[@id='correspondenceTabs:loadStwhAnnexAform:annexAinvoiceNoId']"),
+                    
+                    # Strategy 4: XPath with name
+                    (By.XPATH, "//input[@name='correspondenceTabs:loadStwhAnnexAform:annexAinvoiceNoId']"),
+                    
+                    # Strategy 5: XPath with form context and ID pattern
+                    (By.XPATH, "//form[contains(@id, 'loadStwhAnnexAform')]//input[contains(@id, 'annexAinvoiceNoId')]"),
+                    
+                    # Strategy 6: XPath with type and maxlength (specific to invoice number)
+                    (By.XPATH, "//input[@type='text' and @maxlength='25' and contains(@id, 'loadStwhAnnexAform')]"),
+                    
+                    # Strategy 7: XPath with ui-inputtext class and maxlength
+                    (By.XPATH, "//input[contains(@class, 'ui-inputtext') and @maxlength='25' and @type='text']"),
+                    
+                    # Strategy 8: CSS selector with partial ID
+                    (By.CSS_SELECTOR, "input[id*='loadStwhAnnexAform'][id*='annexAinvoiceNoId']"),
+                    
+                    # Strategy 9: CSS selector with mediumTextField class and maxlength
+                    (By.CSS_SELECTOR, "input.mediumTextField[maxlength='25'][type='text']"),
+                    
+                    # Strategy 10: Generic text input with maxlength 25
                     (By.XPATH, "//input[@type='text' and @maxlength='25']"),
                 ]
                 
@@ -2241,9 +2289,35 @@ class FBRChecker:
                 
                 # From Date
                 from_date_selectors = [
-                    (By.ID, "correspondenceTabs:loadAnnexAform:annexAFromDate_input"),
-                    (By.NAME, "correspondenceTabs:loadAnnexAform:annexAFromDate_input"),
-                    (By.XPATH, "//input[@id='correspondenceTabs:loadAnnexAform:annexAFromDate_input']"),
+                    # Strategy 1: Direct input ID match
+                    (By.ID, "correspondenceTabs:loadStwhAnnexAform:annexAFromDate_input"),
+                    
+                    # Strategy 2: Input name attribute
+                    (By.NAME, "correspondenceTabs:loadStwhAnnexAform:annexAFromDate_input"),
+                    
+                    # Strategy 3: XPath with exact ID
+                    (By.XPATH, "//input[@id='correspondenceTabs:loadStwhAnnexAform:annexAFromDate_input']"),
+                    
+                    # Strategy 4: Input within calendar wrapper span
+                    (By.XPATH, "//span[@id='correspondenceTabs:loadStwhAnnexAform:annexAFromDate']//input[contains(@class, 'hasDatepicker')]"),
+                    
+                    # Strategy 5: Calendar input with ui-calendar parent
+                    (By.XPATH, "//span[contains(@class, 'ui-calendar')]//input[contains(@id, 'annexAFromDate_input')]"),
+                    
+                    # Strategy 6: Input with hasDatepicker class and readonly
+                    (By.XPATH, "//input[contains(@class, 'hasDatepicker') and @readonly='readonly' and contains(@id, 'annexAFromDate')]"),
+                    
+                    # Strategy 7: Form context with partial ID match
+                    (By.XPATH, "//form[contains(@id, 'loadStwhAnnexAform')]//input[contains(@id, 'annexAFromDate_input')]"),
+                    
+                    # Strategy 8: CSS selector with partial ID
+                    (By.CSS_SELECTOR, "input[id*='loadStwhAnnexAform'][id*='annexAFromDate_input']"),
+                    
+                    # Strategy 9: Input with ui-inputfield and hasDatepicker classes
+                    (By.XPATH, "//input[contains(@class, 'ui-inputfield') and contains(@class, 'hasDatepicker') and contains(@id, 'FromDate')]"),
+                    
+                    # Strategy 10: Generic date input with role textbox
+                    (By.XPATH, "//input[@type='text' and @role='textbox' and contains(@class, 'hasDatepicker') and contains(@id, 'FromDate')]"),
                 ]
                 
                 from_date_input = None
@@ -2277,9 +2351,35 @@ class FBRChecker:
                 
                 # To Date
                 to_date_selectors = [
-                    (By.ID, "correspondenceTabs:loadAnnexAform:annexAToDate_input"),
-                    (By.NAME, "correspondenceTabs:loadAnnexAform:annexAToDate_input"),
-                    (By.XPATH, "//input[@id='correspondenceTabs:loadAnnexAform:annexAToDate_input']"),
+                    # Strategy 1: Direct input ID match
+                    (By.ID, "correspondenceTabs:loadStwhAnnexAform:annexAToDate_input"),
+                    
+                    # Strategy 2: Input name attribute
+                    (By.NAME, "correspondenceTabs:loadStwhAnnexAform:annexAToDate_input"),
+                    
+                    # Strategy 3: XPath with exact ID
+                    (By.XPATH, "//input[@id='correspondenceTabs:loadStwhAnnexAform:annexAToDate_input']"),
+                    
+                    # Strategy 4: Input within calendar wrapper span
+                    (By.XPATH, "//span[@id='correspondenceTabs:loadStwhAnnexAform:annexAToDate']//input[contains(@class, 'hasDatepicker')]"),
+                    
+                    # Strategy 5: Calendar input with ui-calendar parent
+                    (By.XPATH, "//span[contains(@class, 'ui-calendar')]//input[contains(@id, 'annexAToDate_input')]"),
+                    
+                    # Strategy 6: Input with hasDatepicker class and readonly
+                    (By.XPATH, "//input[contains(@class, 'hasDatepicker') and @readonly='readonly' and contains(@id, 'annexAToDate')]"),
+                    
+                    # Strategy 7: Form context with partial ID match
+                    (By.XPATH, "//form[contains(@id, 'loadStwhAnnexAform')]//input[contains(@id, 'annexAToDate_input')]"),
+                    
+                    # Strategy 8: CSS selector with partial ID
+                    (By.CSS_SELECTOR, "input[id*='loadStwhAnnexAform'][id*='annexAToDate_input']"),
+                    
+                    # Strategy 9: Input with ui-inputfield and hasDatepicker classes
+                    (By.XPATH, "//input[contains(@class, 'ui-inputfield') and contains(@class, 'hasDatepicker') and contains(@id, 'ToDate')]"),
+                    
+                    # Strategy 10: Generic date input with role textbox
+                    (By.XPATH, "//input[@type='text' and @role='textbox' and contains(@class, 'hasDatepicker') and contains(@id, 'ToDate')]"),
                 ]
                 
                 to_date_input = None
@@ -2316,15 +2416,41 @@ class FBRChecker:
             logging.info("[STWH] STEP 5: Clicking Search button")
             
             search_button_selectors = [
-                (By.XPATH, "//button[contains(@id, 'Search')]"),
-                (By.XPATH, "//button[contains(text(), 'Search')]"),
-                (By.XPATH, "//button[@type='button' and contains(text(), 'Search')]"),
-                (By.CSS_SELECTOR, "button[id*='Search']"),
-                (By.CSS_SELECTOR, "button[type='button']"),
-                (By.XPATH, "//input[@type='submit' and @value='Search']"),
-                (By.XPATH, "//a[contains(@class, 'ui-button') and contains(text(), 'Search')]"),
-                (By.XPATH, "//span[contains(@class, 'ui-button-text') and contains(text(), 'Search')]/parent::button"),
-                (By.XPATH, "//*[contains(@id, 'Search') or contains(@name, 'Search')]"),
+                # Strategy 1: Button with loadStwhAnnexAform context and j_idt pattern
+                (By.XPATH, "//button[contains(@id, 'correspondenceTabs:loadStwhAnnexAform:j_idt') and @type='submit']//span[contains(text(), 'Search')]"),
+                
+                # Strategy 2: Button with ui-button class and Search span text
+                (By.XPATH, "//button[contains(@class, 'ui-button') and @type='submit']//span[@class='ui-button-text ui-c' and contains(text(), 'Search')]"),
+                
+                # Strategy 3: Form-scoped button with loadStwhAnnexAform and Search text
+                (By.XPATH, "//form[contains(@id, 'loadStwhAnnexAform')]//button[@type='submit' and contains(@class, 'ui-button')]//span[text()='Search']"),
+                
+                # Strategy 4: Button with onclick containing PrimeFaces.ab and Search span
+                (By.XPATH, "//button[contains(@onclick, 'PrimeFaces.ab') and contains(@id, 'loadStwhAnnexAform')]//span[contains(text(), 'Search')]"),
+                
+                # Strategy 5: Button with role='button' and Search text
+                (By.XPATH, "//button[@role='button' and contains(@id, 'loadStwhAnnexAform') and @type='submit']//span[normalize-space()='Search']"),
+                
+                # Strategy 6: CSS selector with partial ID and type submit
+                (By.CSS_SELECTOR, "button[id*='loadStwhAnnexAform'][type='submit'][class*='ui-button']"),
+                
+                # Strategy 7: Button with ui-widget class and Search span
+                (By.XPATH, "//button[contains(@class, 'ui-widget') and contains(@class, 'ui-state-default') and @type='submit']//span[text()='Search']"),
+                
+                # Strategy 8: Span with ui-button-text containing Search, then find parent button
+                (By.XPATH, "//span[contains(@class, 'ui-button-text') and contains(text(), 'Search')]/parent::button[@type='submit' and contains(@id, 'loadStwhAnnexAform')]"),
+                
+                # Strategy 9: Button with name matching loadStwhAnnexAform pattern
+                (By.XPATH, "//button[contains(@name, 'loadStwhAnnexAform:j_idt') and @type='submit']//span[contains(text(), 'Search')]"),
+                
+                # Strategy 10: Generic ui-button with Search text in loadStwhAnnexAform context
+                (By.XPATH, "//button[contains(@id, 'loadStwhAnnexAform') and contains(@class, 'ui-button')]//span[normalize-space(text())='Search']"),
+                
+                # Strategy 11: Button with aria-disabled='false' and Search text
+                (By.XPATH, "//button[@aria-disabled='false' and @type='submit' and contains(@id, 'loadStwhAnnexAform')]//span[text()='Search']"),
+                
+                # Strategy 12: Fallback - any submit button with Search text
+                (By.XPATH, "//button[@type='submit' and contains(@class, 'ui-button')]//span[contains(text(), 'Search')]"),
             ]
             
             search_button = None
