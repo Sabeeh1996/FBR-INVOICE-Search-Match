@@ -102,6 +102,56 @@ class MACAuthenticator:
         except:
             info['os'] = 'Unknown'
         
+        # === NETWORK DETAILS ===
+        try:
+            # Get local IP address
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            info['local_ip'] = s.getsockname()[0]
+            s.close()
+        except:
+            info['local_ip'] = 'Unknown'
+        
+        # Get all network interfaces
+        try:
+            import subprocess
+            if os.name == 'nt':  # Windows
+                # Get network adapter info
+                result = subprocess.run(['ipconfig', '/all'], capture_output=True, text=True, shell=True)
+                output = result.stdout
+                
+                # Extract DNS servers
+                dns_lines = [line.strip() for line in output.split('\n') if 'DNS Servers' in line or 'DNS Server' in line]
+                if dns_lines:
+                    info['dns_servers'] = dns_lines[0].split(':')[-1].strip()
+                
+                # Extract default gateway
+                gateway_lines = [line.strip() for line in output.split('\n') if 'Default Gateway' in line]
+                if gateway_lines:
+                    gateway = gateway_lines[0].split(':')[-1].strip()
+                    if gateway and gateway != '':
+                        info['default_gateway'] = gateway
+                
+                # Get network adapter names
+                adapter_lines = [line for line in output.split('\n') if 'adapter' in line.lower() and ':' in line]
+                info['network_adapters'] = [line.split(':')[0].strip() for line in adapter_lines[:3]]
+            else:  # Linux/Mac
+                # Get network info
+                try:
+                    result = subprocess.run(['ip', 'route'], capture_output=True, text=True)
+                    if 'default via' in result.stdout:
+                        info['default_gateway'] = result.stdout.split('default via')[1].split()[0]
+                except:
+                    pass
+        except Exception as e:
+            logging.debug(f"Could not get network adapter info: {e}")
+        
+        # Get FQDN
+        try:
+            info['fqdn'] = socket.getfqdn()
+        except:
+            info['fqdn'] = 'Unknown'
+        
         # Get geolocation (lat/long) using IP - high precision
         try:
             import urllib.request
@@ -118,6 +168,7 @@ class MACAuthenticator:
                     geo_data = json.loads(response.read().decode())
                     if 'latitude' in geo_data and 'longitude' in geo_data:
                         # Store with high precision (6-8 decimal places)
+                        info['public_ip'] = geo_data.get('ip', 'Unknown')
                         info['latitude'] = round(float(geo_data['latitude']), 8)
                         info['longitude'] = round(float(geo_data['longitude']), 8)
                         info['city'] = geo_data.get('city', 'Unknown')
@@ -125,6 +176,8 @@ class MACAuthenticator:
                         info['isp'] = geo_data.get('org', 'Unknown')
                         info['postal_code'] = geo_data.get('postal', 'Unknown')
                         info['region'] = geo_data.get('region', 'Unknown')
+                        info['asn'] = geo_data.get('asn', 'Unknown')
+                        info['timezone'] = geo_data.get('timezone', 'Unknown')
                         return info
             except Exception as e:
                 logging.debug(f"ipapi.co failed, trying fallback: {str(e)}")
@@ -139,6 +192,7 @@ class MACAuthenticator:
                 geo_data = json.loads(response.read().decode())
                 if geo_data.get('status') == 'success':
                     # Store with maximum available precision
+                    info['public_ip'] = geo_data.get('query', 'Unknown')
                     info['latitude'] = round(float(geo_data.get('lat', 0)), 8)
                     info['longitude'] = round(float(geo_data.get('lon', 0)), 8)
                     info['city'] = geo_data.get('city', 'Unknown')
@@ -146,6 +200,8 @@ class MACAuthenticator:
                     info['isp'] = geo_data.get('isp', 'Unknown')
                     info['postal_code'] = geo_data.get('zip', 'Unknown')
                     info['region'] = geo_data.get('regionName', 'Unknown')
+                    info['asn'] = geo_data.get('as', 'Unknown')
+                    info['timezone'] = geo_data.get('timezone', 'Unknown')
                 else:
                     info['latitude'] = 'Unknown'
                     info['longitude'] = 'Unknown'
