@@ -162,7 +162,8 @@ class MACAuthenticator:
     
     def _update_github_whitelist_file(self, mac_hash: str) -> bool:
         """
-        Update local GitHub whitelist file (to be committed/pushed later).
+        Update local GitHub whitelist file with new device entry.
+        Uses status-based authorization (active/revoked).
         
         Args:
             mac_hash (str): MAC address hash to add
@@ -178,33 +179,68 @@ class MACAuthenticator:
             else:
                 whitelist = {
                     "_comment": "GitHub-hosted MAC Address Whitelist - Edit this file to control device access",
+                    "_instructions": [
+                        "To AUTHORIZE: Set status to 'active'",
+                        "To REVOKE: Set status to 'revoked'",
+                        "Empty devices array = first-time use (auto-authorization enabled)",
+                        "Status values: 'active' = authorized, 'revoked' = blocked"
+                    ],
                     "mode": "github_whitelist",
-                    "authorized_macs": [],
+                    "devices": [],
                     "last_updated": "",
                     "updated_by": "auto-authorize"
                 }
             
-            # Add MAC if not already present
-            if mac_hash not in whitelist.get('authorized_macs', []):
-                whitelist['authorized_macs'].append(mac_hash)
-                whitelist['last_updated'] = datetime.now().isoformat()
-                whitelist['updated_by'] = 'auto-authorize'
-                
-                # Save updated whitelist
-                with open(self.whitelist_file, 'w') as f:
-                    json.dump(whitelist, f, indent=2)
-                
-                logging.info(f"Added MAC to GitHub whitelist file: {self.whitelist_file}")
-                
-                # Auto-sync to GitHub if enabled
-                if self.auto_sync_github:
-                    self._sync_to_github_async()
-                else:
-                    logging.info(f"→ Run 'python sync_whitelist.py' to sync to GitHub")
-                
-                return True
+            # Migrate old format to new format if needed
+            if 'authorized_macs' in whitelist and 'devices' not in whitelist:
+                whitelist['devices'] = [
+                    {
+                        "mac_hash": mac,
+                        "status": "active",
+                        "authorized_date": whitelist.get('last_updated', ''),
+                        "notes": "Migrated from old format"
+                    }
+                    for mac in whitelist.get('authorized_macs', [])
+                ]
+                del whitelist['authorized_macs']
             
-            return False
+            # Check if MAC already exists
+            devices = whitelist.get('devices', [])
+            existing_device = next((d for d in devices if d.get('mac_hash') == mac_hash), None)
+            
+            if existing_device:
+                # Update existing device
+                if existing_device.get('status') == 'revoked':
+                    logging.warning(f"Device was previously revoked, re-activating: {mac_hash[:16]}...")
+                existing_device['status'] = 'active'
+                existing_device['last_updated'] = datetime.now().isoformat()
+            else:
+                # Add new device
+                devices.append({
+                    "mac_hash": mac_hash,
+                    "status": "active",
+                    "authorized_date": datetime.now().isoformat(),
+                    "last_updated": datetime.now().isoformat(),
+                    "notes": "Auto-authorized on first run"
+                })
+                whitelist['devices'] = devices
+            
+            whitelist['last_updated'] = datetime.now().isoformat()
+            whitelist['updated_by'] = 'auto-authorize'
+            
+            # Save updated whitelist
+            with open(self.whitelist_file, 'w') as f:
+                json.dump(whitelist, f, indent=2)
+            
+            logging.info(f"Added MAC to GitHub whitelist file: {self.whitelist_file}")
+            
+            # Auto-sync to GitHub if enabled
+            if self.auto_sync_github:
+                self._sync_to_github_async()
+            else:
+                logging.info(f"→ Run 'python sync_whitelist.py' to sync to GitHub")
+            
+            return True
             
         except Exception as e:
             logging.error(f"Error updating GitHub whitelist file: {str(e)}")
@@ -331,6 +367,7 @@ class MACAuthenticator:
         """
         Merge GitHub whitelist with local config.
         GitHub settings take ABSOLUTE precedence for authorization.
+        Uses status-based authorization (active/revoked).
         
         Args:
             github_config (dict): Configuration from GitHub
@@ -338,16 +375,46 @@ class MACAuthenticator:
         if github_config.get('mode') == 'github_whitelist':
             # Use GitHub whitelist mode - GitHub has absolute control
             self.config['mode'] = 'whitelist'
-            self.config['authorized_macs'] = github_config.get('authorized_macs', [])
-            self.config['allow_first_run'] = False  # Disable auto-auth when GitHub whitelist is active
-            logging.info(f"✓ Using GitHub whitelist (authoritative) with {len(self.config['authorized_macs'])} authorized MACs")
             
-            # Check if current MAC was revoked
-            if self.current_mac_hash not in self.config['authorized_macs']:
+            # Extract devices and build authorized MAC list (only active devices)
+            devices = github_config.get('devices', [])
+            
+            # If devices array is empty, allow first-run auto-authorization
+            if not devices:
+                self.config['authorized_macs'] = []
+                self.config['allow_first_run'] = True
+                logging.info(f"✓ GitHub whitelist is empty - first-run auto-authorization enabled")
+                return
+            
+            # Build list of active MACs only
+            active_macs = [
+                device['mac_hash'] 
+                for device in devices 
+                if device.get('status') == 'active'
+            ]
+            
+            self.config['authorized_macs'] = active_macs
+            self.config['allow_first_run'] = False  # Disable auto-auth when GitHub has devices
+            
+            total_devices = len(devices)
+            active_count = len(active_macs)
+            revoked_count = total_devices - active_count
+            
+            logging.info(f"✓ Using GitHub whitelist (authoritative): {active_count} active, {revoked_count} revoked")
+            
+            # Check if current MAC is revoked
+            current_device = next((d for d in devices if d.get('mac_hash') == self.current_mac_hash), None)
+            if current_device:
+                if current_device.get('status') == 'revoked':
+                    logging.error(f"❌ Device status: REVOKED by administrator")
+                    logging.error(f"   Device was explicitly revoked on GitHub")
+                elif current_device.get('status') != 'active':
+                    logging.warning(f"⚠️  Device status: {current_device.get('status')} (unknown status)")
+            elif total_devices > 0:
                 logging.warning(f"⚠️  Device MAC not found in GitHub whitelist - access will be denied")
-                logging.warning(f"   This device may have been revoked by administrator")
+                
         elif github_config.get('mode') in ['whitelist', 'binding', 'disabled']:
-            # Direct mode override
+            # Direct mode override (backward compatibility)
             self.config['mode'] = github_config['mode']
             if 'authorized_macs' in github_config:
                 self.config['authorized_macs'] = github_config['authorized_macs']
@@ -416,9 +483,9 @@ class MACAuthenticator:
         
         # Not authorized - could be never authorized or revoked by admin
         mac_info = f" (MAC: {self.current_mac})" if self.config.get("show_mac_info", True) else ""
-        logging.error(f"❌ UNAUTHORIZED MAC address: {self.current_mac}")
-        logging.error(f"   Either never authorized OR access revoked by administrator")
-        return False, f"⚠️  Access Denied\n\nThis device is not authorized{mac_info}\n\nContact administrator if you believe this is an error."
+        logging.error(f"❌ ACCESS DENIED: {self.current_mac}")
+        logging.error(f"   Device not in active whitelist - may be revoked or never authorized")
+        return False, f"⚠️  Access Denied\n\nThis device is not authorized{mac_info}\n\nReason: Device not in active whitelist\n(Status may be 'revoked' or never authorized)\n\nContact administrator for access."
     
     def _check_binding(self) -> Tuple[bool, str]:
         """

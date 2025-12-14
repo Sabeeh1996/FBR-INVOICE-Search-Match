@@ -40,37 +40,53 @@ class MACControlPanel:
         print("\n" + "="*60)
         print("MAC ADDRESS CONTROL PANEL")
         print("="*60)
-        print("\n1. View Authorized Devices")
-        print("2. Add Device (Authorize)")
-        print("3. Remove Device (Revoke Access)")
+        print("\n1. View All Devices (Active & Revoked)")
+        print("2. Authorize Device (Set status: active)")
+        print("3. Revoke Device Access (Set status: revoked)")
         print("4. View Notifications (New Devices)")
-        print("5. Clear All Devices")
+        print("5. Remove Device Completely (Delete from list)")
         print("6. Exit")
         print("\n" + "="*60)
     
     def view_devices(self):
-        """Show all authorized devices"""
+        """Show all devices with their status"""
         data = self.load_whitelist()
-        macs = data.get('authorized_macs', [])
+        devices = data.get('devices', [])
         
         print("\n" + "="*60)
-        print(f"AUTHORIZED DEVICES: {len(macs)}")
+        print(f"ALL DEVICES: {len(devices)}")
         print("="*60)
         
-        if not macs:
-            print("\n⚠ No devices authorized yet")
+        if not devices:
+            print("\n⚠ No devices yet")
             print("\nDevices will auto-authorize on first run.")
             print("Check 'first_run_notifications' folder for new device details.")
         else:
-            for i, mac_hash in enumerate(macs, 1):
-                print(f"{i}. {mac_hash[:16]}...{mac_hash[-8:]}")
+            active = [d for d in devices if d.get('status') == 'active']
+            revoked = [d for d in devices if d.get('status') == 'revoked']
+            
+            print(f"\n✅ Active: {len(active)} | ❌ Revoked: {len(revoked)}")
+            print("\n" + "-"*60)
+            
+            for i, device in enumerate(devices, 1):
+                mac_hash = device.get('mac_hash', 'unknown')
+                status = device.get('status', 'unknown')
+                status_icon = "✅" if status == 'active' else "❌" if status == 'revoked' else "⚠️"
+                notes = device.get('notes', '')
+                auth_date = device.get('authorized_date', 'N/A')[:10]
+                
+                print(f"{i}. {status_icon} [{status.upper()}] {mac_hash[:16]}...{mac_hash[-8:]}")
+                print(f"   Authorized: {auth_date}")
+                if notes:
+                    print(f"   Notes: {notes}")
+                print()
         
         print("="*60)
     
     def add_device(self):
-        """Add a device to whitelist"""
+        """Authorize a device (set status to active)"""
         print("\n" + "="*60)
-        print("ADD DEVICE")
+        print("AUTHORIZE DEVICE")
         print("="*60)
         
         # First show notifications to help user find MAC hash
@@ -89,48 +105,82 @@ class MACControlPanel:
             return
         
         data = self.load_whitelist()
+        devices = data.get('devices', [])
         
-        if mac_hash in data['authorized_macs']:
-            print(f"\n⚠ Device already authorized")
-            return
+        # Check if device already exists
+        existing = next((d for d in devices if d.get('mac_hash') == mac_hash), None)
         
-        data['authorized_macs'].append(mac_hash)
-        self.save_whitelist(data)
+        if existing:
+            if existing.get('status') == 'active':
+                print(f"\n⚠ Device already authorized (status: active)")
+            else:
+                existing['status'] = 'active'
+                existing['last_updated'] = datetime.now().isoformat()
+                self.save_whitelist(data)
+                print(f"\n✓ Device status changed to: ACTIVE")
+                print(f"   Device is now authorized")
+        else:
+            # Add new device
+            devices.append({
+                'mac_hash': mac_hash,
+                'status': 'active',
+                'authorized_date': datetime.now().isoformat(),
+                'last_updated': datetime.now().isoformat(),
+                'notes': 'Manually authorized by admin'
+            })
+            data['devices'] = devices
+            self.save_whitelist(data)
+            print(f"\n✓ Device authorized successfully!")
         
-        print(f"\n✓ Device authorized successfully!")
+        print(f"Total devices: {len(devices)}")
         print(f"Total authorized devices: {len(data['authorized_macs'])}")
     
     def remove_device(self):
-        """Remove a device from whitelist"""
+        """Revoke device access (set status to revoked)"""
         data = self.load_whitelist()
-        macs = data.get('authorized_macs', [])
+        devices = data.get('devices', [])
         
-        if not macs:
-            print("\n⚠ No devices to remove")
+        if not devices:
+            print("\n⚠ No devices to revoke")
             return
         
         print("\n" + "="*60)
-        print("REMOVE DEVICE")
+        print("REVOKE DEVICE ACCESS")
         print("="*60)
         
-        for i, mac_hash in enumerate(macs, 1):
-            print(f"{i}. {mac_hash[:16]}...{mac_hash[-8:]}")
+        for i, device in enumerate(devices, 1):
+            mac_hash = device.get('mac_hash', 'unknown')
+            status = device.get('status', 'unknown')
+            status_icon = "✅" if status == 'active' else "❌"
+            print(f"{i}. {status_icon} [{status.upper()}] {mac_hash[:16]}...{mac_hash[-8:]}")
         
         try:
-            choice = input("\nEnter device number to remove (or 0 to cancel): ").strip()
+            choice = input("\nEnter device number to REVOKE (or 0 to cancel): ").strip()
             choice = int(choice)
             
             if choice == 0:
                 print("\nCancelled.")
                 return
             
-            if 1 <= choice <= len(macs):
-                removed_mac = macs.pop(choice - 1)
-                data['authorized_macs'] = macs
-                self.save_whitelist(data)
+            if 1 <= choice <= len(devices):
+                device = devices[choice - 1]
+                mac_hash = device.get('mac_hash', '')
                 
-                print(f"\n✓ Device removed: {removed_mac[:16]}...{removed_mac[-8:]}")
-                print(f"Remaining devices: {len(macs)}")
+                if device.get('status') == 'revoked':
+                    print(f"\n⚠ Device already revoked")
+                else:
+                    device['status'] = 'revoked'
+                    device['last_updated'] = datetime.now().isoformat()
+                    if 'notes' in device:
+                        device['notes'] += ' | Revoked by admin'
+                    else:
+                        device['notes'] = 'Revoked by admin'
+                    
+                    self.save_whitelist(data)
+                    
+                    print(f"\n✓ Device access REVOKED: {mac_hash[:16]}...{mac_hash[-8:]}")
+                    print(f"   Status changed to: REVOKED")
+                    print(f"   Device will be blocked on next app startup")
             else:
                 print("\n✗ Invalid choice")
         
@@ -211,27 +261,51 @@ class MACControlPanel:
         print("\n" + "="*60)
     
     def clear_all(self):
-        """Clear all authorized devices"""
-        print("\n" + "="*60)
-        print("⚠️  CLEAR ALL DEVICES")
-        print("="*60)
-        
+        """Delete a device completely from the list"""
         data = self.load_whitelist()
-        count = len(data.get('authorized_macs', []))
+        devices = data.get('devices', [])
         
-        if count == 0:
-            print("\n⚠ No devices to clear")
+        if not devices:
+            print("\n⚠ No devices to delete")
             return
         
-        print(f"\nThis will remove ALL {count} authorized device(s).")
-        confirm = input("\nType 'YES' to confirm: ").strip()
+        print("\n" + "="*60)
+        print("⚠️  DELETE DEVICE COMPLETELY")
+        print("="*60)
+        print("\nThis will PERMANENTLY DELETE the device from the list.")
+        print("To temporarily block access, use option 3 (Revoke) instead.\n")
         
-        if confirm == 'YES':
-            data['authorized_macs'] = []
-            self.save_whitelist(data)
-            print(f"\n✓ All devices cleared")
-        else:
-            print("\nCancelled.")
+        for i, device in enumerate(devices, 1):
+            mac_hash = device.get('mac_hash', 'unknown')
+            status = device.get('status', 'unknown')
+            print(f"{i}. [{status.upper()}] {mac_hash[:16]}...{mac_hash[-8:]}")
+        
+        try:
+            choice = input("\nEnter device number to DELETE (or 0 to cancel): ").strip()
+            choice = int(choice)
+            
+            if choice == 0:
+                print("\nCancelled.")
+                return
+            
+            if 1 <= choice <= len(devices):
+                confirm = input("\nType 'DELETE' to confirm: ").strip()
+                
+                if confirm == 'DELETE':
+                    device = devices.pop(choice - 1)
+                    data['devices'] = devices
+                    self.save_whitelist(data)
+                    
+                    mac_hash = device.get('mac_hash', '')
+                    print(f"\n✓ Device deleted: {mac_hash[:16]}...{mac_hash[-8:]}")
+                    print(f"Remaining devices: {len(devices)}")
+                else:
+                    print("\nCancelled (confirmation failed)")
+            else:
+                print("\n✗ Invalid choice")
+        
+        except ValueError:
+            print("\n✗ Invalid input")
     
     def run(self):
         """Run the control panel"""
