@@ -135,19 +135,19 @@ def main():
         notifier = FirstRunNotifier()
         notifier.notify_first_run(mac_auth.current_mac)
         
-        # Show first run message to user
-        root = tk.Tk()
-        root.withdraw()
-        messagebox.showinfo(
-            "Device Authorized",
-            "✅ DEVICE SUCCESSFULLY AUTHORIZED\n\n"
-            f"MAC Address: {mac_auth.current_mac}\n\n"
-            "This device is now authorized to run the application.\n"
-            "Authorization has been automatically synced to GitHub.\n\n"
-            "💡 All other devices will see this authorization\n"
-            "   on their next startup."
-        )
-        root.destroy()
+        # Device authorization popup disabled - silently authorize
+        # root = tk.Tk()
+        # root.withdraw()
+        # messagebox.showinfo(
+        #     "Device Authorized",
+        #     "✅ DEVICE SUCCESSFULLY AUTHORIZED\n\n"
+        #     f"MAC Address: {mac_auth.current_mac}\n\n"
+        #     "This device is now authorized to run the application.\n"
+        #     "Authorization has been automatically synced to GitHub.\n\n"
+        #     "💡 All other devices will see this authorization\n"
+        #     "   on their next startup."
+        # )
+        # root.destroy()
     
     # Check version integrity (detect tampering)
     check_version_integrity()
