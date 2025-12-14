@@ -92,6 +92,9 @@ def main():
         # Show error message to user
         root = tk.Tk()
         root.withdraw()
+        root.attributes('-topmost', True)
+        root.lift()
+        root.focus_force()
         messagebox.showerror(
             "Application Already Running",
             "⚠️ ANOTHER INSTANCE IS ALREADY RUNNING\n\n"
@@ -113,6 +116,9 @@ def main():
         # Show error message to user
         root = tk.Tk()
         root.withdraw()
+        root.attributes('-topmost', True)
+        root.lift()
+        root.focus_force()
         
         auth_info = mac_auth.get_auth_info()
         mac_display = auth_info['current_mac'] if auth_info['current_mac'] else "Unable to detect"

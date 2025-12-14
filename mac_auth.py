@@ -71,6 +71,66 @@ class MACAuthenticator:
             logging.error(f"Error getting MAC address: {str(e)}")
             return self._get_mac_fallback()
     
+    def _get_device_info(self) -> dict:
+        """
+        Collect comprehensive device information for authorization.
+        
+        Returns:
+            dict: Device information including username and location
+        """
+        import platform
+        import socket
+        
+        info = {}
+        
+        # Get PC username
+        try:
+            info['username'] = os.getlogin()
+        except:
+            info['username'] = os.environ.get('USERNAME', os.environ.get('USER', 'Unknown'))
+        
+        # Get computer name
+        try:
+            info['computer_name'] = socket.gethostname()
+        except:
+            info['computer_name'] = 'Unknown'
+        
+        # Get OS information
+        try:
+            info['os'] = platform.system()
+            info['os_version'] = platform.version()
+        except:
+            info['os'] = 'Unknown'
+        
+        # Get geolocation (lat/long) using IP
+        try:
+            import urllib.request
+            import json
+            
+            # Use ip-api.com for free geolocation (no API key needed)
+            req = urllib.request.Request(
+                'http://ip-api.com/json/',
+                headers={'User-Agent': 'FBR-Invoice-Checker'}
+            )
+            
+            with urllib.request.urlopen(req, timeout=5) as response:
+                geo_data = json.loads(response.read().decode())
+                if geo_data.get('status') == 'success':
+                    info['latitude'] = geo_data.get('lat', 'Unknown')
+                    info['longitude'] = geo_data.get('lon', 'Unknown')
+                    info['city'] = geo_data.get('city', 'Unknown')
+                    info['country'] = geo_data.get('country', 'Unknown')
+                    info['isp'] = geo_data.get('isp', 'Unknown')
+                else:
+                    info['latitude'] = 'Unknown'
+                    info['longitude'] = 'Unknown'
+        except Exception as e:
+            logging.warning(f"Could not fetch geolocation: {str(e)}")
+            info['latitude'] = 'Unknown'
+            info['longitude'] = 'Unknown'
+        
+        return info
+    
     def _get_mac_fallback(self) -> Optional[str]:
         """
         Fallback method to get MAC address using alternative methods.
@@ -220,16 +280,24 @@ class MACAuthenticator:
                     logging.warning(f"Device was previously revoked, re-activating: {self.current_mac}")
                 existing_device['status'] = 'active'
                 existing_device['last_updated'] = datetime.now().isoformat()
+                # Update device info
+                device_info = self._get_device_info()
+                existing_device.update(device_info)
             else:
-                # Add new device
-                devices.append({
+                # Collect device information
+                device_info = self._get_device_info()
+                
+                # Add new device with full information
+                new_device = {
                     "mac_address": self.current_mac,  # Actual MAC for admin visibility
                     "mac_hash": mac_hash,  # Hash for comparison
                     "status": "active",
                     "authorized_date": datetime.now().isoformat(),
                     "last_updated": datetime.now().isoformat(),
                     "notes": "Auto-authorized on first run"
-                })
+                }
+                new_device.update(device_info)
+                devices.append(new_device)
                 whitelist['devices'] = devices
             
             whitelist['last_updated'] = datetime.now().isoformat()
@@ -562,8 +630,8 @@ class MACAuthenticator:
         mac_info = f" (MAC: {self.current_mac})" if self.config.get("show_mac_info", True) else ""
         logging.error(f"❌ ACCESS DENIED: {self.current_mac}")
         logging.error(f"   Device not in active whitelist - may be revoked or never authorized")
-        return False, f"⚠️  Access Denied\n\nThis device is not authorized{mac_info}\n\nReason: Device not in active whitelist\n(Status may be 'revoked' or never authorized)\n\nContact administrator for access."
-    
+        return False, f"⚠️  Access Denied\n\nContact administrator for access.\n\n Mac Address:{mac_info}"
+
     def _check_binding(self) -> Tuple[bool, str]:
         """
         Check if MAC address matches bound MAC.
