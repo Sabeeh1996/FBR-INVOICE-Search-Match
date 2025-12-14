@@ -40,9 +40,9 @@ class FBRChecker:
             bool: True if browser initialized successfully, False otherwise
         """
         try:
-            # Use undetected-chromedriver for maximum stealth
+            # Use standard Selenium WebDriver for better reliability
             # Optimized configuration for faster startup
-            options = uc.ChromeOptions()
+            options = webdriver.ChromeOptions()
             options.add_argument('--start-maximized')
             options.add_argument('--no-first-run')
             options.add_argument('--no-default-browser-check')
@@ -75,67 +75,12 @@ class FBRChecker:
                 "download.prompt_for_download": False
             }
             options.add_experimental_option("prefs", prefs)
+            options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
+            options.add_experimental_option("useAutomationExtension", False)
             
-            # Initialize undetected Chrome driver with optimized settings
+            # Initialize Chrome WebDriver with Selenium
             logging.info("🚀 Initializing Chrome browser (optimized for speed)...")
-            
-            try:
-                # Try with timeout wrapper
-                import threading
-                import queue
-                
-                result_queue = queue.Queue()
-                
-                def init_driver():
-                    try:
-                        driver = uc.Chrome(
-                            options=options, 
-                            use_subprocess=True,
-                            headless=False
-                        )
-                        result_queue.put(("success", driver))
-                    except Exception as e:
-                        result_queue.put(("error", str(e)))
-                
-                # Start initialization in separate thread
-                init_thread = threading.Thread(target=init_driver)
-                init_thread.daemon = True
-                init_thread.start()
-                
-                # Wait for initialization with timeout
-                init_thread.join(timeout=30)
-                
-                if init_thread.is_alive():
-                    logging.error("Browser initialization timeout after 30 seconds")
-                    raise TimeoutError("Chrome initialization timed out")
-                
-                # Check result
-                if not result_queue.empty():
-                    status, result = result_queue.get()
-                    if status == "success":
-                        self.driver = result
-                    else:
-                        raise Exception(result)
-                else:
-                    raise Exception("Browser initialization failed silently")
-                    
-            except Exception as init_error:
-                logging.warning(f"Undetected Chrome failed: {str(init_error)}")
-                logging.info("Falling back to standard Chrome WebDriver...")
-                
-                # Fallback to standard Chrome
-                from selenium import webdriver
-                from selenium.webdriver.chrome.service import Service
-                from selenium.webdriver.chrome.options import Options
-                
-                chrome_options = Options()
-                chrome_options.add_argument('--start-maximized')
-                chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-                chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-                chrome_options.add_experimental_option('useAutomationExtension', False)
-                
-                self.driver = webdriver.Chrome(options=chrome_options)
-                logging.info("✓ Standard Chrome initialized successfully")
+            self.driver = webdriver.Chrome(options=options)
             
             # Minimal stealth JavaScript (faster execution)
             self.driver.execute_script("""
@@ -150,12 +95,12 @@ class FBRChecker:
             # Initialize ActionChains
             self.actions = ActionChains(self.driver)
             
-            logging.info("✅ Chrome browser initialized successfully")
+            logging.info("✅ Chrome browser initialized successfully (optimized mode)")
             return True
             
         except Exception as e:
             logging.error(f"Failed to initialize Chrome browser: {str(e)}")
-            logging.error("Make sure Chrome is installed and chromedriver is accessible")
+            logging.error("Make sure to run: pip install undetected-chromedriver")
             return False
     
     def _random_delay(self, min_seconds=0.5, max_seconds=2.0):
@@ -2820,21 +2765,104 @@ class FBRChecker:
             try:
                 claim_button = self.driver.execute_script("""
                     var row = document.querySelector('tr[data-matched-row="true"]');
-                    if (!row) return null;
+                    if (!row) {
+                        console.error('[STWH] Matched row not found');
+                        return null;
+                    }
                     
-                    var buttons = row.querySelectorAll('button, a.ui-button, input[type="button"]');
+                    console.log('[STWH] DEBUG: Starting button search in matched row');
+                    
+                    // Strategy 1: Find button with loadStwhAnnexAform + calculate class
+                    var buttons = row.querySelectorAll('button.calculate');
+                    console.log('[STWH] Strategy 1: Found ' + buttons.length + ' buttons with calculate class');
+                    
                     for (var i = 0; i < buttons.length; i++) {
-                        var btnText = buttons[i].textContent.trim().toLowerCase();
-                        var btnId = buttons[i].id.toLowerCase();
+                        var btn = buttons[i];
+                        var btnId = btn.id || '';
+                        var btnClasses = btn.className || '';
                         
-                        if (btnText === 'claim' || btnId.includes('claim')) {
-                            if (!btnText.includes('pra') && !btnText.includes('kpra') && 
-                                !btnText.includes('bra') && !btnText.includes('srb')) {
-                                buttons[i].setAttribute('data-claim-button', 'true');
+                        // Get text from any span inside button
+                        var spans = btn.querySelectorAll('span');
+                        var spanText = '';
+                        for (var s = 0; s < spans.length; s++) {
+                            var text = spans[s].textContent.trim();
+                            if (text) {
+                                spanText = text;
+                                break;
+                            }
+                        }
+                        
+                        console.log('[STWH] Button ' + i + ': ID=' + btnId + ', Text=' + spanText + ', Classes=' + btnClasses);
+                        
+                        // Check if this is the Claim button
+                        if (btnId.includes('loadStwhAnnexAform') &&
+                            btnClasses.includes('calculate') &&
+                            spanText === 'Claim' &&
+                            btn.getAttribute('aria-disabled') !== 'true' &&
+                            btn.type === 'submit') {
+                            
+                            var fullText = btn.textContent.trim().toLowerCase();
+                            if (!fullText.includes(' in ')) {  // Not "Claim in PRA/KPRA/etc"
+                                btn.setAttribute('data-claim-button', 'true');
+                                console.log('[STWH] Strategy 1: Found Claim button - ID: ' + btnId);
                                 return true;
                             }
                         }
                     }
+                    
+                    // Strategy 2: Find by onclick containing PrimeFaces.ab
+                    buttons = row.querySelectorAll('button[onclick*="PrimeFaces"]');
+                    console.log('[STWH] Strategy 2: Found ' + buttons.length + ' buttons with PrimeFaces onclick');
+                    
+                    for (var i = 0; i < buttons.length; i++) {
+                        var btn = buttons[i];
+                        var btnText = btn.textContent.trim();
+                        
+                        if (btnText === 'Claim' && 
+                            btn.getAttribute('aria-disabled') !== 'true' &&
+                            !btnText.toLowerCase().includes(' in ')) {
+                            btn.setAttribute('data-claim-button', 'true');
+                            console.log('[STWH] Strategy 2: Found Claim button via PrimeFaces onclick');
+                            return true;
+                        }
+                    }
+                    
+                    // Strategy 3: Find button with role="button" and calculate class
+                    buttons = row.querySelectorAll('button[role="button"].calculate[type="submit"]');
+                    console.log('[STWH] Strategy 3: Found ' + buttons.length + ' submit buttons with role and calculate class');
+                    
+                    for (var i = 0; i < buttons.length; i++) {
+                        var btn = buttons[i];
+                        var btnText = btn.textContent.trim();
+                        
+                        if (btnText === 'Claim' &&
+                            btn.getAttribute('aria-disabled') !== 'true') {
+                            btn.setAttribute('data-claim-button', 'true');
+                            console.log('[STWH] Strategy 3: Found Claim button via role and calculate');
+                            return true;
+                        }
+                    }
+                    
+                    // Strategy 4: Most permissive - any button with "Claim" text
+                    var allButtons = row.querySelectorAll('button, a, input[type="button"]');
+                    console.log('[STWH] Strategy 4: Searching through ' + allButtons.length + ' total buttons');
+                    
+                    for (var i = 0; i < allButtons.length; i++) {
+                        var btn = allButtons[i];
+                        var btnText = btn.textContent.trim();
+                        var isEnabled = btn.getAttribute('aria-disabled') !== 'true' && !btn.disabled;
+                        var isVisible = btn.offsetParent !== null;
+                        
+                        console.log('[STWH] Strategy 4 - Button ' + i + ': Text="' + btnText + '", Enabled=' + isEnabled + ', Visible=' + isVisible);
+                        
+                        if (isEnabled && isVisible && btnText === 'Claim') {
+                            btn.setAttribute('data-claim-button', 'true');
+                            console.log('[STWH] Strategy 4: Found Claim button via text matching');
+                            return true;
+                        }
+                    }
+                    
+                    console.error('[STWH] ERROR: No valid Claim button found after trying all strategies');
                     return null;
                 """)
                 

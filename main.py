@@ -7,10 +7,12 @@ import tkinter as tk
 from tkinter import messagebox
 import logging
 import os
+import sys
 from datetime import datetime
 from gui import FBRInvoiceCheckerGUI
 from license_manager import LicenseManager
 from version_manager import read_version, is_version_tampered, get_version_info
+from single_instance import SingleInstance
 
 
 def setup_logging():
@@ -80,6 +82,25 @@ def main():
     # Setup logging
     setup_logging()
     
+    # Check for single instance - prevent multiple instances from running
+    instance_lock = SingleInstance("FBR_Invoice_Checker_App")
+    if not instance_lock.acquire_lock():
+        logging.error("Another instance of the application is already running")
+        
+        # Show error message to user
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showerror(
+            "Application Already Running",
+            "⚠️ ANOTHER INSTANCE IS ALREADY RUNNING\n\n"
+            "Only one instance of FBR Invoice Checker can run at a time.\n\n"
+            "Please close the existing instance before starting a new one."
+        )
+        root.destroy()
+        sys.exit(1)
+    
+    logging.info("✓ Single instance lock acquired - application starting")
+    
     # Check version integrity (detect tampering)
     check_version_integrity()
     
@@ -127,6 +148,8 @@ def main():
     except Exception as e:
         logging.error(f"Unexpected error in main loop: {str(e)}")
     finally:
+        # Release single instance lock
+        instance_lock.release_lock()
         logging.info("=" * 80)
         logging.info("FBR Invoice Checker Bot Closed")
         logging.info("=" * 80)
