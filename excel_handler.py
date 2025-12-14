@@ -92,9 +92,6 @@ class ExcelHandler:
                 self.file_path = xlsx_path
                 self.is_xls = False
             
-            # Create backup before loading
-            self._create_backup()
-            
             # Now load with openpyxl (works for .xlsx)
             self.workbook = load_workbook(self.file_path)
             self.worksheet = self.workbook.active

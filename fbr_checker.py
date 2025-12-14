@@ -2763,16 +2763,16 @@ class FBRChecker:
             logging.info("[STWH] STEP 8: Clicking 'Claim' button")
             
             try:
-                claim_button = self.driver.execute_script("""
+                claim_result = self.driver.execute_script("""
                     var row = document.querySelector('tr[data-matched-row="true"]');
                     if (!row) {
                         console.error('[STWH] Matched row not found');
-                        return null;
+                        return {success: false, error: 'Row not found'};
                     }
                     
-                    console.log('[STWH] DEBUG: Starting button search in matched row');
+                    console.log('[STWH] DEBUG: Starting button search and click in matched row');
                     
-                    // Strategy 1: Find button with loadStwhAnnexAform + calculate class
+                    // Strategy 1: Find button with loadStwhAnnexAform + calculate class and "Claim" text
                     var buttons = row.querySelectorAll('button.calculate');
                     console.log('[STWH] Strategy 1: Found ' + buttons.length + ' buttons with calculate class');
                     
@@ -2780,10 +2780,11 @@ class FBRChecker:
                         var btn = buttons[i];
                         var btnId = btn.id || '';
                         var btnClasses = btn.className || '';
-                        
-                        // Get text from any span inside button
-                        var spans = btn.querySelectorAll('span');
+                        var btnText = btn.textContent.trim();
                         var spanText = '';
+                        
+                        // Get text from span inside button
+                        var spans = btn.querySelectorAll('span');
                         for (var s = 0; s < spans.length; s++) {
                             var text = spans[s].textContent.trim();
                             if (text) {
@@ -2792,25 +2793,23 @@ class FBRChecker:
                             }
                         }
                         
-                        console.log('[STWH] Button ' + i + ': ID=' + btnId + ', Text=' + spanText + ', Classes=' + btnClasses);
+                        console.log('[STWH] Button ' + i + ': ID=' + btnId + ', SpanText=' + spanText + ', FullText=' + btnText);
                         
                         // Check if this is the Claim button
                         if (btnId.includes('loadStwhAnnexAform') &&
                             btnClasses.includes('calculate') &&
                             spanText === 'Claim' &&
                             btn.getAttribute('aria-disabled') !== 'true' &&
-                            btn.type === 'submit') {
+                            btn.type === 'submit' &&
+                            !btnText.toLowerCase().includes(' in ')) {  // Not "Claim in PRA/KPRA/etc"
                             
-                            var fullText = btn.textContent.trim().toLowerCase();
-                            if (!fullText.includes(' in ')) {  // Not "Claim in PRA/KPRA/etc"
-                                btn.setAttribute('data-claim-button', 'true');
-                                console.log('[STWH] Strategy 1: Found Claim button - ID: ' + btnId);
-                                return true;
-                            }
+                            console.log('[STWH] Strategy 1: Found Claim button - ID: ' + btnId + ', clicking now...');
+                            btn.click();
+                            return {success: true, method: 'strategy-1', buttonId: btnId};
                         }
                     }
                     
-                    // Strategy 2: Find by onclick containing PrimeFaces.ab
+                    // Strategy 2: Find by onclick containing PrimeFaces + Claim text
                     buttons = row.querySelectorAll('button[onclick*="PrimeFaces"]');
                     console.log('[STWH] Strategy 2: Found ' + buttons.length + ' buttons with PrimeFaces onclick');
                     
@@ -2820,67 +2819,68 @@ class FBRChecker:
                         
                         if (btnText === 'Claim' && 
                             btn.getAttribute('aria-disabled') !== 'true' &&
-                            !btnText.toLowerCase().includes(' in ')) {
-                            btn.setAttribute('data-claim-button', 'true');
-                            console.log('[STWH] Strategy 2: Found Claim button via PrimeFaces onclick');
-                            return true;
+                            !btnText.toLowerCase().includes(' in ') &&
+                            btn.offsetParent !== null) {
+                            
+                            console.log('[STWH] Strategy 2: Found Claim button via PrimeFaces, clicking...');
+                            btn.click();
+                            return {success: true, method: 'strategy-2', buttonId: btn.id};
                         }
                     }
                     
-                    // Strategy 3: Find button with role="button" and calculate class
-                    buttons = row.querySelectorAll('button[role="button"].calculate[type="submit"]');
-                    console.log('[STWH] Strategy 3: Found ' + buttons.length + ' submit buttons with role and calculate class');
+                    // Strategy 3: Find button with ui-button + calculate class
+                    buttons = row.querySelectorAll('button.ui-button.calculate[type="submit"]');
+                    console.log('[STWH] Strategy 3: Found ' + buttons.length + ' ui-button calculate submit buttons');
                     
                     for (var i = 0; i < buttons.length; i++) {
                         var btn = buttons[i];
                         var btnText = btn.textContent.trim();
                         
                         if (btnText === 'Claim' &&
-                            btn.getAttribute('aria-disabled') !== 'true') {
-                            btn.setAttribute('data-claim-button', 'true');
-                            console.log('[STWH] Strategy 3: Found Claim button via role and calculate');
-                            return true;
+                            btn.getAttribute('aria-disabled') !== 'true' &&
+                            btn.offsetParent !== null) {
+                            
+                            console.log('[STWH] Strategy 3: Found Claim button, clicking...');
+                            btn.click();
+                            return {success: true, method: 'strategy-3', buttonId: btn.id};
                         }
                     }
                     
-                    // Strategy 4: Most permissive - any button with "Claim" text
-                    var allButtons = row.querySelectorAll('button, a, input[type="button"]');
+                    // Strategy 4: Most permissive - any enabled visible button with exact "Claim" text
+                    var allButtons = row.querySelectorAll('button, input[type="button"], input[type="submit"]');
                     console.log('[STWH] Strategy 4: Searching through ' + allButtons.length + ' total buttons');
                     
                     for (var i = 0; i < allButtons.length; i++) {
                         var btn = allButtons[i];
-                        var btnText = btn.textContent.trim();
+                        var btnText = btn.textContent.trim() || btn.value || '';
                         var isEnabled = btn.getAttribute('aria-disabled') !== 'true' && !btn.disabled;
                         var isVisible = btn.offsetParent !== null;
                         
                         console.log('[STWH] Strategy 4 - Button ' + i + ': Text="' + btnText + '", Enabled=' + isEnabled + ', Visible=' + isVisible);
                         
-                        if (isEnabled && isVisible && btnText === 'Claim') {
-                            btn.setAttribute('data-claim-button', 'true');
-                            console.log('[STWH] Strategy 4: Found Claim button via text matching');
-                            return true;
+                        if (isEnabled && isVisible && btnText === 'Claim' && !btnText.toLowerCase().includes(' in ')) {
+                            console.log('[STWH] Strategy 4: Found Claim button, clicking...');
+                            btn.click();
+                            return {success: true, method: 'strategy-4', buttonId: btn.id};
                         }
                     }
                     
                     console.error('[STWH] ERROR: No valid Claim button found after trying all strategies');
-                    return null;
+                    return {success: false, error: 'No Claim button found'};
                 """)
                 
-                if not claim_button:
-                    logging.error("[STWH] STEP 8 FAILED: 'Claim' button not found in row")
+                if not claim_result or not claim_result.get('success'):
+                    error_msg = claim_result.get('error', 'Unknown error') if claim_result else 'Script returned null'
+                    logging.error(f"[STWH] STEP 8 FAILED: 'Claim' button not found - {error_msg}")
                     return {
-                        'status': '⚠️ Error - Claim button not found',
+                        'status': f'⚠️ Error - Claim button not found ({error_msg})',
                         'value_of_purchases': value_of_purchases,
                         'fbr_sales_tax': sales_tax_fed_st_mode
                     }
                 
-                # Click the button
-                self.driver.execute_script("""
-                    var btn = document.querySelector('[data-claim-button="true"]');
-                    if (btn) btn.click();
-                """)
-                
-                logging.info("[STWH] ✓ STEP 8 COMPLETED: 'Claim' button clicked")
+                method = claim_result.get('method', 'unknown')
+                button_id = claim_result.get('buttonId', 'unknown')
+                logging.info(f"[STWH] ✓ STEP 8 COMPLETED: 'Claim' button clicked using {method}, button ID: {button_id}")
                 self._random_delay(1.0, 1.5)
                 
             except Exception as e:
