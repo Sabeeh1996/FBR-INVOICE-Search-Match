@@ -214,6 +214,7 @@ class MACAuthenticator:
         """
         Asynchronously sync whitelist to GitHub in background.
         Runs git commands in separate thread to avoid blocking app startup.
+        Handles pull/merge automatically before pushing.
         """
         def sync_task():
             try:
@@ -222,35 +223,63 @@ class MACAuthenticator:
                 # Check if git is available
                 subprocess.run(['git', '--version'], capture_output=True, check=True)
                 
+                cwd = os.path.dirname(os.path.abspath(__file__))
+                
+                # Pull latest changes first to avoid conflicts
+                logging.info("   Pulling latest changes from GitHub...")
+                pull_result = subprocess.run(
+                    ['git', 'pull', 'origin', 'develop'],
+                    capture_output=True,
+                    text=True,
+                    cwd=cwd
+                )
+                
+                if pull_result.returncode != 0 and 'Already up to date' not in pull_result.stdout:
+                    logging.warning(f"   Pull had issues (continuing anyway): {pull_result.stderr}")
+                
                 # Add file
                 subprocess.run(
                     ['git', 'add', self.whitelist_file],
                     capture_output=True,
                     check=True,
-                    cwd=os.path.dirname(os.path.abspath(__file__))
+                    cwd=cwd
                 )
                 
-                # Commit
-                subprocess.run(
+                # Commit (may fail if no changes after pull - that's OK)
+                commit_result = subprocess.run(
                     ['git', 'commit', '-m', 'Auto-authorize new device [automated]'],
                     capture_output=True,
-                    check=True,
-                    cwd=os.path.dirname(os.path.abspath(__file__))
+                    text=True,
+                    cwd=cwd
                 )
+                
+                # Check if there's anything to push
+                if 'nothing to commit' in commit_result.stdout or commit_result.returncode != 0:
+                    # Check if already committed but not pushed
+                    status_result = subprocess.run(
+                        ['git', 'status', '-sb'],
+                        capture_output=True,
+                        text=True,
+                        cwd=cwd
+                    )
+                    
+                    if 'ahead' not in status_result.stdout:
+                        logging.info("✅ Whitelist already synced to GitHub (no changes needed)")
+                        return
                 
                 # Push
                 result = subprocess.run(
                     ['git', 'push', 'origin', 'develop'],
                     capture_output=True,
                     text=True,
-                    cwd=os.path.dirname(os.path.abspath(__file__))
+                    cwd=cwd
                 )
                 
                 if result.returncode == 0:
                     logging.info("✅ Whitelist automatically synced to GitHub!")
                     logging.info("   All devices will see this authorization on next startup")
                 else:
-                    logging.warning(f"⚠️ Auto-sync failed: {result.stderr}")
+                    logging.warning(f"⚠️ Auto-sync push failed: {result.stderr.split('error:')[0] if 'error:' in result.stderr else result.stderr[:100]}")
                     logging.info("   Run 'python sync_whitelist.py' manually to sync")
                     
             except subprocess.CalledProcessError as e:
