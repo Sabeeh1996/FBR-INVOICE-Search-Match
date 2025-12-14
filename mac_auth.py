@@ -424,8 +424,8 @@ class MACAuthenticator:
     def is_authorized(self) -> Tuple[bool, str]:
         """
         Check if current MAC address is authorized to run the application.
-        Fetches latest whitelist from GitHub if available.
-        Falls back to local whitelist file if GitHub unavailable.
+        ALWAYS fetches latest whitelist from GitHub first (authoritative source).
+        Only falls back to local file if GitHub is completely unavailable.
         
         Returns:
             tuple: (is_authorized: bool, message: str)
@@ -433,21 +433,32 @@ class MACAuthenticator:
         if not self.current_mac:
             return False, "Unable to detect MAC address"
         
-        # Try to fetch GitHub whitelist first
+        # Try to fetch GitHub whitelist first (AUTHORITATIVE)
         github_config = self._fetch_github_whitelist()
         
         if github_config:
+            # GitHub is available - use it and save locally for offline use
             self._merge_github_config(github_config)
-            logging.info("Using GitHub whitelist (authoritative)")
+            logging.info("✓ Using GitHub whitelist (authoritative - online)")
+            
+            # Save GitHub version locally for offline fallback
+            try:
+                with open(self.whitelist_file, 'w') as f:
+                    json.dump(github_config, f, indent=2)
+                logging.info("  → Saved GitHub whitelist locally for offline use")
+            except Exception as e:
+                logging.warning(f"Could not save GitHub whitelist locally: {e}")
+                
         else:
-            # If GitHub unavailable, try local whitelist file as backup
+            # GitHub unavailable - try local whitelist file as backup
             if os.path.exists(self.whitelist_file):
                 try:
                     with open(self.whitelist_file, 'r') as f:
                         local_whitelist = json.load(f)
                     
                     if local_whitelist.get('mode') == 'github_whitelist':
-                        logging.info("GitHub unavailable - using local whitelist file as backup")
+                        logging.warning("⚠️  GitHub unavailable - using CACHED local whitelist")
+                        logging.warning("   Status may be outdated - check GitHub connectivity")
                         self._merge_github_config(local_whitelist)
                     else:
                         logging.info("Using local MAC configuration (GitHub unavailable)")
