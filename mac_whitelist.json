@@ -11,7 +11,7 @@
     {
       "mac_address": "95:11:BD:A6:21:5B",
       "mac_hash": "65158b05d949d8d5afb6472965bcefcde59a8671ef106d3150886e6e7b0e493a",
-      "status": "active",
+      "status": "revoked",
       "authorized_date": "2025-12-14T16:40:08.114086",
       "last_updated": "2025-12-14T16:40:08.114086",
       "notes": "Auto-authorized on first run",
