@@ -1,9 +1,7 @@
 {
   "_comment": "GitHub-hosted MAC Address Whitelist - Edit this file to control device access",
   "mode": "github_whitelist",
-  "authorized_macs": [
-    "65158b05d949d8d5afb6472965bcefcde59a8671ef106d3150886e6e7b0e493a"
-  ],
-  "last_updated": "2025-12-14T13:45:03.264387",
-  "updated_by": "auto-authorize"
+  "authorized_macs": [],
+  "last_updated": "2025-12-14T13:50:00.000000",
+  "updated_by": "admin-revoked-all"
 }

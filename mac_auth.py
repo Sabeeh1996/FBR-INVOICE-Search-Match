@@ -330,16 +330,22 @@ class MACAuthenticator:
     def _merge_github_config(self, github_config: dict):
         """
         Merge GitHub whitelist with local config.
-        GitHub settings take precedence for authorization.
+        GitHub settings take ABSOLUTE precedence for authorization.
         
         Args:
             github_config (dict): Configuration from GitHub
         """
         if github_config.get('mode') == 'github_whitelist':
-            # Use GitHub whitelist mode
+            # Use GitHub whitelist mode - GitHub has absolute control
             self.config['mode'] = 'whitelist'
             self.config['authorized_macs'] = github_config.get('authorized_macs', [])
-            logging.info(f"Using GitHub whitelist with {len(self.config['authorized_macs'])} authorized MACs")
+            self.config['allow_first_run'] = False  # Disable auto-auth when GitHub whitelist is active
+            logging.info(f"✓ Using GitHub whitelist (authoritative) with {len(self.config['authorized_macs'])} authorized MACs")
+            
+            # Check if current MAC was revoked
+            if self.current_mac_hash not in self.config['authorized_macs']:
+                logging.warning(f"⚠️  Device MAC not found in GitHub whitelist - access will be denied")
+                logging.warning(f"   This device may have been revoked by administrator")
         elif github_config.get('mode') in ['whitelist', 'binding', 'disabled']:
             # Direct mode override
             self.config['mode'] = github_config['mode']
@@ -388,6 +394,7 @@ class MACAuthenticator:
     def _check_whitelist(self) -> Tuple[bool, str]:
         """
         Check if MAC address is in whitelist.
+        GitHub whitelist has absolute authority - overrides local authorization.
         
         Returns:
             tuple: (is_authorized: bool, message: str)
@@ -395,6 +402,7 @@ class MACAuthenticator:
         authorized_macs = self.config.get("authorized_macs", [])
         
         # If whitelist is empty and allow_first_run is True, auto-authorize
+        # Note: allow_first_run is disabled when GitHub whitelist is active
         if not authorized_macs and self.config.get("allow_first_run", True):
             logging.info(f"First run detected - auto-authorizing MAC: {self.current_mac}")
             self.is_first_run = True  # Mark as first run
@@ -403,13 +411,14 @@ class MACAuthenticator:
         
         # Check if current MAC is in whitelist
         if self.current_mac_hash in authorized_macs:
-            logging.info(f"MAC address authorized: {self.current_mac}")
+            logging.info(f"✓ MAC address authorized: {self.current_mac}")
             return True, "MAC address authorized"
         
-        # Not authorized
+        # Not authorized - could be never authorized or revoked by admin
         mac_info = f" (MAC: {self.current_mac})" if self.config.get("show_mac_info", True) else ""
-        logging.warning(f"Unauthorized MAC address: {self.current_mac}")
-        return False, f"This device is not authorized to run the application{mac_info}"
+        logging.error(f"❌ UNAUTHORIZED MAC address: {self.current_mac}")
+        logging.error(f"   Either never authorized OR access revoked by administrator")
+        return False, f"⚠️  Access Denied\n\nThis device is not authorized{mac_info}\n\nContact administrator if you believe this is an error."
     
     def _check_binding(self) -> Tuple[bool, str]:
         """
