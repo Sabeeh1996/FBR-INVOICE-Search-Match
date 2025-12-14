@@ -102,12 +102,34 @@ class MACAuthenticator:
         except:
             info['os'] = 'Unknown'
         
-        # Get geolocation (lat/long) using IP
+        # Get geolocation (lat/long) using IP - high precision
         try:
             import urllib.request
             import json
             
-            # Use ip-api.com for free geolocation (no API key needed)
+            # Try ipapi.co first (higher precision, 6 decimal places)
+            try:
+                req = urllib.request.Request(
+                    'https://ipapi.co/json/',
+                    headers={'User-Agent': 'FBR-Invoice-Checker'}
+                )
+                
+                with urllib.request.urlopen(req, timeout=5) as response:
+                    geo_data = json.loads(response.read().decode())
+                    if 'latitude' in geo_data and 'longitude' in geo_data:
+                        # Store with high precision (6-8 decimal places)
+                        info['latitude'] = round(float(geo_data['latitude']), 8)
+                        info['longitude'] = round(float(geo_data['longitude']), 8)
+                        info['city'] = geo_data.get('city', 'Unknown')
+                        info['country'] = geo_data.get('country_name', 'Unknown')
+                        info['isp'] = geo_data.get('org', 'Unknown')
+                        info['postal_code'] = geo_data.get('postal', 'Unknown')
+                        info['region'] = geo_data.get('region', 'Unknown')
+                        return info
+            except Exception as e:
+                logging.debug(f"ipapi.co failed, trying fallback: {str(e)}")
+            
+            # Fallback to ip-api.com
             req = urllib.request.Request(
                 'http://ip-api.com/json/',
                 headers={'User-Agent': 'FBR-Invoice-Checker'}
@@ -116,11 +138,14 @@ class MACAuthenticator:
             with urllib.request.urlopen(req, timeout=5) as response:
                 geo_data = json.loads(response.read().decode())
                 if geo_data.get('status') == 'success':
-                    info['latitude'] = geo_data.get('lat', 'Unknown')
-                    info['longitude'] = geo_data.get('lon', 'Unknown')
+                    # Store with maximum available precision
+                    info['latitude'] = round(float(geo_data.get('lat', 0)), 8)
+                    info['longitude'] = round(float(geo_data.get('lon', 0)), 8)
                     info['city'] = geo_data.get('city', 'Unknown')
                     info['country'] = geo_data.get('country', 'Unknown')
                     info['isp'] = geo_data.get('isp', 'Unknown')
+                    info['postal_code'] = geo_data.get('zip', 'Unknown')
+                    info['region'] = geo_data.get('regionName', 'Unknown')
                 else:
                     info['latitude'] = 'Unknown'
                     info['longitude'] = 'Unknown'
