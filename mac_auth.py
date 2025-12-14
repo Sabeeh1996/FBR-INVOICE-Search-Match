@@ -10,6 +10,8 @@ import logging
 import hashlib
 import urllib.request
 import urllib.error
+import subprocess
+import threading
 from datetime import datetime
 from typing import List, Optional, Tuple
 
@@ -20,7 +22,7 @@ class MACAuthenticator:
     Supports both whitelist mode and license binding mode.
     """
     
-    def __init__(self, config_file="mac_config.json", github_url=None, whitelist_file="mac_whitelist.json"):
+    def __init__(self, config_file="mac_config.json", github_url=None, whitelist_file="mac_whitelist.json", auto_sync_github=True):
         """
         Initialize MAC authenticator.
         
@@ -28,9 +30,11 @@ class MACAuthenticator:
             config_file (str): Path to MAC address configuration file
             github_url (str): GitHub raw URL for mac_whitelist.json (optional)
             whitelist_file (str): Path to local GitHub whitelist file
+            auto_sync_github (bool): Automatically push whitelist to GitHub on authorization
         """
         self.config_file = config_file
         self.whitelist_file = whitelist_file
+        self.auto_sync_github = auto_sync_github
         self.config_existed_before = os.path.exists(config_file)  # Track if config existed
         self.github_url = github_url or "https://raw.githubusercontent.com/Sabeeh1996/FBR-INVOICE-Search-Match/develop/mac_whitelist.json"
         self.config = self._load_config()
@@ -191,7 +195,13 @@ class MACAuthenticator:
                     json.dump(whitelist, f, indent=2)
                 
                 logging.info(f"Added MAC to GitHub whitelist file: {self.whitelist_file}")
-                logging.info(f"→ Commit and push this file to GitHub to sync authorization")
+                
+                # Auto-sync to GitHub if enabled
+                if self.auto_sync_github:
+                    self._sync_to_github_async()
+                else:
+                    logging.info(f"→ Run 'python sync_whitelist.py' to sync to GitHub")
+                
                 return True
             
             return False
@@ -199,6 +209,63 @@ class MACAuthenticator:
         except Exception as e:
             logging.error(f"Error updating GitHub whitelist file: {str(e)}")
             return False
+    
+    def _sync_to_github_async(self):
+        """
+        Asynchronously sync whitelist to GitHub in background.
+        Runs git commands in separate thread to avoid blocking app startup.
+        """
+        def sync_task():
+            try:
+                logging.info("🔄 Starting automatic GitHub sync...")
+                
+                # Check if git is available
+                subprocess.run(['git', '--version'], capture_output=True, check=True)
+                
+                # Add file
+                subprocess.run(
+                    ['git', 'add', self.whitelist_file],
+                    capture_output=True,
+                    check=True,
+                    cwd=os.path.dirname(os.path.abspath(__file__))
+                )
+                
+                # Commit
+                subprocess.run(
+                    ['git', 'commit', '-m', 'Auto-authorize new device [automated]'],
+                    capture_output=True,
+                    check=True,
+                    cwd=os.path.dirname(os.path.abspath(__file__))
+                )
+                
+                # Push
+                result = subprocess.run(
+                    ['git', 'push', 'origin', 'develop'],
+                    capture_output=True,
+                    text=True,
+                    cwd=os.path.dirname(os.path.abspath(__file__))
+                )
+                
+                if result.returncode == 0:
+                    logging.info("✅ Whitelist automatically synced to GitHub!")
+                    logging.info("   All devices will see this authorization on next startup")
+                else:
+                    logging.warning(f"⚠️ Auto-sync failed: {result.stderr}")
+                    logging.info("   Run 'python sync_whitelist.py' manually to sync")
+                    
+            except subprocess.CalledProcessError as e:
+                logging.warning(f"⚠️ Auto-sync to GitHub failed: {e}")
+                logging.info("   This is normal if git is not configured or network unavailable")
+                logging.info("   Run 'python sync_whitelist.py' manually when ready")
+            except FileNotFoundError:
+                logging.warning("⚠️ Git not found - cannot auto-sync to GitHub")
+                logging.info("   Run 'python sync_whitelist.py' manually after installing git")
+            except Exception as e:
+                logging.warning(f"⚠️ Unexpected error during auto-sync: {e}")
+        
+        # Run sync in background thread
+        sync_thread = threading.Thread(target=sync_task, daemon=True)
+        sync_thread.start()
     
     def _fetch_github_whitelist(self) -> Optional[dict]:
         """
@@ -359,9 +426,8 @@ class MACAuthenticator:
                 self._save_config()
                 logging.info(f"Authorized MAC address: {self.current_mac}")
                 
-                # Also update GitHub whitelist file locally
+                # Also update GitHub whitelist file (will auto-sync if enabled)
                 self._update_github_whitelist_file(self.current_mac_hash)
-                logging.info(f"💡 TIP: Run 'git add mac_whitelist.json && git commit -m \"Auto-authorize device\" && git push' to sync to GitHub")
             
             return True
         except Exception as e:
