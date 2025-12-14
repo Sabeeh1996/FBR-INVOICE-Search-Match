@@ -35,24 +35,33 @@ class ExcelHandler:
         self.fbr_sales_tax_column = None  # Column to store FBR Sales Tax/FED values
         self.is_xls = file_path.lower().endswith('.xls') and not file_path.lower().endswith('.xlsx')
         self.backup_path = None  # Store backup file path
+        self.backup_created = False  # Track if backup was already created
     
     def _create_backup(self):
         """
         Create a backup of the Excel file before processing.
+        Only creates backup once per session.
+        
+        Returns:
+            bool: True if backup created or already exists, False on error
         """
+        # Skip if backup already created in this session
+        if self.backup_created:
+            return True
+        
         try:
-            import shutil
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            file_dir = os.path.dirname(self.file_path)
+            file_dir = os.path.dirname(self.file_path) or '.'
             file_name = os.path.basename(self.file_path)
             file_base, file_ext = os.path.splitext(file_name)
             
             self.backup_path = os.path.join(file_dir, f"{file_base}_backup_{timestamp}{file_ext}")
             shutil.copy2(self.file_path, self.backup_path)
-            logging.info(f"✓ Backup created: {self.backup_path}")
+            self.backup_created = True
+            logging.info(f"📦 Backup created: {os.path.basename(self.backup_path)}")
             return True
         except Exception as e:
-            logging.warning(f"Could not create backup: {str(e)}")
+            logging.warning(f"⚠️ Backup creation failed: {str(e)}")
             return False
         
     def load_excel(self):
@@ -92,8 +101,9 @@ class ExcelHandler:
                 self.file_path = xlsx_path
                 self.is_xls = False
             
-            # Create backup before loading
-            self._create_backup()
+            # Create backup before loading (only once per session)
+            if not self.backup_created:
+                self._create_backup()
             
             # Now load with openpyxl (works for .xlsx)
             self.workbook = load_workbook(self.file_path)
