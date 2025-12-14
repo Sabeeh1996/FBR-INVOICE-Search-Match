@@ -339,14 +339,50 @@ class MACAuthenticator:
     def _fetch_github_whitelist(self) -> Optional[dict]:
         """
         Fetch MAC whitelist from GitHub repository.
+        Uses GitHub API for real-time access (no cache delays).
+        Falls back to raw URL if API fails.
         
         Returns:
             dict: GitHub whitelist config or None if fetch fails
         """
+        import base64
+        
+        # Try GitHub API first (no cache delays)
         try:
-            logging.info(f"Fetching MAC whitelist from GitHub...")
+            # Convert raw URL to API URL
+            # https://raw.githubusercontent.com/USER/REPO/BRANCH/FILE
+            # to https://api.github.com/repos/USER/REPO/contents/FILE?ref=BRANCH
+            if 'raw.githubusercontent.com' in self.github_url:
+                parts = self.github_url.replace('https://raw.githubusercontent.com/', '').split('/')
+                if len(parts) >= 4:
+                    user, repo, branch = parts[0], parts[1], parts[2]
+                    file_path = '/'.join(parts[3:])
+                    api_url = f"https://api.github.com/repos/{user}/{repo}/contents/{file_path}?ref={branch}"
+                    
+                    logging.info(f"Fetching MAC whitelist from GitHub API...")
+                    
+                    req = urllib.request.Request(
+                        api_url,
+                        headers={
+                            'User-Agent': 'FBR-Invoice-Checker',
+                            'Accept': 'application/vnd.github.v3+json'
+                        }
+                    )
+                    
+                    with urllib.request.urlopen(req, timeout=10) as response:
+                        api_response = json.loads(response.read().decode())
+                        # Decode base64 content
+                        content = base64.b64decode(api_response['content']).decode('utf-8')
+                        data = json.loads(content)
+                        logging.info(f"✓ Successfully fetched from GitHub API (mode: {data.get('mode', 'unknown')})")
+                        return data
+        except Exception as e:
+            logging.warning(f"GitHub API fetch failed: {str(e)}, trying raw URL...")
+        
+        # Fallback to raw URL
+        try:
+            logging.info(f"Fetching MAC whitelist from GitHub raw URL...")
             
-            # Add timeout and user agent
             req = urllib.request.Request(
                 self.github_url,
                 headers={'User-Agent': 'FBR-Invoice-Checker'}
@@ -354,7 +390,7 @@ class MACAuthenticator:
             
             with urllib.request.urlopen(req, timeout=10) as response:
                 data = json.loads(response.read().decode())
-                logging.info(f"Successfully fetched GitHub whitelist (mode: {data.get('mode', 'unknown')})")
+                logging.info(f"✓ Successfully fetched from GitHub raw URL (mode: {data.get('mode', 'unknown')})")
                 return data
                 
         except urllib.error.URLError as e:
