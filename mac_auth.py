@@ -360,20 +360,9 @@ class MACAuthenticator:
                 subprocess.run(['git', '--version'], capture_output=True, check=True)
                 
                 cwd = os.path.dirname(os.path.abspath(__file__))
+                repo_url = f"https://{self.GITHUB_TOKEN}@github.com/Sabeeh1996/FBR-INVOICE-Search-Match.git"
                 
-                # Pull latest changes first to avoid conflicts
-                logging.info("   Pulling latest changes from GitHub...")
-                pull_result = subprocess.run(
-                    ['git', 'pull', 'origin', 'develop'],
-                    capture_output=True,
-                    text=True,
-                    cwd=cwd
-                )
-                
-                if pull_result.returncode != 0 and 'Already up to date' not in pull_result.stdout:
-                    logging.warning(f"   Pull had issues (continuing anyway): {pull_result.stderr}")
-                
-                # Add file
+                # Add file first (before pull to avoid conflicts)
                 subprocess.run(
                     ['git', 'add', self.whitelist_file],
                     capture_output=True,
@@ -381,7 +370,7 @@ class MACAuthenticator:
                     cwd=cwd
                 )
                 
-                # Commit (may fail if no changes after pull - that's OK)
+                # Commit local changes first
                 commit_result = subprocess.run(
                     ['git', 'commit', '-m', 'Auto-authorize new device [automated]'],
                     capture_output=True,
@@ -389,22 +378,33 @@ class MACAuthenticator:
                     cwd=cwd
                 )
                 
-                # Check if there's anything to push
+                # If nothing to commit, check if we need to sync
                 if 'nothing to commit' in commit_result.stdout or commit_result.returncode != 0:
-                    # Check if already committed but not pushed
                     status_result = subprocess.run(
                         ['git', 'status', '-sb'],
                         capture_output=True,
                         text=True,
                         cwd=cwd
                     )
-                    
-                    if 'ahead' not in status_result.stdout:
+                    if 'ahead' not in status_result.stdout and 'behind' not in status_result.stdout:
                         logging.info("✅ Whitelist already synced to GitHub (no changes needed)")
                         return
                 
+                # Pull with rebase to avoid merge commits
+                logging.info("   Syncing with GitHub...")
+                pull_result = subprocess.run(
+                    ['git', 'pull', '--rebase', repo_url, 'develop'],
+                    capture_output=True,
+                    text=True,
+                    cwd=cwd
+                )
+                
+                if pull_result.returncode != 0 and 'Already up to date' not in pull_result.stdout:
+                    logging.warning(f"   Pull had issues (continuing anyway): {pull_result.stderr}")
+                    # Try to continue rebase if there was a conflict
+                    subprocess.run(['git', 'rebase', '--abort'], capture_output=True, cwd=cwd)
+                
                 # Push with authentication
-                repo_url = f"https://{self.GITHUB_TOKEN}@github.com/Sabeeh1996/FBR-INVOICE-Search-Match.git"
                 result = subprocess.run(
                     ['git', 'push', repo_url, 'develop'],
                     capture_output=True,
