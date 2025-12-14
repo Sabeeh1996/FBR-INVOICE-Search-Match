@@ -13,6 +13,8 @@ from gui import FBRInvoiceCheckerGUI
 from license_manager import LicenseManager
 from version_manager import read_version, is_version_tampered, get_version_info
 from single_instance import SingleInstance
+from mac_auth import MACAuthenticator
+from first_run_notifier import FirstRunNotifier
 
 
 def setup_logging():
@@ -100,6 +102,50 @@ def main():
         sys.exit(1)
     
     logging.info("✓ Single instance lock acquired - application starting")
+    
+    # Check MAC address authorization
+    mac_auth = MACAuthenticator()
+    is_authorized, auth_message = mac_auth.is_authorized()
+    
+    if not is_authorized:
+        logging.error(f"MAC address not authorized: {auth_message}")
+        
+        # Show error message to user
+        root = tk.Tk()
+        root.withdraw()
+        
+        auth_info = mac_auth.get_auth_info()
+        mac_display = auth_info['current_mac'] if auth_info['current_mac'] else "Unable to detect"
+        
+        messagebox.showerror(
+            "Device Not Authorized",
+            "⚠️ DEVICE NOT AUTHORIZED\n\n"
+            f"{auth_message}\n\n"
+            f"Device MAC Address: {mac_display}\n\n"
+            "Please contact the administrator to authorize this device."
+        )
+        root.destroy()
+        instance_lock.release_lock()
+        sys.exit(1)
+    
+    logging.info(f"✓ MAC address authorized - {auth_message}")
+    
+    # Check if this is first run and send notification
+    if mac_auth.is_first_run:
+        notifier = FirstRunNotifier()
+        notifier.notify_first_run(mac_auth.current_mac)
+        
+        # Show first run message to user
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showinfo(
+            "Device Authorized",
+            "✅ DEVICE SUCCESSFULLY AUTHORIZED\n\n"
+            f"MAC Address: {mac_auth.current_mac}\n\n"
+            "This device is now authorized to run the application.\n"
+            "The administrator has been notified of this activation."
+        )
+        root.destroy()
     
     # Check version integrity (detect tampering)
     check_version_integrity()
