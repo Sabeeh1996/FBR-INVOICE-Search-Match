@@ -2881,7 +2881,6 @@ class FBRChecker:
                 method = claim_result.get('method', 'unknown')
                 button_id = claim_result.get('buttonId', 'unknown')
                 logging.info(f"[STWH] ✓ STEP 8 COMPLETED: 'Claim' button clicked using {method}, button ID: {button_id}")
-                self._random_delay(1.0, 1.5)
                 
             except Exception as e:
                 logging.error(f"[STWH] Error clicking claim button: {str(e)}")
@@ -2891,38 +2890,135 @@ class FBRChecker:
                     'fbr_sales_tax': sales_tax_fed_st_mode
                 }
             
-            # Step 9: Wait for success message
-            logging.info("[STWH] STEP 9: Waiting for success message...")
+            # Step 9: Wait for AJAX processing and success confirmation
+            logging.info("[STWH] STEP 9: Waiting for claim processing to complete...")
             
             try:
-                # Wait for success message
-                WebDriverWait(self.driver, 60).until(
-                    lambda d: d.execute_script("return document.readyState") == "complete"
+                # Wait for AJAX to start (brief delay)
+                self._random_delay(0.5, 1.0)
+                
+                # Wait for PrimeFaces AJAX queue to empty and page to be complete
+                logging.info("[STWH] Waiting for AJAX queue to complete...")
+                WebDriverWait(self.driver, 90).until(
+                    lambda d: d.execute_script("""
+                        return document.readyState === 'complete' && 
+                               (typeof PrimeFaces === 'undefined' || PrimeFaces.ajax.Queue.isEmpty());
+                    """)
                 )
+                logging.info("[STWH] ✓ AJAX processing completed")
                 
-                self._random_delay(1.0, 2.0)
+                # Additional wait for any animations or updates to settle
+                self._random_delay(1.0, 1.5)
                 
-                # Check for success message
-                success_message = self.driver.execute_script("""
-                    var messages = document.querySelectorAll('.ui-messages-info, .ui-growl-message, [class*="success"]');
-                    for (var i = 0; i < messages.length; i++) {
-                        var text = messages[i].textContent.toLowerCase();
-                        if (text.includes('success') || text.includes('loaded')) {
-                            return messages[i].textContent.trim();
+                # Wait for success message or growl notification to appear
+                logging.info("[STWH] Checking for success confirmation...")
+                success_found = False
+                
+                try:
+                    # Wait for success message with explicit timeout
+                    WebDriverWait(self.driver, 30).until(
+                        lambda d: d.execute_script("""
+                            var messages = document.querySelectorAll(
+                                '.ui-messages-info, .ui-messages-info-summary, .ui-messages-info-detail, ' +
+                                '.ui-growl-message, .ui-growl-item, ' +
+                                '[class*="success"], [class*="Success"], ' +
+                                '.alert-success, .message-success'
+                            );
+                            
+                            for (var i = 0; i < messages.length; i++) {
+                                var msg = messages[i];
+                                var text = msg.textContent.toLowerCase();
+                                var isVisible = msg.offsetParent !== null;
+                                
+                                if (isVisible && (
+                                    text.includes('success') || 
+                                    text.includes('loaded') || 
+                                    text.includes('claimed') ||
+                                    text.includes('completed') ||
+                                    text.includes('saved')
+                                )) {
+                                    return msg.textContent.trim();
+                                }
+                            }
+                            return null;
+                        """)
+                    )
+                    
+                    success_message = self.driver.execute_script("""
+                        var messages = document.querySelectorAll(
+                            '.ui-messages-info, .ui-growl-message, [class*="success"]'
+                        );
+                        for (var i = 0; i < messages.length; i++) {
+                            var text = messages[i].textContent.toLowerCase();
+                            if (text.includes('success') || text.includes('loaded') || text.includes('claimed')) {
+                                return messages[i].textContent.trim();
+                            }
                         }
-                    }
-                    return null;
-                """)
+                        return null;
+                    """)
+                    
+                    if success_message:
+                        logging.info(f"[STWH] ✓ STEP 9 COMPLETED: Success confirmation: '{success_message}'")
+                        success_found = True
+                    
+                except TimeoutException:
+                    logging.warning("[STWH] No success message appeared within timeout, checking for errors...")
+                    
+                    # Check for error messages
+                    error_message = self.driver.execute_script("""
+                        var errors = document.querySelectorAll(
+                            '.ui-messages-error, .ui-messages-error-summary, ' +
+                            '.alert-error, .alert-danger, [class*="error"]'
+                        );
+                        for (var i = 0; i < errors.length; i++) {
+                            var isVisible = errors[i].offsetParent !== null;
+                            if (isVisible) {
+                                return errors[i].textContent.trim();
+                            }
+                        }
+                        return null;
+                    """)
+                    
+                    if error_message:
+                        logging.error(f"[STWH] Error message detected: {error_message}")
+                        return {
+                            'status': f'⚠️ Error - {error_message[:100]}',
+                            'value_of_purchases': value_of_purchases,
+                            'fbr_sales_tax': sales_tax_fed_st_mode
+                        }
                 
-                if success_message:
-                    logging.info(f"[STWH] ✓ STEP 9 COMPLETED: Success message received: '{success_message}'")
-                else:
-                    logging.warning("[STWH] No explicit success message found, assuming success")
+                # Final verification: ensure we're still on the correct page or moved to success state
+                self._random_delay(1.0, 1.5)
+                
+                if not success_found:
+                    # Check if the row is still marked (might indicate incomplete operation)
+                    row_still_exists = self.driver.execute_script("""
+                        return document.querySelector('tr[data-matched-row="true"]') !== null;
+                    """)
+                    
+                    if row_still_exists:
+                        logging.warning("[STWH] Matched row still exists - operation may not have completed fully")
+                    else:
+                        logging.info("[STWH] Matched row no longer present - operation likely completed")
+                        success_found = True
+                
+                if not success_found:
+                    logging.warning("[STWH] Could not confirm success, but proceeding after wait period")
                 
             except TimeoutException:
-                logging.warning("[STWH] Timeout waiting for page load after claim")
+                logging.error("[STWH] Timeout waiting for claim processing to complete")
+                return {
+                    'status': '⚠️ Error - Processing timeout',
+                    'value_of_purchases': value_of_purchases,
+                    'fbr_sales_tax': sales_tax_fed_st_mode
+                }
             except Exception as e:
-                logging.warning(f"[STWH] Error checking success message: {str(e)}")
+                logging.error(f"[STWH] Error during claim verification: {str(e)}")
+                return {
+                    'status': '⚠️ Error - Verification failed',
+                    'value_of_purchases': value_of_purchases,
+                    'fbr_sales_tax': sales_tax_fed_st_mode
+                }
             
             logging.info(f"[STWH] ✅ WORKFLOW COMPLETE: Invoice {invoice_number} processed successfully")
             
