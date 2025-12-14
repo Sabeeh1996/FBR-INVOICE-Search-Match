@@ -6,7 +6,8 @@ Automatically commits and pushes mac_whitelist.json changes to GitHub
 import subprocess
 import sys
 import os
-
+# GitHub Personal Access Token for authentication
+GITHUB_TOKEN = "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"
 
 def check_git_changes():
     """Check if mac_whitelist.json has changes"""
@@ -43,8 +44,11 @@ def sync_whitelist():
         )
         print("  ✓ Changes committed")
         
-        # Push
-        subprocess.run(['git', 'push', 'origin', 'develop'], check=True)
+        # Configure git credential helper for this session
+        repo_url = f"https://{GITHUB_TOKEN}@github.com/Sabeeh1996/FBR-INVOICE-Search-Match.git"
+        
+        # Push with authentication
+        subprocess.run(['git', 'push', repo_url, 'develop'], check=True)
         print("  ✓ Pushed to GitHub")
         
         print("\n✅ Whitelist synced successfully!")

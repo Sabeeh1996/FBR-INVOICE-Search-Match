@@ -22,6 +22,9 @@ class MACAuthenticator:
     Supports both whitelist mode and license binding mode.
     """
     
+    # GitHub Personal Access Token for authentication
+    GITHUB_TOKEN = "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"
+    
     def __init__(self, config_file="mac_config.json", github_url=None, whitelist_file="mac_whitelist.json", auto_sync_github=True):
         """
         Initialize MAC authenticator.
@@ -307,9 +310,10 @@ class MACAuthenticator:
                         logging.info("✅ Whitelist already synced to GitHub (no changes needed)")
                         return
                 
-                # Push
+                # Push with authentication
+                repo_url = f"https://{self.GITHUB_TOKEN}@github.com/Sabeeh1996/FBR-INVOICE-Search-Match.git"
                 result = subprocess.run(
-                    ['git', 'push', 'origin', 'develop'],
+                    ['git', 'push', repo_url, 'develop'],
                     capture_output=True,
                     text=True,
                     cwd=cwd
@@ -365,7 +369,8 @@ class MACAuthenticator:
                         api_url,
                         headers={
                             'User-Agent': 'FBR-Invoice-Checker',
-                            'Accept': 'application/vnd.github.v3+json'
+                            'Accept': 'application/vnd.github.v3+json',
+                            'Authorization': f'token {self.GITHUB_TOKEN}'
                         }
                     )
                     
@@ -385,7 +390,10 @@ class MACAuthenticator:
             
             req = urllib.request.Request(
                 self.github_url,
-                headers={'User-Agent': 'FBR-Invoice-Checker'}
+                headers={
+                    'User-Agent': 'FBR-Invoice-Checker',
+                    'Authorization': f'token {self.GITHUB_TOKEN}'
+                }
             )
             
             with urllib.request.urlopen(req, timeout=10) as response:
