@@ -95,6 +95,14 @@ class FBRInvoiceCheckerGUI:
         self.is_paused = False
         self.worker_thread = None
         
+        # Pause/Resume tracking
+        self.pause_requested = False
+        self.last_processed_row = None
+        self.current_mode = None  # 'verify' or 'stwh'
+        
+        # Workflow indicator state
+        self.workflow_indicator = None
+        
         # Persistent instances
         self.fbr_checker = None
         self.excel_handler = None
@@ -172,15 +180,21 @@ class FBRInvoiceCheckerGUI:
 
         # Button styles (normal and hover variants)
         style.configure('Start.TButton', foreground=BTN_TEXT, background=BTN_START_BG, padding=8, relief='flat')
-        style.map('Start.TButton', background=[('active', BTN_START_HOVER)])
+        style.map('Start.TButton', 
+                  background=[('active', BTN_START_HOVER), ('disabled', '#A0A0A0')],
+                  foreground=[('disabled', '#FFFFFF')])
         style.configure('StartHover.TButton', foreground=BTN_TEXT, background=BTN_START_HOVER)
 
         style.configure('Exit.TButton', foreground=BTN_TEXT, background=BTN_EXIT_BG, padding=8, relief='flat')
-        style.map('Exit.TButton', background=[('active', BTN_EXIT_HOVER)])
+        style.map('Exit.TButton', 
+                  background=[('active', BTN_EXIT_HOVER), ('disabled', '#A0A0A0')],
+                  foreground=[('disabled', '#FFFFFF')])
         style.configure('ExitHover.TButton', foreground=BTN_TEXT, background=BTN_EXIT_HOVER)
 
         style.configure('Browse.TButton', foreground=BTN_TEXT, background=BTN_BROWSE_BG, padding=6, relief='flat')
-        style.map('Browse.TButton', background=[('active', BTN_BROWSE_HOVER)])
+        style.map('Browse.TButton', 
+                  background=[('active', BTN_BROWSE_HOVER), ('disabled', '#A0A0A0')],
+                  foreground=[('disabled', '#FFFFFF')])
         style.configure('BrowseHover.TButton', foreground=BTN_TEXT, background=BTN_BROWSE_HOVER)
 
         # Scrollbar style
@@ -324,9 +338,10 @@ class FBRInvoiceCheckerGUI:
             text="⏸ Pause", 
             command=self.pause_processing,
             width=12,
-            state='disabled'
+            state='disabled',
+            style='Start.TButton'
         )
-        self.pause_btn.grid(row=0, column=3, padx=8, pady=5)
+        self.pause_btn.grid(row=0, column=3, padx=4, pady=5)
         self.pause_btn.grid_remove()  # Hide initially
         
         self.resume_btn = ttk.Button(
@@ -334,9 +349,10 @@ class FBRInvoiceCheckerGUI:
             text="▶ Resume", 
             command=self.resume_processing,
             width=12,
-            state='disabled'
+            state='normal',
+            style='Start.TButton'
         )
-        self.resume_btn.grid(row=0, column=4, padx=8, pady=5)
+        self.resume_btn.grid(row=0, column=4, padx=4, pady=5)
         self.resume_btn.grid_remove()  # Hide initially
         
         self.stop_btn = ttk.Button(
@@ -344,9 +360,10 @@ class FBRInvoiceCheckerGUI:
             text="⏹ Stop", 
             command=self.stop_processing,
             width=12,
-            state='disabled'
+            state='disabled',
+            style='Exit.TButton'
         )
-        self.stop_btn.grid(row=0, column=5, padx=8, pady=5)
+        self.stop_btn.grid(row=0, column=5, padx=4, pady=5)
         self.stop_btn.grid_remove()  # Hide initially
         
         # Separator space before Exit button
@@ -386,9 +403,17 @@ class FBRInvoiceCheckerGUI:
         self.progress_label = ttk.Label(progress_frame, text="Ready to start", style='Normal.TLabel', wraplength=600)
         self.progress_label.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
         
+        # Workflow indicator frame
+        workflow_frame = ttk.Frame(progress_frame, style='Panel.TFrame')
+        workflow_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
+        
+        tk.Label(workflow_frame, text="🔄 Active Workflow:", font=("Arial", 10, "bold"), bg=PANEL_BG, fg=SUB_TEXT).pack(side=tk.LEFT, padx=5)
+        self.workflow_indicator = tk.Label(workflow_frame, text="None", font=("Arial", 10, "bold"), bg=PANEL_BG, fg=NORMAL_TEXT)
+        self.workflow_indicator.pack(side=tk.LEFT, padx=5)
+        
         # Statistics frame - responsive with wrapping
         stats_frame = ttk.Frame(progress_frame, style='Panel.TFrame')
-        stats_frame.grid(row=2, column=0, sticky=(tk.W, tk.E))
+        stats_frame.grid(row=3, column=0, sticky=(tk.W, tk.E))
         stats_frame.columnconfigure(1, weight=1)
         stats_frame.columnconfigure(3, weight=1)
         stats_frame.columnconfigure(5, weight=1)
@@ -412,7 +437,7 @@ class FBRInvoiceCheckerGUI:
         
         # Timing frame - show start and end times
         timing_frame = ttk.Frame(progress_frame, style='Panel.TFrame')
-        timing_frame.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=(10, 0))
+        timing_frame.grid(row=4, column=0, sticky=(tk.W, tk.E), pady=(10, 0))
         timing_frame.columnconfigure(1, weight=1)
         timing_frame.columnconfigure(3, weight=1)
         
@@ -426,7 +451,7 @@ class FBRInvoiceCheckerGUI:
         
         # Elapsed time and average time frame
         elapsed_frame = ttk.Frame(progress_frame, style='Panel.TFrame')
-        elapsed_frame.grid(row=4, column=0, sticky=(tk.W, tk.E), pady=(10, 0))
+        elapsed_frame.grid(row=5, column=0, sticky=(tk.W, tk.E), pady=(10, 0))
         elapsed_frame.columnconfigure(1, weight=1)
         elapsed_frame.columnconfigure(3, weight=1)
         
@@ -642,9 +667,19 @@ class FBRInvoiceCheckerGUI:
             messagebox.showerror("Error", "Please open FBR portal first!")
             return
         
-        # Disable verify button
+        # Disable verify button, enable pause/stop buttons
         self.verify_btn.config(state='disabled')
+        self.pause_btn.grid()  # Show pause button
+        self.pause_btn.config(state='normal')
+        self.stop_btn.grid()  # Show stop button
+        self.stop_btn.config(state='normal')
+        
         self.is_running = True
+        self.pause_requested = False
+        self.current_mode = 'verify'
+        
+        # Update workflow indicator
+        self.root.after(0, lambda: self.workflow_indicator.config(text="▶ Verify Invoices", fg="#27AE60"))
         
         # Reset statistics
         self.processed_count = 0
@@ -679,9 +714,20 @@ class FBRInvoiceCheckerGUI:
             messagebox.showerror("Error", "Please open FBR portal first!")
             return
         
-        # Disable load stwh button
+        # Disable load stwh button, enable pause/stop buttons
         self.load_stwh_btn.config(state='disabled')
+        self.pause_btn.grid()  # Show pause button
+        self.pause_btn.config(state='normal')
+        self.stop_btn.grid()  # Show stop button
+        self.stop_btn.config(state='normal')
+        
         self.is_running = True
+        self.pause_requested = False
+        self.current_mode = 'stwh'
+        
+        # Update workflow indicator
+        self.root.after(0, lambda: self.workflow_indicator.config(text="📥 LOAD STWH", fg="#3498DB"))
+        self.root.after(0, lambda: self.workflow_indicator.config(text="📥 LOAD STWH", fg="#3498DB"))
         
         # Reset statistics
         self.processed_count = 0
@@ -706,35 +752,87 @@ class FBRInvoiceCheckerGUI:
         """
         Pause the invoice verification process.
         """
-        self.is_paused = True
+        self.pause_requested = True
         self.pause_btn.config(state='disabled')
-        self.resume_btn.config(state='normal')
-        self.log_message("⏸ Processing paused")
+        self.log_message("⏸️ Pause requested... Will pause after current invoice completes")
     
     def resume_processing(self):
         """
-        Resume the invoice verification process.
+        Resume the invoice verification process from where it was paused.
         """
-        self.is_paused = False
+        # Hide resume button, show pause/stop buttons
+        self.resume_btn.grid_remove()
+        self.pause_btn.grid()
         self.pause_btn.config(state='normal')
-        self.resume_btn.config(state='disabled')
-        self.log_message("▶ Processing resumed")
+        self.stop_btn.grid()
+        self.stop_btn.config(state='normal')
+        
+        self.pause_requested = False
+        self.is_running = True
+        
+        # Determine which process to resume based on current_mode
+        if self.current_mode == 'verify':
+            self.worker_thread = threading.Thread(target=self.verify_invoices, daemon=True)
+            self.log_message("▶️ Resuming invoice verification...")
+        elif self.current_mode == 'stwh':
+            self.worker_thread = threading.Thread(target=self.load_stwh_process, daemon=True)
+            self.log_message("▶️ Resuming LOAD STWH process...")
+        else:
+            messagebox.showerror("Error", "Unknown processing mode. Please restart.")
+            return
+        
+        self.worker_thread.start()
     
     def stop_processing(self):
         """
         Stop the invoice verification process immediately.
-        Saves the Excel file with processed data and closes the browser.
+        Saves the Excel file with processed data.
         """
         if messagebox.askyesno("Stop Processing", "Are you sure you want to stop processing?\nThe Excel file will be saved with current progress."):
             self.is_running = False
-            self.is_paused = False
-            self.stop_btn.config(state='disabled')
-            self.pause_btn.config(state='disabled')
-            self.resume_btn.config(state='disabled')
-            self.start_btn.config(state='normal')
-            self.log_message("⏹ Stopping processing... Please wait for cleanup")
+            self.pause_requested = False
+            self.log_message("⏹️ Stop requested... Cleaning up")
+            
+            # Save and close Excel
+            if self.excel_handler:
+                try:
+                    self.excel_handler.close()
+                    self.log_message("📊 Excel file saved successfully")
+                except Exception as e:
+                    self.log_message(f"⚠️ Error saving Excel: {str(e)}")
+            
+            # Hide pause/stop buttons, show verify buttons
+            self._reset_ui_after_stop()
         else:
             self.log_message("Stop cancelled")
+    
+    def _show_resume_ui(self):
+        """
+        Update UI to show resume button after pause.
+        """
+        self.pause_btn.grid_remove()
+        self.stop_btn.grid_remove()
+        self.resume_btn.grid()
+        self.resume_btn.config(state='normal')
+        self.verify_btn.config(state='normal')
+        self.load_stwh_btn.config(state='normal')
+    
+    def _reset_ui_after_stop(self):
+        """
+        Reset UI after stopping processing.
+        """
+        self.pause_btn.grid_remove()
+        self.stop_btn.grid_remove()
+        self.resume_btn.grid_remove()
+        self.verify_btn.config(state='normal')
+        self.load_stwh_btn.config(state='normal')
+        
+        # Reset workflow indicator
+        if self.workflow_indicator:
+            self.workflow_indicator.config(text="None", fg=NORMAL_TEXT)
+        
+        self.last_processed_row = None
+        self.current_mode = None
     
     def verify_invoices(self):
         """
@@ -766,19 +864,26 @@ class FBRInvoiceCheckerGUI:
             self.update_statistics()
             self.log_message(f"📋 Found {self.total_invoices} invoices to verify")
             
+            # Determine starting point (resume from last processed row if available)
+            start_index = 0
+            if self.last_processed_row is not None:
+                # Find the index of the row after the last processed one
+                for idx, inv in enumerate(invoices):
+                    if inv['row_number'] > self.last_processed_row:
+                        start_index = idx
+                        break
+                self.log_message(f"▶️ Resuming from row {self.last_processed_row + 1}")
+                self.last_processed_row = None  # Clear after use
+            
             # Show column headers for upcoming records
             self.log_message("=" * 80)
             self.log_message("EXCEL COLUMNS: Sr.No | Source | Name | Registration No | Number | Date")
             self.log_message("=" * 80)
             
-            # Process each invoice
+            # Process each invoice starting from start_index
             
-            for invoice_data in invoices:
+            for invoice_data in invoices[start_index:]:
                 invoice_start_time = time.time()  # Track individual invoice start time
-                
-                # Check if paused
-                while self.is_paused and self.is_running:
-                    time.sleep(0.5)
                 
                 # Check if stopped
                 if not self.is_running:
@@ -867,6 +972,25 @@ class FBRInvoiceCheckerGUI:
                 self.log_message(f"   ⏱️ Invoice Time: {invoice_elapsed_time:.1f}s | Total Time: {self._format_time(total_elapsed_time)} | Avg/Invoice: {average_time_per_invoice:.1f}s")
                 self.log_message("-" * 80)
                 
+                # Check for pause request
+                if self.pause_requested:
+                    self.last_processed_row = row_number
+                    self.log_message(f"⏸️ Paused at row {row_number}")
+                    self.log_message(f"✅ Progress saved. You can resume later from row {row_number + 1}")
+                    
+                    # Save current state
+                    if self.excel_handler:
+                        self.excel_handler.close()
+                    
+                    # Update UI to show resume button
+                    self.root.after(0, self._show_resume_ui)
+                    return  # Exit the processing loop
+                
+                # Check if user stopped processing
+                if not self.is_running:
+                    self.log_message("⏹️ Processing stopped by user")
+                    break
+                
                 # Random delay between requests (human-like behavior)
                 delay = random.uniform(0.25, 0.5)
                 self.log_message(f"⏱️ Waiting {delay:.1f}s before next invoice...")
@@ -898,7 +1022,7 @@ class FBRInvoiceCheckerGUI:
             
             # Reset UI (keep browser open)
             self.is_running = False
-            self.verify_btn.config(state='normal')
+            self.root.after(0, self._reset_ui_after_stop)
     
     def load_stwh_process(self):
         """
@@ -931,13 +1055,24 @@ class FBRInvoiceCheckerGUI:
             self.update_statistics()
             self.log_message(f"📋 Found {self.total_invoices} invoices for STWH processing")
             
+            # Determine starting point (resume from last processed row if available)
+            start_index = 0
+            if self.last_processed_row is not None:
+                # Find the index of the row after the last processed one
+                for idx, inv in enumerate(invoices):
+                    if inv['row'] > self.last_processed_row:
+                        start_index = idx
+                        break
+                self.log_message(f"▶️ Resuming from row {self.last_processed_row + 1}")
+                self.last_processed_row = None  # Clear after use
+            
             # Show column headers for upcoming records
             self.log_message("=" * 80)
             self.log_message("STWH PROCESS: Sr.No | Source | Name | Registration No | Number | Date")
             self.log_message("=" * 80)
             
-            # Process each invoice (STWH workflow)
-            for invoice_data in invoices:
+            # Process each invoice (STWH workflow) starting from start_index
+            for invoice_data in invoices[start_index:]:
                 invoice_start_time = time.time()  # Track individual invoice start time
                 
                 # Check if paused
@@ -1029,6 +1164,25 @@ class FBRInvoiceCheckerGUI:
                 self.log_message(f"   ⏱️ Invoice Time: {invoice_elapsed_time:.1f}s | Total Time: {self._format_time(total_elapsed_time)} | Avg/Invoice: {average_time_per_invoice:.1f}s")
                 self.log_message("-" * 80)
                 
+                # Check for pause request
+                if self.pause_requested:
+                    self.last_processed_row = row_number
+                    self.log_message(f"⏸️ [STWH] Paused at row {row_number}")
+                    self.log_message(f"✅ Progress saved. You can resume later from row {row_number + 1}")
+                    
+                    # Save current state
+                    if self.excel_handler:
+                        self.excel_handler.close()
+                    
+                    # Update UI to show resume button
+                    self.root.after(0, self._show_resume_ui)
+                    return  # Exit the processing loop
+                
+                # Check if user stopped processing
+                if not self.is_running:
+                    self.log_message("⏹️ [STWH] Processing stopped by user")
+                    break
+                
                 # Random delay between requests (human-like behavior)
                 delay = random.uniform(0.25, 0.5)
                 self.log_message(f"⏱️ Waiting {delay:.1f}s before next invoice...")
@@ -1055,7 +1209,7 @@ class FBRInvoiceCheckerGUI:
             
             # Reset UI (keep browser open)
             self.is_running = False
-            self.load_stwh_btn.config(state='normal')
+            self.root.after(0, self._reset_ui_after_stop)
     
     def _format_time(self, seconds):
         """

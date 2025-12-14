@@ -5,6 +5,8 @@ Handles all Excel file operations including reading invoice numbers and updating
 
 import openpyxl
 from openpyxl import load_workbook, Workbook
+import xlrd
+import os
 import logging
 from datetime import datetime
 
@@ -30,15 +32,46 @@ class ExcelHandler:
         self.timestamp_column = None
         self.value_of_purchases_column = None
         self.fbr_sales_tax_column = None  # Column to store FBR Sales Tax/FED values
+        self.is_xls = file_path.lower().endswith('.xls') and not file_path.lower().endswith('.xlsx')
         
     def load_excel(self):
         """
         Load the Excel file and validate required columns.
+        Supports both .xls (xlrd) and .xlsx (openpyxl) formats.
         
         Returns:
             bool: True if loaded successfully, False otherwise
         """
         try:
+            # Check if file is .xls format (old Excel)
+            if self.is_xls:
+                # For .xls files, we need to convert to .xlsx first
+                logging.info(f"Detected .xls format file, converting to .xlsx...")
+                xlsx_path = self.file_path.replace('.xls', '.xlsx')
+                
+                # Open .xls file with xlrd
+                xls_book = xlrd.open_workbook(self.file_path, formatting_info=False)
+                xls_sheet = xls_book.sheet_by_index(0)
+                
+                # Create new .xlsx workbook
+                xlsx_book = Workbook()
+                xlsx_sheet = xlsx_book.active
+                
+                # Copy data from .xls to .xlsx
+                for row_idx in range(xls_sheet.nrows):
+                    for col_idx in range(xls_sheet.ncols):
+                        cell_value = xls_sheet.cell_value(row_idx, col_idx)
+                        xlsx_sheet.cell(row=row_idx + 1, column=col_idx + 1, value=cell_value)
+                
+                # Save as .xlsx
+                xlsx_book.save(xlsx_path)
+                logging.info(f"Converted {self.file_path} to {xlsx_path}")
+                
+                # Update file path to .xlsx version
+                self.file_path = xlsx_path
+                self.is_xls = False
+            
+            # Now load with openpyxl (works for .xlsx)
             self.workbook = load_workbook(self.file_path)
             self.worksheet = self.workbook.active
             
