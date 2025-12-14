@@ -425,6 +425,7 @@ class MACAuthenticator:
         """
         Check if current MAC address is authorized to run the application.
         Fetches latest whitelist from GitHub if available.
+        Falls back to local whitelist file if GitHub unavailable.
         
         Returns:
             tuple: (is_authorized: bool, message: str)
@@ -432,12 +433,29 @@ class MACAuthenticator:
         if not self.current_mac:
             return False, "Unable to detect MAC address"
         
-        # Try to fetch GitHub whitelist (falls back to local if unavailable)
+        # Try to fetch GitHub whitelist first
         github_config = self._fetch_github_whitelist()
+        
         if github_config:
             self._merge_github_config(github_config)
+            logging.info("Using GitHub whitelist (authoritative)")
         else:
-            logging.info("Using local MAC configuration (GitHub unavailable)")
+            # If GitHub unavailable, try local whitelist file as backup
+            if os.path.exists(self.whitelist_file):
+                try:
+                    with open(self.whitelist_file, 'r') as f:
+                        local_whitelist = json.load(f)
+                    
+                    if local_whitelist.get('mode') == 'github_whitelist':
+                        logging.info("GitHub unavailable - using local whitelist file as backup")
+                        self._merge_github_config(local_whitelist)
+                    else:
+                        logging.info("Using local MAC configuration (GitHub unavailable)")
+                except Exception as e:
+                    logging.error(f"Error loading local whitelist: {e}")
+                    logging.info("Using local MAC configuration (GitHub unavailable)")
+            else:
+                logging.info("Using local MAC configuration (GitHub unavailable)")
         
         mode = self.config.get("mode", "whitelist")
         
