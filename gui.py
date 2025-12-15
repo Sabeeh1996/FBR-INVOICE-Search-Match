@@ -15,6 +15,7 @@ import json
 import asyncio
 from pathlib import Path
 import os
+import sys
 
 try:
     from PIL import Image, ImageTk
@@ -491,7 +492,13 @@ class FBRInvoiceCheckerGUI:
         footer_frame.columnconfigure(0, weight=1)
         
         # Try to load and display the company logo
-        logo_path = os.path.join(os.path.dirname(__file__), 'assets', 'codium_edge_logo.png')
+        # Support both development and exe modes
+        if getattr(sys, 'frozen', False):
+            # Running as exe - use _MEIPASS
+            logo_path = os.path.join(sys._MEIPASS, 'assets', 'codium_edge_logo.png')
+        else:
+            # Running in development
+            logo_path = os.path.join(os.path.dirname(__file__), 'assets', 'codium_edge_logo.png')
         if PIL_AVAILABLE and os.path.exists(logo_path):
             try:
                 # Load and resize logo

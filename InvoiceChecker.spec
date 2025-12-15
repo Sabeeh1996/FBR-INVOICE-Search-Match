@@ -1,17 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
-import os
 
-# Bundle config files inside EXE
-# Note: version.txt is kept EXTERNAL (not bundled) so updater.py can modify it at runtime
-datas = [
-    ('license_config.json', '.'),
-]
-
-# Include logo if it exists
-if os.path.exists('assets/codium_edge_logo.png'):
-    datas.append(('assets/codium_edge_logo.png', 'assets'))
-
+datas = [('license_config.json', '.'), ('version.txt', '.'), ('mac_config.json', '.'), ('mac_whitelist.json', '.'), ('assets/codium_edge_logo.png', 'assets')]
 binaries = []
 hiddenimports = ['tkinter', 'tkinter.ttk', 'tkinter.messagebox', 'tkinter.filedialog', 'openpyxl', 'openpyxl.cell', 'openpyxl.styles', 'selenium', 'selenium.webdriver', 'requests', 'PIL', 'PIL.Image', 'PIL.ImageTk']
 tmp_ret = collect_all('openpyxl')

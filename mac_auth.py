@@ -58,7 +58,15 @@ class MACAuthenticator:
             auto_sync_github (bool): Automatically push whitelist to GitHub on authorization
         """
         self.config_file = config_file
-        self.whitelist_file = whitelist_file
+        
+        # When running as exe, store whitelist in AppData to keep exe dir clean
+        if is_running_as_exe():
+            from app_data_manager import get_writable_file_path
+            self.whitelist_file = get_writable_file_path(whitelist_file)
+            logging.info(f"Exe mode: Using AppData for whitelist: {self.whitelist_file}")
+        else:
+            self.whitelist_file = whitelist_file
+        
         self.auto_sync_github = auto_sync_github
         self.config_existed_before = os.path.exists(config_file)  # Track if config existed
         self.github_url = github_url or "https://raw.githubusercontent.com/Sabeeh1996/FBR-INVOICE-Search-Match/develop/mac_whitelist.json"
@@ -357,52 +365,32 @@ class MACAuthenticator:
             bool: True if successful
         """
         try:
-            # When running as exe, use AppData directory (hidden from user)
-            if is_running_as_exe():
-                # Get bundled whitelist as template
-                bundled_whitelist = get_resource_path(self.whitelist_file)
-                
-                # Create writable copy in AppData
-                default_whitelist = {
-                    "_comment": "GitHub-hosted MAC Address Whitelist - Edit this file to control device access",
-                    "_instructions": [
-                        "To AUTHORIZE: Set status to 'active'",
-                        "To REVOKE: Set status to 'revoked'",
-                        "Empty devices array = first-time use (auto-authorization enabled)",
-                        "Status values: 'active' = authorized, 'revoked' = blocked",
-                        "mac_address field is for admin reference (readable MAC address)",
-                        "mac_hash field is used for device matching (do not edit)"
-                    ],
-                    "mode": "github_whitelist",
-                    "devices": [],
-                    "last_updated": "",
-                    "updated_by": "auto-authorize"
-                }
-                
-                # Use AppData directory
-                self.whitelist_file = ensure_writable_copy(bundled_whitelist, self.whitelist_file, default_whitelist)
-                logging.info(f"Using AppData whitelist: {self.whitelist_file}")
+            # Default whitelist structure
+            default_whitelist = {
+                "_comment": "GitHub-hosted MAC Address Whitelist - Unlimited Multi-Device Support",
+                "_instructions": [
+                    "UNLIMITED AUTO-AUTHORIZATION: All new devices are automatically approved",
+                    "To BLOCK a device: Set status to 'revoked'",
+                    "To ALLOW a device: Set status to 'active' (or just delete the revoked entry)",
+                    "Empty devices array = first-time use (unlimited auto-authorization enabled)",
+                    "Status values: 'active' = authorized, 'revoked' = blocked",
+                    "device_name: Identifies the device (computer-username)",
+                    "mac_address: For admin reference (readable MAC address)",
+                    "mac_hash: Used for device matching (do not edit)"
+                ],
+                "mode": "github_whitelist",
+                "max_devices": 0,
+                "devices": [],
+                "last_updated": "",
+                "updated_by": "auto-authorize"
+            }
             
             # Load existing whitelist
             if os.path.exists(self.whitelist_file):
                 with open(self.whitelist_file, 'r') as f:
                     whitelist = json.load(f)
             else:
-                whitelist = {
-                    "_comment": "GitHub-hosted MAC Address Whitelist - Edit this file to control device access",
-                    "_instructions": [
-                        "To AUTHORIZE: Set status to 'active'",
-                        "To REVOKE: Set status to 'revoked'",
-                        "Empty devices array = first-time use (auto-authorization enabled)",
-                        "Status values: 'active' = authorized, 'revoked' = blocked",
-                        "mac_address field is for admin reference (readable MAC address)",
-                        "mac_hash field is used for device matching (do not edit)"
-                    ],
-                    "mode": "github_whitelist",
-                    "devices": [],
-                    "last_updated": "",
-                    "updated_by": "auto-authorize"
-                }
+                whitelist = default_whitelist
             
             # Migrate old format to new format if needed
             if 'authorized_macs' in whitelist and 'devices' not in whitelist:
@@ -431,22 +419,30 @@ class MACAuthenticator:
                 # Update device info
                 device_info = self._get_device_info()
                 existing_device.update(device_info)
+                logging.info(f"Updated existing device: {existing_device.get('device_name', 'Unnamed Device')}")
             else:
                 # Collect device information
                 device_info = self._get_device_info()
                 
+                # Generate device name (computer name + user)
+                device_name = f"{device_info.get('computer_name', 'Unknown')}-{device_info.get('username', 'User')}"
+                device_count = len(devices) + 1
+                
                 # Add new device with full information
                 new_device = {
+                    "device_id": device_count,
+                    "device_name": device_name,
                     "mac_address": self.current_mac,  # Actual MAC for admin visibility
                     "mac_hash": mac_hash,  # Hash for comparison
                     "status": "active",
                     "authorized_date": datetime.now().isoformat(),
                     "last_updated": datetime.now().isoformat(),
-                    "notes": "Auto-authorized on first run"
+                    "notes": f"Auto-authorized device #{device_count}"
                 }
                 new_device.update(device_info)
                 devices.append(new_device)
                 whitelist['devices'] = devices
+                logging.info(f"Added new device #{device_count}: {device_name}")
             
             whitelist['last_updated'] = datetime.now().isoformat()
             whitelist['updated_by'] = 'auto-authorize'
@@ -690,13 +686,22 @@ class MACAuthenticator:
             ]
             
             self.config['authorized_macs'] = active_macs
-            self.config['allow_first_run'] = False  # Disable auto-auth when GitHub has devices
+            # Keep allow_first_run=True for unlimited auto-authorization
+            # Only devices with status='revoked' will be blocked
+            self.config['allow_first_run'] = True
             
             total_devices = len(devices)
             active_count = len(active_macs)
             revoked_count = total_devices - active_count
             
             logging.info(f"✓ Using GitHub whitelist (authoritative): {active_count} active, {revoked_count} revoked")
+            if active_count > 0:
+                logging.info(f"  → Multi-device mode: {active_count} authorized device(s)")
+                # Log device names if available
+                for idx, device in enumerate(devices, 1):
+                    if device.get('status') == 'active':
+                        device_name = device.get('device_name', device.get('computer_name', 'Unknown'))
+                        logging.info(f"     Device #{idx}: {device_name}")
             
             # Check if current MAC is revoked
             current_device = next((d for d in devices if d.get('mac_hash') == self.current_mac_hash), None)
@@ -787,30 +792,38 @@ class MACAuthenticator:
         """
         Check if MAC address is in whitelist.
         GitHub whitelist has absolute authority - overrides local authorization.
+        Supports multiple devices per installation.
         
         Returns:
             tuple: (is_authorized: bool, message: str)
         """
         authorized_macs = self.config.get("authorized_macs", [])
         
-        # If whitelist is empty and allow_first_run is True, auto-authorize
-        # Note: allow_first_run is disabled when GitHub whitelist is active
-        if not authorized_macs and self.config.get("allow_first_run", True):
-            logging.info(f"First run detected - auto-authorizing MAC: {self.current_mac}")
-            self.is_first_run = True  # Mark as first run
-            self.authorize_current_mac()
-            return True, "Auto-authorized (first run)"
-        
         # Check if current MAC is in whitelist
         if self.current_mac_hash in authorized_macs:
+            # Count total authorized devices
+            device_count = len(authorized_macs)
             logging.info(f"✓ MAC address authorized: {self.current_mac}")
-            return True, "MAC address authorized"
+            logging.info(f"✓ Total authorized devices: {device_count}")
+            return True, f"MAC address authorized ({device_count} device(s) total)"
         
-        # Not authorized - could be never authorized or revoked by admin
+        # NEW DEVICE - Auto-authorize if allow_first_run is True (default)
+        # This enables unlimited multi-device support with automatic authorization
+        if self.config.get("allow_first_run", True):
+            device_count = len(authorized_macs) + 1
+            logging.info(f"🆕 New device detected - auto-authorizing MAC: {self.current_mac}")
+            logging.info(f"   This will be device #{device_count}")
+            self.is_first_run = True  # Mark as first run
+            self.authorize_current_mac()
+            return True, f"Auto-authorized (device #{device_count})"
+        
+        # Only deny if allow_first_run is explicitly disabled (admin-controlled mode)
         mac_info = f" (MAC: {self.current_mac})" if self.config.get("show_mac_info", True) else ""
+        device_count = len(authorized_macs)
         logging.error(f"❌ ACCESS DENIED: {self.current_mac}")
-        logging.error(f"   Device not in active whitelist - may be revoked or never authorized")
-        return False, f"⚠️  Access Denied\n\nContact administrator for access.\n\n Mac Address:{mac_info}"
+        logging.error(f"   {device_count} device(s) already authorized - this device is not in the list")
+        logging.error(f"   Auto-authorization is disabled - contact administrator")
+        return False, f"⚠️  Access Denied\n\n{device_count} device(s) already authorized.\nAuto-authorization disabled.\nContact administrator to authorize this device.\n\nMac Address:{mac_info}"
 
     def _check_binding(self) -> Tuple[bool, str]:
         """
@@ -914,16 +927,53 @@ class MACAuthenticator:
     def get_auth_info(self) -> dict:
         """
         Get authentication information for display.
+        Includes multi-device statistics.
         
         Returns:
-            dict: Authentication info
+            dict: Authentication info with device counts
         """
+        authorized_macs = self.config.get("authorized_macs", [])
+        is_auth, msg = self.is_authorized()
+        
         return {
             "current_mac": self.current_mac,
             "mode": self.config.get("mode", "unknown"),
-            "is_authorized": self.is_authorized()[0],
-            "authorized_count": len(self.config.get("authorized_macs", []))
+            "is_authorized": is_auth,
+            "auth_message": msg,
+            "total_devices": len(authorized_macs),
+            "authorized_count": len(authorized_macs),
+            "is_multi_device": len(authorized_macs) > 1
         }
+    
+    def get_device_list(self) -> list:
+        """
+        Get list of all authorized devices from whitelist.
+        
+        Returns:
+            list: List of device dictionaries
+        """
+        try:
+            if os.path.exists(self.whitelist_file):
+                with open(self.whitelist_file, 'r') as f:
+                    whitelist = json.load(f)
+                    devices = whitelist.get('devices', [])
+                    return [
+                        {
+                            'device_id': d.get('device_id', 'N/A'),
+                            'device_name': d.get('device_name', d.get('computer_name', 'Unknown')),
+                            'mac_address': d.get('mac_address', 'N/A'),
+                            'status': d.get('status', 'unknown'),
+                            'authorized_date': d.get('authorized_date', 'N/A'),
+                            'last_updated': d.get('last_updated', 'N/A'),
+                            'username': d.get('username', 'N/A'),
+                            'computer_name': d.get('computer_name', 'N/A')
+                        }
+                        for d in devices
+                    ]
+            return []
+        except Exception as e:
+            logging.error(f"Error getting device list: {e}")
+            return []
     
     def set_mode(self, mode: str):
         """

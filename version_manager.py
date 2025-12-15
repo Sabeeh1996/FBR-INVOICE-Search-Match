@@ -9,7 +9,9 @@ import sys
 import hashlib
 import json
 import logging
-from datetime import datetimefrom app_data_manager import get_app_data_dir
+from datetime import datetime
+from app_data_manager import get_app_data_dir
+
 logger = logging.getLogger(__name__)
 
 

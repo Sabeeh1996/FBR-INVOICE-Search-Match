@@ -80,6 +80,7 @@ cmd = [
     '--add-data=version.txt;.',
     '--add-data=mac_config.json;.',
     '--add-data=mac_whitelist.json;.',
+    '--add-data=assets/codium_edge_logo.png;assets',
     
     # Hidden imports
     '--hidden-import=tkinter',
@@ -144,7 +145,7 @@ print("[5/5] Verifying bundled files...")
 dist_dir = PROJECT_DIR / 'dist'
 
 # These files are now bundled INSIDE the exe, not separate files
-bundled_files = ['license_config.json', 'version.txt', 'mac_config.json', 'mac_whitelist.json']
+bundled_files = ['license_config.json', 'version.txt', 'mac_config.json', 'mac_whitelist.json', 'assets/codium_edge_logo.png']
 print(f"  ✓ Files bundled inside EXE: {', '.join(bundled_files)}")
 print(f"  ✓ These files are read-only and cannot be modified by users")
 
