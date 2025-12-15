@@ -44,9 +44,9 @@
       "device_name": "LAP-709-OGDCL",
       "mac_address": "F8:AC:65:D0:CA:C2",
       "mac_hash": "4b8728faf4d606c53c00db7ecd7386143ba7ac7b346d3bb0d16a6e3a7f2791d8",
-      "status": "revoked",
+      "status": "active",
       "authorized_date": "2025-12-15T19:35:44.226647",
-      "last_updated": "2025-12-15T19:57:59.031811",
+      "last_updated": "2025-12-15T19:59:48.369346",
       "notes": "Auto-authorized device #2",
       "username": "OGDCL",
       "computer_name": "LAP-709",
@@ -73,6 +73,6 @@
       "timezone": "Asia/Karachi"
     }
   ],
-  "last_updated": "2025-12-15T19:58:01.055080",
+  "last_updated": "2025-12-15T19:59:50.436256",
   "updated_by": "auto-authorize"
 }
