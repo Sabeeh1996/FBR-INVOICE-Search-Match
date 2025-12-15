@@ -73,8 +73,41 @@
       "region": "Punjab",
       "asn": "AS17557 Pakistan Telecommunication Company Limited",
       "timezone": "Asia/Karachi"
+    },
+    {
+      "device_id": 3,
+      "device_name": "pc-fmc pc",
+      "mac_address": "98:AF:65:64:61:16",
+      "mac_hash": "58f9f30b8353498706f7709e4e07f62334b3c1688e996c9ab1db761367e96c6f",
+      "status": "active",
+      "authorized_date": "2025-12-15T20:20:30.264675",
+      "last_updated": "2025-12-15T20:20:30.264675",
+      "notes": "Auto-authorized device #3",
+      "username": "fmc pc",
+      "computer_name": "pc",
+      "os": "Windows",
+      "os_version": "10.0.26200",
+      "local_ip": "192.168.18.59",
+      "dns_servers": "192.168.18.1",
+      "default_gateway": "1%9",
+      "network_adapters": [
+        "Ethernet adapter Ethernet",
+        "Wireless LAN adapter Local Area Connection* 3",
+        "Description . . . . . . . . . . ."
+      ],
+      "fqdn": "pc",
+      "public_ip": "154.192.75.119",
+      "latitude": 33.7233,
+      "longitude": 73.0435,
+      "city": "Islamabad",
+      "country": "Pakistan",
+      "isp": "Nayatel Private Limited",
+      "postal_code": "44000",
+      "region": "Islamabad",
+      "asn": "AS23674 Nayatel (Pvt) Ltd",
+      "timezone": "Asia/Karachi"
     }
   ],
-  "last_updated": "2025-12-15T20:12:51.583263",
+  "last_updated": "2025-12-15T20:20:30.264675",
   "updated_by": "auto-authorize"
 }
