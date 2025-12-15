@@ -9,8 +9,7 @@ import sys
 import hashlib
 import json
 import logging
-from datetime import datetime
-
+from datetime import datetimefrom app_data_manager import get_app_data_dir
 logger = logging.getLogger(__name__)
 
 
@@ -55,9 +54,14 @@ def get_version_file():
 def get_version_lock_file():
     """
     Return path to version.lock (tamper-proof lock file).
-    This is always stored in the app directory, not bundled.
+    When running as exe, stores in AppData (hidden from user).
     """
-    return os.path.join(get_app_dir(), "version.lock")
+    if getattr(sys, "frozen", False):
+        # Running as exe - use AppData directory
+        return os.path.join(get_app_data_dir(), "version.lock")
+    else:
+        # Development mode - use app directory
+        return os.path.join(get_app_dir(), "version.lock")
 
 
 def calculate_checksum(version_str):

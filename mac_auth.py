@@ -15,6 +15,7 @@ import subprocess
 import threading
 from datetime import datetime
 from typing import List, Optional, Tuple
+from app_data_manager import get_app_data_dir, ensure_writable_copy
 
 
 def get_resource_path(relative_path):
@@ -347,7 +348,7 @@ class MACAuthenticator:
         """
         Update local GitHub whitelist file with new device entry.
         Uses status-based authorization (active/revoked).
-        When running as exe, creates local writable copy if needed.
+        When running as exe, stores in AppData (hidden from user).
         
         Args:
             mac_hash (str): MAC address hash to add
@@ -356,43 +357,31 @@ class MACAuthenticator:
             bool: True if successful
         """
         try:
-            # When running as exe, we need to work with a local writable copy
+            # When running as exe, use AppData directory (hidden from user)
             if is_running_as_exe():
-                # Get the directory where the exe is located (writable)
-                app_dir = os.path.dirname(sys.executable)
-                local_whitelist = os.path.join(app_dir, self.whitelist_file)
+                # Get bundled whitelist as template
+                bundled_whitelist = get_resource_path(self.whitelist_file)
                 
-                # If local file doesn't exist, copy from bundled resource
-                if not os.path.exists(local_whitelist):
-                    bundled_whitelist = get_resource_path(self.whitelist_file)
-                    try:
-                        with open(bundled_whitelist, 'r') as f:
-                            whitelist = json.load(f)
-                        with open(local_whitelist, 'w') as f:
-                            json.dump(whitelist, f, indent=2)
-                        logging.info(f"Created local whitelist copy from bundled resource")
-                    except:
-                        # If bundled file doesn't exist or can't be read, create new
-                        whitelist = {
-                            "_comment": "GitHub-hosted MAC Address Whitelist - Edit this file to control device access",
-                            "_instructions": [
-                                "To AUTHORIZE: Set status to 'active'",
-                                "To REVOKE: Set status to 'revoked'",
-                                "Empty devices array = first-time use (auto-authorization enabled)",
-                                "Status values: 'active' = authorized, 'revoked' = blocked",
-                                "mac_address field is for admin reference (readable MAC address)",
-                                "mac_hash field is used for device matching (do not edit)"
-                            ],
-                            "mode": "github_whitelist",
-                            "devices": [],
-                            "last_updated": "",
-                            "updated_by": "auto-authorize"
-                        }
-                        with open(local_whitelist, 'w') as f:
-                            json.dump(whitelist, f, indent=2)
+                # Create writable copy in AppData
+                default_whitelist = {
+                    "_comment": "GitHub-hosted MAC Address Whitelist - Edit this file to control device access",
+                    "_instructions": [
+                        "To AUTHORIZE: Set status to 'active'",
+                        "To REVOKE: Set status to 'revoked'",
+                        "Empty devices array = first-time use (auto-authorization enabled)",
+                        "Status values: 'active' = authorized, 'revoked' = blocked",
+                        "mac_address field is for admin reference (readable MAC address)",
+                        "mac_hash field is used for device matching (do not edit)"
+                    ],
+                    "mode": "github_whitelist",
+                    "devices": [],
+                    "last_updated": "",
+                    "updated_by": "auto-authorize"
+                }
                 
-                # Use the local writable file
-                self.whitelist_file = local_whitelist
+                # Use AppData directory
+                self.whitelist_file = ensure_writable_copy(bundled_whitelist, self.whitelist_file, default_whitelist)
+                logging.info(f"Using AppData whitelist: {self.whitelist_file}")
             
             # Load existing whitelist
             if os.path.exists(self.whitelist_file):
