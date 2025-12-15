@@ -34,37 +34,19 @@ class SingleInstance:
     def acquire_lock(self):
         """
         Try to acquire the single instance lock.
+        Automatically cleans up stale locks from previous crashes.
         
         Returns:
             bool: True if lock acquired successfully, False if another instance is running
         """
         try:
+            # First, check for and remove any stale lock files
+            self._cleanup_stale_lock()
+            
             # Try to open the lock file exclusively
             if os.name == 'nt':  # Windows
                 # On Windows, we use file locking
                 import msvcrt
-                
-                # Check if lock file exists and is still valid
-                if os.path.exists(self.lockfile):
-                    # Try to read the PID from lock file
-                    try:
-                        with open(self.lockfile, 'r') as f:
-                            pid = int(f.read().strip())
-                            
-                        # Check if process is still running
-                        if self._is_process_running(pid):
-                            logging.warning(f"Another instance is already running (PID: {pid})")
-                            return False
-                        else:
-                            # Stale lock file, remove it
-                            logging.info("Removing stale lock file")
-                            os.remove(self.lockfile)
-                    except (ValueError, IOError):
-                        # Invalid lock file, remove it
-                        try:
-                            os.remove(self.lockfile)
-                        except:
-                            pass
                 
                 # Create new lock file
                 self.fp = open(self.lockfile, 'w')
@@ -101,6 +83,42 @@ class SingleInstance:
         except Exception as e:
             logging.error(f"Error acquiring single instance lock: {str(e)}")
             return False
+    
+    def _cleanup_stale_lock(self):
+        """
+        Check for and remove stale lock files from previous crashes or force closes.
+        This ensures users can always restart the app even if it was terminated abnormally.
+        """
+        if not os.path.exists(self.lockfile):
+            return
+        
+        try:
+            # Try to read the PID from lock file
+            with open(self.lockfile, 'r') as f:
+                pid_str = f.read().strip()
+                if not pid_str:
+                    # Empty lock file, remove it
+                    logging.info("Removing empty lock file")
+                    os.remove(self.lockfile)
+                    return
+                
+                pid = int(pid_str)
+                
+            # Check if process is still running
+            if not self._is_process_running(pid):
+                # Stale lock file from crashed/killed process, remove it
+                logging.info(f"Removing stale lock file (PID {pid} is not running)")
+                os.remove(self.lockfile)
+            else:
+                logging.debug(f"Lock file is valid (PID {pid} is running)")
+                
+        except (ValueError, IOError, OSError) as e:
+            # Invalid lock file, remove it
+            logging.info(f"Removing invalid lock file: {e}")
+            try:
+                os.remove(self.lockfile)
+            except:
+                pass
     
     def _is_process_running(self, pid):
         """
