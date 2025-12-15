@@ -2288,7 +2288,7 @@ class FBRChecker:
                 logging.info(f"[STWH] ✓ STEP 3 COMPLETED & VERIFIED: Invoice Number = '{entered_value}'")
                 self._random_delay(0.25, 0.5)
             
-            # Step 4: Select Dates
+            # Step 4: Select Dates (ROBUST - Handles all date formats)
             if date_field and date_field != 'N/A':
                 logging.info(f"[STWH] STEP 4: Selecting dates: {date_field}")
                 
@@ -2302,130 +2302,207 @@ class FBRChecker:
                     }
                 
                 date_formatted = parsed_date['formatted']
+                logging.info(f"[STWH] Parsed date: {date_field} → {date_formatted}")
                 
-                # From Date
-                from_date_selectors = [
-                    # Strategy 1: Direct input ID match
-                    (By.ID, "correspondenceTabs:loadStwhAnnexAform:annexAFromDate_input"),
+                # Helper function to set date robustly with multiple strategies
+                def set_date_field_robust(field_name, field_id_pattern, date_value):
+                    logging.info(f"[STWH] Setting {field_name} to: {date_value}")
                     
-                    # Strategy 2: Input name attribute
-                    (By.NAME, "correspondenceTabs:loadStwhAnnexAform:annexAFromDate_input"),
+                    # Strategy 1: Find input field
+                    date_input = None
+                    date_selectors = [
+                        (By.ID, f"correspondenceTabs:loadStwhAnnexAform:{field_id_pattern}_input"),
+                        (By.XPATH, f"//input[@id='correspondenceTabs:loadStwhAnnexAform:{field_id_pattern}_input']"),
+                        (By.XPATH, f"//span[@id='correspondenceTabs:loadStwhAnnexAform:{field_id_pattern}']//input"),
+                        (By.XPATH, f"//input[contains(@id, '{field_id_pattern}_input')]"),
+                        (By.CSS_SELECTOR, f"input[id*='{field_id_pattern}_input']"),
+                    ]
                     
-                    # Strategy 3: XPath with exact ID
-                    (By.XPATH, "//input[@id='correspondenceTabs:loadStwhAnnexAform:annexAFromDate_input']"),
+                    for by_type, selector in date_selectors:
+                        try:
+                            date_input = wait.until(EC.visibility_of_element_located((by_type, selector)))
+                            logging.info(f"[STWH] Found {field_name} input using: {selector}")
+                            break
+                        except TimeoutException:
+                            continue
                     
-                    # Strategy 4: Input within calendar wrapper span
-                    (By.XPATH, "//span[@id='correspondenceTabs:loadStwhAnnexAform:annexAFromDate']//input[contains(@class, 'hasDatepicker')]"),
+                    if not date_input:
+                        logging.error(f"[STWH] {field_name} input not found")
+                        return False
                     
-                    # Strategy 5: Calendar input with ui-calendar parent
-                    (By.XPATH, "//span[contains(@class, 'ui-calendar')]//input[contains(@id, 'annexAFromDate_input')]"),
+                    # Strategy 2: Set date using multiple approaches with event triggering
+                    date_set_success = self.driver.execute_script("""
+                        var input = arguments[0];
+                        var dateValue = arguments[1];
+                        
+                        console.log('[STWH] Date Setting - Input ID:', input.id);
+                        console.log('[STWH] Date Setting - Target value:', dateValue);
+                        
+                        // APPROACH 1: Direct value set + trigger all events
+                        try {
+                            // Clear existing value
+                            input.value = '';
+                            input.dispatchEvent(new Event('input', { bubbles: true }));
+                            
+                            // Set new value
+                            input.value = dateValue;
+                            
+                            // Trigger events in sequence
+                            input.dispatchEvent(new Event('input', { bubbles: true }));
+                            input.dispatchEvent(new Event('change', { bubbles: true }));
+                            input.dispatchEvent(new Event('blur', { bubbles: true }));
+                            input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+                            
+                            console.log('[STWH] APPROACH 1: Value set and events triggered');
+                            
+                            // Verify
+                            if (input.value === dateValue) {
+                                console.log('[STWH] ✓ APPROACH 1 SUCCESS: Value verified');
+                                return {success: true, method: 'approach-1-direct-events'};
+                            }
+                        } catch (e) {
+                            console.log('[STWH] APPROACH 1 failed:', e.message);
+                        }
+                        
+                        // APPROACH 2: Focus, clear, type simulation
+                        try {
+                            input.focus();
+                            input.select();
+                            
+                            // Clear by setting empty
+                            var nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                            nativeInputValueSetter.call(input, '');
+                            input.dispatchEvent(new Event('input', { bubbles: true }));
+                            
+                            // Set value using native setter
+                            nativeInputValueSetter.call(input, dateValue);
+                            
+                            // Trigger events
+                            input.dispatchEvent(new Event('input', { bubbles: true }));
+                            input.dispatchEvent(new Event('change', { bubbles: true }));
+                            input.blur();
+                            
+                            console.log('[STWH] APPROACH 2: Native setter used');
+                            
+                            if (input.value === dateValue) {
+                                console.log('[STWH] ✓ APPROACH 2 SUCCESS: Value verified');
+                                return {success: true, method: 'approach-2-native-setter'};
+                            }
+                        } catch (e) {
+                            console.log('[STWH] APPROACH 2 failed:', e.message);
+                        }
+                        
+                        // APPROACH 3: jQuery if available (PrimeFaces often uses jQuery)
+                        if (typeof jQuery !== 'undefined') {
+                            try {
+                                jQuery(input).val(dateValue).trigger('input').trigger('change').blur();
+                                console.log('[STWH] APPROACH 3: jQuery used');
+                                
+                                if (input.value === dateValue) {
+                                    console.log('[STWH] ✓ APPROACH 3 SUCCESS: Value verified');
+                                    return {success: true, method: 'approach-3-jquery'};
+                                }
+                            } catch (e) {
+                                console.log('[STWH] APPROACH 3 failed:', e.message);
+                            }
+                        }
+                        
+                        // APPROACH 4: PrimeFaces widget method
+                        try {
+                            var widgetVar = input.id.replace(/:/g, '_');
+                            if (typeof PrimeFaces !== 'undefined' && PrimeFaces.widgets[widgetVar]) {
+                                PrimeFaces.widgets[widgetVar].setDate(dateValue);
+                                console.log('[STWH] APPROACH 4: PrimeFaces widget setDate used');
+                                
+                                if (input.value === dateValue) {
+                                    console.log('[STWH] ✓ APPROACH 4 SUCCESS: Value verified');
+                                    return {success: true, method: 'approach-4-primefaces-widget'};
+                                }
+                            }
+                        } catch (e) {
+                            console.log('[STWH] APPROACH 4 failed:', e.message);
+                        }
+                        
+                        // APPROACH 5: Force value and mark as touched
+                        try {
+                            input.removeAttribute('readonly');
+                            input.value = dateValue;
+                            input.setAttribute('value', dateValue);
+                            
+                            // Mark field as touched/dirty
+                            if (input.classList) {
+                                input.classList.add('ng-dirty', 'ng-touched', 'ui-state-filled');
+                            }
+                            
+                            // Trigger all possible events
+                            ['input', 'change', 'blur', 'focusout'].forEach(function(eventType) {
+                                input.dispatchEvent(new Event(eventType, { bubbles: true }));
+                            });
+                            
+                            console.log('[STWH] APPROACH 5: Force value with all events');
+                            
+                            if (input.value === dateValue) {
+                                console.log('[STWH] ✓ APPROACH 5 SUCCESS: Value verified');
+                                return {success: true, method: 'approach-5-force-value'};
+                            }
+                        } catch (e) {
+                            console.log('[STWH] APPROACH 5 failed:', e.message);
+                        }
+                        
+                        // Final verification
+                        console.log('[STWH] Final check - Current value:', input.value);
+                        if (input.value === dateValue) {
+                            return {success: true, method: 'eventual-success'};
+                        }
+                        
+                        console.error('[STWH] All approaches failed to set date');
+                        return {success: false, error: 'All methods failed', currentValue: input.value};
+                    """, date_input, date_value)
                     
-                    # Strategy 6: Input with hasDatepicker class and readonly
-                    (By.XPATH, "//input[contains(@class, 'hasDatepicker') and @readonly='readonly' and contains(@id, 'annexAFromDate')]"),
-                    
-                    # Strategy 7: Form context with partial ID match
-                    (By.XPATH, "//form[contains(@id, 'loadStwhAnnexAform')]//input[contains(@id, 'annexAFromDate_input')]"),
-                    
-                    # Strategy 8: CSS selector with partial ID
-                    (By.CSS_SELECTOR, "input[id*='loadStwhAnnexAform'][id*='annexAFromDate_input']"),
-                    
-                    # Strategy 9: Input with ui-inputfield and hasDatepicker classes
-                    (By.XPATH, "//input[contains(@class, 'ui-inputfield') and contains(@class, 'hasDatepicker') and contains(@id, 'FromDate')]"),
-                    
-                    # Strategy 10: Generic date input with role textbox
-                    (By.XPATH, "//input[@type='text' and @role='textbox' and contains(@class, 'hasDatepicker') and contains(@id, 'FromDate')]"),
-                ]
+                    if date_set_success and date_set_success.get('success'):
+                        method = date_set_success.get('method', 'unknown')
+                        logging.info(f"[STWH] ✓ {field_name} set using: {method}")
+                        self._random_delay(0.1, 0.25)
+                        
+                        # Final verification
+                        final_value = date_input.get_attribute('value')
+                        if final_value == date_value:
+                            logging.info(f"[STWH] ✓ {field_name} verified: {final_value}")
+                            return True
+                        else:
+                            logging.warning(f"[STWH] {field_name} value mismatch: expected '{date_value}', got '{final_value}'")
+                            # Try one more time with direct attribute setting
+                            self.driver.execute_script("arguments[0].setAttribute('value', arguments[1]);", date_input, date_value)
+                            final_value = date_input.get_attribute('value')
+                            if final_value == date_value:
+                                logging.info(f"[STWH] ✓ {field_name} verified after retry: {final_value}")
+                                return True
+                            return False
+                    else:
+                        error = date_set_success.get('error', 'Unknown') if date_set_success else 'Script failed'
+                        current = date_set_success.get('currentValue', 'N/A') if date_set_success else 'N/A'
+                        logging.error(f"[STWH] {field_name} setting failed: {error}, current value: {current}")
+                        return False
                 
-                from_date_input = None
-                for by_type, selector in from_date_selectors:
-                    try:
-                        from_date_input = wait.until(EC.visibility_of_element_located((by_type, selector)))
-                        logging.info(f"[STWH] Found From Date input using selector: {selector}")
-                        break
-                    except TimeoutException:
-                        continue
-                
-                if not from_date_input:
-                    logging.error("[STWH] STEP 4 FAILED: From Date input field not found")
+                # Set From Date
+                if not set_date_field_robust("From Date", "annexAFromDate", date_formatted):
+                    logging.error("[STWH] STEP 4 FAILED: From Date could not be set")
                     return {
-                        'status': '⚠️ Error - From Date field not found',
+                        'status': '⚠️ Error - From Date setting failed',
                         'value_of_purchases': 'N/A'
                     }
                 
-                self.driver.execute_script(f"arguments[0].value = '{date_formatted}';", from_date_input)
-                self._random_delay(0.1, 0.25)
+                self._random_delay(0.25, 0.5)
                 
-                from_date_value = from_date_input.get_attribute('value')
-                if from_date_value != date_formatted:
-                    logging.error(f"[STWH] STEP 4 FROM DATE VERIFICATION FAILED")
+                # Set To Date
+                if not set_date_field_robust("To Date", "annexAToDate", date_formatted):
+                    logging.error("[STWH] STEP 4 FAILED: To Date could not be set")
                     return {
-                        'status': '⚠️ Error - From Date verification failed',
+                        'status': '⚠️ Error - To Date setting failed',
                         'value_of_purchases': 'N/A'
                     }
                 
-                logging.info(f"[STWH] ✓ From Date verified: {from_date_value}")
-                
-                # To Date
-                to_date_selectors = [
-                    # Strategy 1: Direct input ID match
-                    (By.ID, "correspondenceTabs:loadStwhAnnexAform:annexAToDate_input"),
-                    
-                    # Strategy 2: Input name attribute
-                    (By.NAME, "correspondenceTabs:loadStwhAnnexAform:annexAToDate_input"),
-                    
-                    # Strategy 3: XPath with exact ID
-                    (By.XPATH, "//input[@id='correspondenceTabs:loadStwhAnnexAform:annexAToDate_input']"),
-                    
-                    # Strategy 4: Input within calendar wrapper span
-                    (By.XPATH, "//span[@id='correspondenceTabs:loadStwhAnnexAform:annexAToDate']//input[contains(@class, 'hasDatepicker')]"),
-                    
-                    # Strategy 5: Calendar input with ui-calendar parent
-                    (By.XPATH, "//span[contains(@class, 'ui-calendar')]//input[contains(@id, 'annexAToDate_input')]"),
-                    
-                    # Strategy 6: Input with hasDatepicker class and readonly
-                    (By.XPATH, "//input[contains(@class, 'hasDatepicker') and @readonly='readonly' and contains(@id, 'annexAToDate')]"),
-                    
-                    # Strategy 7: Form context with partial ID match
-                    (By.XPATH, "//form[contains(@id, 'loadStwhAnnexAform')]//input[contains(@id, 'annexAToDate_input')]"),
-                    
-                    # Strategy 8: CSS selector with partial ID
-                    (By.CSS_SELECTOR, "input[id*='loadStwhAnnexAform'][id*='annexAToDate_input']"),
-                    
-                    # Strategy 9: Input with ui-inputfield and hasDatepicker classes
-                    (By.XPATH, "//input[contains(@class, 'ui-inputfield') and contains(@class, 'hasDatepicker') and contains(@id, 'ToDate')]"),
-                    
-                    # Strategy 10: Generic date input with role textbox
-                    (By.XPATH, "//input[@type='text' and @role='textbox' and contains(@class, 'hasDatepicker') and contains(@id, 'ToDate')]"),
-                ]
-                
-                to_date_input = None
-                for by_type, selector in to_date_selectors:
-                    try:
-                        to_date_input = wait.until(EC.visibility_of_element_located((by_type, selector)))
-                        logging.info(f"[STWH] Found To Date input using selector: {selector}")
-                        break
-                    except TimeoutException:
-                        continue
-                
-                if not to_date_input:
-                    logging.error("[STWH] STEP 4 FAILED: To Date input field not found")
-                    return {
-                        'status': '⚠️ Error - To Date field not found',
-                        'value_of_purchases': 'N/A'
-                    }
-                
-                self.driver.execute_script(f"arguments[0].value = '{date_formatted}';", to_date_input)
-                self._random_delay(0.1, 0.25)
-                
-                to_date_value = to_date_input.get_attribute('value')
-                if to_date_value != date_formatted:
-                    logging.error(f"[STWH] STEP 4 TO DATE VERIFICATION FAILED")
-                    return {
-                        'status': '⚠️ Error - To Date verification failed',
-                        'value_of_purchases': 'N/A'
-                    }
-                
-                logging.info(f"[STWH] ✓ STEP 4 COMPLETED & VERIFIED: Dates set to '{date_formatted}'")
+                logging.info(f"[STWH] ✅ STEP 4 COMPLETED: Both dates set to '{date_formatted}'")
                 self._random_delay(0.25, 0.5)
             
             # Step 5: Click the Search button
@@ -2782,118 +2859,170 @@ class FBRChecker:
                 logging.error(f"[STWH] Error extracting value: {str(e)}")
                 value_of_purchases = "N/A"
             
-            # Step 8: Click the "Claim" button in the matching row
+            # Step 8: Click the "Claim" button (PAGE-LEVEL button in toolbar, not in row)
             logging.info("[STWH] STEP 8: Clicking 'Claim' button")
             
             try:
                 claim_result = self.driver.execute_script("""
+                    var debugLog = [];
+                    
+                    // Verify matched row exists and checkbox is selected
                     var row = document.querySelector('tr[data-matched-row="true"]');
                     if (!row) {
-                        console.error('[STWH] Matched row not found');
-                        return {success: false, error: 'Row not found'};
+                        debugLog.push('ERROR: Matched row not found');
+                        return {success: false, error: 'Matched row not found', debugLog: debugLog};
                     }
                     
-                    console.log('[STWH] DEBUG: Starting button search and click in matched row');
+                    debugLog.push('✓ Matched row verified');
                     
-                    // Strategy 1: Find button with loadStwhAnnexAform + calculate class and "Claim" text
-                    var buttons = row.querySelectorAll('button.calculate');
-                    console.log('[STWH] Strategy 1: Found ' + buttons.length + ' buttons with calculate class');
+                    // IMPORTANT: Claim button is a PAGE-LEVEL button in the toolbar, NOT inside the row!
+                    // Search entire document for Claim button
                     
-                    for (var i = 0; i < buttons.length; i++) {
-                        var btn = buttons[i];
-                        var btnId = btn.id || '';
-                        var btnClasses = btn.className || '';
-                        var btnText = btn.textContent.trim();
-                        var spanText = '';
-                        
-                        // Get text from span inside button
-                        var spans = btn.querySelectorAll('span');
-                        for (var s = 0; s < spans.length; s++) {
-                            var text = spans[s].textContent.trim();
-                            if (text) {
-                                spanText = text;
-                                break;
-                            }
-                        }
-                        
-                        console.log('[STWH] Button ' + i + ': ID=' + btnId + ', SpanText=' + spanText + ', FullText=' + btnText);
-                        
-                        // Check if this is the Claim button
-                        if (btnId.includes('loadStwhAnnexAform') &&
-                            btnClasses.includes('calculate') &&
-                            spanText === 'Claim' &&
-                            btn.getAttribute('aria-disabled') !== 'true' &&
-                            btn.type === 'submit' &&
-                            !btnText.toLowerCase().includes(' in ')) {  // Not "Claim in PRA/KPRA/etc"
-                            
-                            console.log('[STWH] Strategy 1: Found Claim button - ID: ' + btnId + ', clicking now...');
-                            btn.click();
-                            return {success: true, method: 'strategy-1', buttonId: btnId};
-                        }
-                    }
+                    // STRATEGY 1: Button with exact text "Claim" in toolbar/form area
+                    var allButtons = document.querySelectorAll('button');
+                    debugLog.push('Total buttons on page: ' + allButtons.length);
                     
-                    // Strategy 2: Find by onclick containing PrimeFaces + Claim text
-                    buttons = row.querySelectorAll('button[onclick*="PrimeFaces"]');
-                    console.log('[STWH] Strategy 2: Found ' + buttons.length + ' buttons with PrimeFaces onclick');
-                    
-                    for (var i = 0; i < buttons.length; i++) {
-                        var btn = buttons[i];
-                        var btnText = btn.textContent.trim();
-                        
-                        if (btnText === 'Claim' && 
-                            btn.getAttribute('aria-disabled') !== 'true' &&
-                            !btnText.toLowerCase().includes(' in ') &&
-                            btn.offsetParent !== null) {
-                            
-                            console.log('[STWH] Strategy 2: Found Claim button via PrimeFaces, clicking...');
-                            btn.click();
-                            return {success: true, method: 'strategy-2', buttonId: btn.id};
-                        }
-                    }
-                    
-                    // Strategy 3: Find button with ui-button + calculate class
-                    buttons = row.querySelectorAll('button.ui-button.calculate[type="submit"]');
-                    console.log('[STWH] Strategy 3: Found ' + buttons.length + ' ui-button calculate submit buttons');
-                    
-                    for (var i = 0; i < buttons.length; i++) {
-                        var btn = buttons[i];
-                        var btnText = btn.textContent.trim();
-                        
-                        if (btnText === 'Claim' &&
-                            btn.getAttribute('aria-disabled') !== 'true' &&
-                            btn.offsetParent !== null) {
-                            
-                            console.log('[STWH] Strategy 3: Found Claim button, clicking...');
-                            btn.click();
-                            return {success: true, method: 'strategy-3', buttonId: btn.id};
-                        }
-                    }
-                    
-                    // Strategy 4: Most permissive - any enabled visible button with exact "Claim" text
-                    var allButtons = row.querySelectorAll('button, input[type="button"], input[type="submit"]');
-                    console.log('[STWH] Strategy 4: Searching through ' + allButtons.length + ' total buttons');
-                    
+                    var claimButtons = [];
                     for (var i = 0; i < allButtons.length; i++) {
                         var btn = allButtons[i];
-                        var btnText = btn.textContent.trim() || btn.value || '';
-                        var isEnabled = btn.getAttribute('aria-disabled') !== 'true' && !btn.disabled;
-                        var isVisible = btn.offsetParent !== null;
-                        
-                        console.log('[STWH] Strategy 4 - Button ' + i + ': Text="' + btnText + '", Enabled=' + isEnabled + ', Visible=' + isVisible);
-                        
-                        if (isEnabled && isVisible && btnText === 'Claim' && !btnText.toLowerCase().includes(' in ')) {
-                            console.log('[STWH] Strategy 4: Found Claim button, clicking...');
-                            btn.click();
-                            return {success: true, method: 'strategy-4', buttonId: btn.id};
+                        var btnText = btn.textContent.trim();
+                        if (btnText === 'Claim') {
+                            claimButtons.push({
+                                button: btn,
+                                id: btn.id || 'NO_ID',
+                                classes: btn.className || 'NO_CLASSES',
+                                disabled: btn.disabled,
+                                ariaDisabled: btn.getAttribute('aria-disabled'),
+                                visible: btn.offsetParent !== null,
+                                parent: btn.parentElement ? btn.parentElement.tagName : 'NO_PARENT'
+                            });
                         }
                     }
                     
-                    console.error('[STWH] ERROR: No valid Claim button found after trying all strategies');
-                    return {success: false, error: 'No Claim button found'};
+                    debugLog.push('Found ' + claimButtons.length + ' buttons with text "Claim"');
+                    
+                    // Try each Claim button found
+                    for (var i = 0; i < claimButtons.length; i++) {
+                        var btnInfo = claimButtons[i];
+                        debugLog.push('Claim button ' + i + ': ID=' + btnInfo.id + ', Classes=' + btnInfo.classes + 
+                                     ', Disabled=' + btnInfo.disabled + ', Visible=' + btnInfo.visible);
+                        
+                        if (btnInfo.visible && !btnInfo.disabled && btnInfo.ariaDisabled !== 'true') {
+                            debugLog.push('STRATEGY 1 SUCCESS - Clicking Claim button ID: ' + btnInfo.id);
+                            btnInfo.button.click();
+                            return {success: true, method: 'strategy-1-page-level-claim', buttonId: btnInfo.id, debugLog: debugLog};
+                        } else {
+                            debugLog.push('Claim button ' + i + ' not clickable (disabled or hidden)');
+                        }
+                    }
+                    
+                    // STRATEGY 2: Look for button in loadStwhAnnexAform context with "Claim" text
+                    var formButtons = document.querySelectorAll('form[id*="loadStwhAnnexAform"] button, div[id*="loadStwhAnnexAform"] button');
+                    debugLog.push('STRATEGY 2: Found ' + formButtons.length + ' buttons in form context');
+                    for (var i = 0; i < formButtons.length; i++) {
+                        var btn = formButtons[i];
+                        if (btn.textContent.trim() === 'Claim') {
+                            if (btn.offsetParent !== null && !btn.disabled && btn.getAttribute('aria-disabled') !== 'true') {
+                                debugLog.push('STRATEGY 2 SUCCESS - Clicking Claim button ID: ' + btn.id);
+                                btn.click();
+                                return {success: true, method: 'strategy-2-form-context', buttonId: btn.id, debugLog: debugLog};
+                            }
+                        }
+                    }
+                    
+                    // STRATEGY 3: Look for button with span containing "Claim"
+                    var spanButtons = document.querySelectorAll('button span');
+                    debugLog.push('STRATEGY 3: Scanning ' + spanButtons.length + ' button spans');
+                    for (var i = 0; i < spanButtons.length; i++) {
+                        var span = spanButtons[i];
+                        if (span.textContent.trim() === 'Claim') {
+                            var btn = span.closest('button');
+                            if (btn && btn.offsetParent !== null && !btn.disabled && btn.getAttribute('aria-disabled') !== 'true') {
+                                debugLog.push('STRATEGY 3 SUCCESS - Clicking Claim button via span, ID: ' + btn.id);
+                                btn.click();
+                                return {success: true, method: 'strategy-3-span-search', buttonId: btn.id, debugLog: debugLog};
+                            }
+                        }
+                    }
+                    
+                    // STRATEGY 4: Look for button with ui-button class and "Claim" text
+                    var uiButtons = document.querySelectorAll('button.ui-button, button[class*="btn"]');
+                    debugLog.push('STRATEGY 4: Found ' + uiButtons.length + ' UI buttons');
+                    for (var i = 0; i < uiButtons.length; i++) {
+                        var btn = uiButtons[i];
+                        if (btn.textContent.trim() === 'Claim') {
+                            if (btn.offsetParent !== null && !btn.disabled && btn.getAttribute('aria-disabled') !== 'true') {
+                                debugLog.push('STRATEGY 4 SUCCESS - Clicking UI button ID: ' + btn.id);
+                                btn.click();
+                                return {success: true, method: 'strategy-4-ui-button', buttonId: btn.id, debugLog: debugLog};
+                            }
+                        }
+                    }
+                    
+                    // STRATEGY 5: Force click first visible Claim button (ignore disabled state)
+                    debugLog.push('STRATEGY 5: FORCE CLICK - Attempting first visible Claim button');
+                    for (var i = 0; i < claimButtons.length; i++) {
+                        var btnInfo = claimButtons[i];
+                        if (btnInfo.visible) {
+                            debugLog.push('STRATEGY 5: Force clicking Claim button ID: ' + btnInfo.id);
+                            try {
+                                btnInfo.button.click();
+                                debugLog.push('STRATEGY 5 SUCCESS - Force clicked ID: ' + btnInfo.id);
+                                return {success: true, method: 'strategy-5-force-click', buttonId: btnInfo.id, debugLog: debugLog};
+                            } catch (e) {
+                                debugLog.push('STRATEGY 5: Click failed - ' + e.message);
+                            }
+                        }
+                    }
+                    
+                    // STRATEGY 6: JavaScript click event dispatch
+                    debugLog.push('STRATEGY 6: Trying event dispatch on first Claim button');
+                    if (claimButtons.length > 0) {
+                        var btn = claimButtons[0].button;
+                        try {
+                            var clickEvent = new MouseEvent('click', {
+                                bubbles: true,
+                                cancelable: true,
+                                view: window
+                            });
+                            btn.dispatchEvent(clickEvent);
+                            debugLog.push('STRATEGY 6 SUCCESS - Dispatched click event to: ' + claimButtons[0].id);
+                            return {success: true, method: 'strategy-6-event-dispatch', buttonId: claimButtons[0].id, debugLog: debugLog};
+                        } catch (e) {
+                            debugLog.push('STRATEGY 6 failed: ' + e.message);
+                        }
+                    }
+                    
+                    // All strategies failed
+                    debugLog.push('ERROR: All 6 strategies failed to click Claim button');
+                    return {
+                        success: false,
+                        error: 'Claim button found but not clickable',
+                        debugLog: debugLog,
+                        claimButtonsFound: claimButtons.length,
+                        claimButtonDetails: claimButtons
+                    };
                 """)
+                
+                # Log debug information from JavaScript
+                if claim_result and 'debugLog' in claim_result:
+                    logging.info("[STWH] JavaScript Debug Log:")
+                    for log_msg in claim_result['debugLog']:
+                        logging.info(f"[STWH]   {log_msg}")
                 
                 if not claim_result or not claim_result.get('success'):
                     error_msg = claim_result.get('error', 'Unknown error') if claim_result else 'Script returned null'
+                    
+                    # Log detailed button information for debugging
+                    if claim_result and 'buttonDetails' in claim_result:
+                        logging.error("[STWH] DETAILED BUTTON ANALYSIS:")
+                        for btn_info in claim_result['buttonDetails']:
+                            logging.error(f"[STWH]   Button {btn_info['index']}: ID={btn_info['id']}, "
+                                        f"Classes={btn_info['classes']}, Type={btn_info['type']}, "
+                                        f"Text='{btn_info['text']}', Disabled={btn_info['disabled']}, "
+                                        f"AriaDisabled={btn_info['ariaDisabled']}, Visible={btn_info['visible']}")
+                            logging.error(f"[STWH]   HTML: {btn_info['innerHTML'][:100]}")
+                    
                     logging.error(f"[STWH] STEP 8 FAILED: 'Claim' button not found - {error_msg}")
                     return {
                         'status': f'⚠️ Error - Claim button not found ({error_msg})',
