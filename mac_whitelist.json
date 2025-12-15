@@ -46,7 +46,7 @@
       "device_name": "LAP-709-OGDCL",
       "mac_address": "F8:AC:65:D0:CA:C2",
       "mac_hash": "4b8728faf4d606c53c00db7ecd7386143ba7ac7b346d3bb0d16a6e3a7f2791d8",
-      "status": "active",
+      "status": "revoked",
       "authorized_date": "2025-12-15T20:12:51.582240",
       "last_updated": "2025-12-15T20:12:51.582240",
       "notes": "Auto-authorized device #2",
