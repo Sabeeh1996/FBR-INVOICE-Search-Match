@@ -14,10 +14,25 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 
+def get_resource_path(relative_path):
+    """
+    Get absolute path to resource, works for dev and PyInstaller.
+    When bundled as exe, files are extracted to sys._MEIPASS temp folder.
+    """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        # Running in normal Python environment
+        base_path = os.path.abspath(".")
+    
+    return os.path.join(base_path, relative_path)
+
+
 def get_app_dir():
     """Return application directory (works for both .py and .exe)"""
     if getattr(sys, "frozen", False):
-        # PyInstaller bundled executable
+        # PyInstaller bundled executable - use the exe's directory
         return os.path.dirname(sys.executable)
     else:
         # Python script
@@ -25,12 +40,23 @@ def get_app_dir():
 
 
 def get_version_file():
-    """Return path to version.txt"""
-    return os.path.join(get_app_dir(), "version.txt")
+    """
+    Return path to version.txt.
+    When running as exe, reads from bundled resource (read-only).
+    """
+    if getattr(sys, "frozen", False):
+        # Read from bundled resource inside exe
+        return get_resource_path("version.txt")
+    else:
+        # Development mode: read from local file
+        return os.path.join(get_app_dir(), "version.txt")
 
 
 def get_version_lock_file():
-    """Return path to version.lock (tamper-proof lock file)"""
+    """
+    Return path to version.lock (tamper-proof lock file).
+    This is always stored in the app directory, not bundled.
+    """
     return os.path.join(get_app_dir(), "version.lock")
 
 
