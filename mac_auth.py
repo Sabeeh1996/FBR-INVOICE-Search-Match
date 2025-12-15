@@ -6,6 +6,7 @@ Restricts application usage to authorized MAC addresses only.
 import uuid
 import json
 import os
+import sys
 import logging
 import hashlib
 import urllib.request
@@ -14,6 +15,26 @@ import subprocess
 import threading
 from datetime import datetime
 from typing import List, Optional, Tuple
+
+
+def get_resource_path(relative_path):
+    """
+    Get absolute path to resource, works for dev and PyInstaller.
+    When bundled as exe, files are extracted to sys._MEIPASS temp folder.
+    """
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        # Running in normal Python environment
+        base_path = os.path.abspath(".")
+    
+    return os.path.join(base_path, relative_path)
+
+
+def is_running_as_exe():
+    """Check if running as PyInstaller bundled executable."""
+    return getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS')
 
 
 class MACAuthenticator:
@@ -261,6 +282,7 @@ class MACAuthenticator:
     def _load_config(self) -> dict:
         """
         Load MAC address configuration from file.
+        When running as exe, loads from bundled resource (read-only).
         
         Returns:
             dict: Configuration dictionary
@@ -273,22 +295,39 @@ class MACAuthenticator:
             "show_mac_info": True  # Show MAC address in error messages for admin
         }
         
-        if not os.path.exists(self.config_file):
-            # Create default config
-            self._save_config(default_config)
-            return default_config
-        
-        try:
-            with open(self.config_file, 'r') as f:
-                config = json.load(f)
-                # Merge with defaults for any missing keys
-                for key, value in default_config.items():
-                    if key not in config:
-                        config[key] = value
-                return config
-        except Exception as e:
-            logging.error(f"Error loading MAC config: {str(e)}")
-            return default_config
+        # When running as exe, read from bundled resource
+        if is_running_as_exe():
+            config_path = get_resource_path(self.config_file)
+            try:
+                with open(config_path, 'r') as f:
+                    config = json.load(f)
+                    # Merge with defaults for any missing keys
+                    for key, value in default_config.items():
+                        if key not in config:
+                            config[key] = value
+                    logging.info(f"MAC config loaded from bundled resource")
+                    return config
+            except Exception as e:
+                logging.error(f"Error loading bundled MAC config: {str(e)}")
+                return default_config
+        else:
+            # Development mode: load or create local config file
+            if not os.path.exists(self.config_file):
+                # Create default config
+                self._save_config(default_config)
+                return default_config
+            
+            try:
+                with open(self.config_file, 'r') as f:
+                    config = json.load(f)
+                    # Merge with defaults for any missing keys
+                    for key, value in default_config.items():
+                        if key not in config:
+                            config[key] = value
+                    return config
+            except Exception as e:
+                logging.error(f"Error loading MAC config: {str(e)}")
+                return default_config
     
     def _save_config(self, config: dict = None):
         """
@@ -308,6 +347,7 @@ class MACAuthenticator:
         """
         Update local GitHub whitelist file with new device entry.
         Uses status-based authorization (active/revoked).
+        When running as exe, creates local writable copy if needed.
         
         Args:
             mac_hash (str): MAC address hash to add
@@ -316,6 +356,44 @@ class MACAuthenticator:
             bool: True if successful
         """
         try:
+            # When running as exe, we need to work with a local writable copy
+            if is_running_as_exe():
+                # Get the directory where the exe is located (writable)
+                app_dir = os.path.dirname(sys.executable)
+                local_whitelist = os.path.join(app_dir, self.whitelist_file)
+                
+                # If local file doesn't exist, copy from bundled resource
+                if not os.path.exists(local_whitelist):
+                    bundled_whitelist = get_resource_path(self.whitelist_file)
+                    try:
+                        with open(bundled_whitelist, 'r') as f:
+                            whitelist = json.load(f)
+                        with open(local_whitelist, 'w') as f:
+                            json.dump(whitelist, f, indent=2)
+                        logging.info(f"Created local whitelist copy from bundled resource")
+                    except:
+                        # If bundled file doesn't exist or can't be read, create new
+                        whitelist = {
+                            "_comment": "GitHub-hosted MAC Address Whitelist - Edit this file to control device access",
+                            "_instructions": [
+                                "To AUTHORIZE: Set status to 'active'",
+                                "To REVOKE: Set status to 'revoked'",
+                                "Empty devices array = first-time use (auto-authorization enabled)",
+                                "Status values: 'active' = authorized, 'revoked' = blocked",
+                                "mac_address field is for admin reference (readable MAC address)",
+                                "mac_hash field is used for device matching (do not edit)"
+                            ],
+                            "mode": "github_whitelist",
+                            "devices": [],
+                            "last_updated": "",
+                            "updated_by": "auto-authorize"
+                        }
+                        with open(local_whitelist, 'w') as f:
+                            json.dump(whitelist, f, indent=2)
+                
+                # Use the local writable file
+                self.whitelist_file = local_whitelist
+            
             # Load existing whitelist
             if os.path.exists(self.whitelist_file):
                 with open(self.whitelist_file, 'r') as f:

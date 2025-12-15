@@ -78,6 +78,8 @@ cmd = [
     # Bundle data files INSIDE the exe (cannot be modified by user)
     '--add-data=license_config.json;.',
     '--add-data=version.txt;.',
+    '--add-data=mac_config.json;.',
+    '--add-data=mac_whitelist.json;.',
     
     # Hidden imports
     '--hidden-import=tkinter',
@@ -142,7 +144,7 @@ print("[5/5] Verifying bundled files...")
 dist_dir = PROJECT_DIR / 'dist'
 
 # These files are now bundled INSIDE the exe, not separate files
-bundled_files = ['license_config.json', 'version.txt']
+bundled_files = ['license_config.json', 'version.txt', 'mac_config.json', 'mac_whitelist.json']
 print(f"  ✓ Files bundled inside EXE: {', '.join(bundled_files)}")
 print(f"  ✓ These files are read-only and cannot be modified by users")
 
