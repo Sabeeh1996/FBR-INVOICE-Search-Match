@@ -57,18 +57,20 @@ class MACAuthenticator:
             whitelist_file (str): Path to local GitHub whitelist file
             auto_sync_github (bool): Automatically push whitelist to GitHub on authorization
         """
-        self.config_file = config_file
-        
-        # When running as exe, store whitelist in AppData to keep exe dir clean
+        # When running as exe, store ALL writable files in AppData to prevent files appearing in exe directory
         if is_running_as_exe():
             from app_data_manager import get_writable_file_path
+            self.config_file = get_writable_file_path(config_file)
             self.whitelist_file = get_writable_file_path(whitelist_file)
-            logging.info(f"Exe mode: Using AppData for whitelist: {self.whitelist_file}")
+            logging.info(f"Exe mode: Using AppData for MAC files")
+            logging.info(f"Config: {self.config_file}")
+            logging.info(f"Whitelist: {self.whitelist_file}")
         else:
+            self.config_file = config_file
             self.whitelist_file = whitelist_file
         
         self.auto_sync_github = auto_sync_github
-        self.config_existed_before = os.path.exists(config_file)  # Track if config existed
+        self.config_existed_before = os.path.exists(self.config_file)  # Track if config existed
         self.github_url = github_url or "https://raw.githubusercontent.com/Sabeeh1996/FBR-INVOICE-Search-Match/develop/mac_whitelist.json"
         self.config = self._load_config()
         self.current_mac = self.get_mac_address()

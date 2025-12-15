@@ -39,7 +39,15 @@ class FirstRunNotifier:
             self.config_file = config_file
             
         self.config = self._load_config()
-        self.notification_log = "logs/first_run_notifications.txt"
+        
+        # When running as exe, store notification log in AppData
+        if is_running_as_exe():
+            from app_data_manager import get_app_data_dir
+            logs_dir = os.path.join(get_app_data_dir(), 'logs')
+            os.makedirs(logs_dir, exist_ok=True)
+            self.notification_log = os.path.join(logs_dir, 'first_run_notifications.txt')
+        else:
+            self.notification_log = "logs/first_run_notifications.txt"
         
     def _load_config(self) -> dict:
         """

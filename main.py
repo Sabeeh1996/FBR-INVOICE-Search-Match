@@ -21,9 +21,18 @@ def setup_logging():
     """
     Setup logging configuration for the application.
     Creates logs directory and configures logging format.
+    When running as exe, logs are stored in AppData.
     """
-    # Create logs directory if it doesn't exist
-    logs_dir = os.path.join(os.path.dirname(__file__), 'logs')
+    # Determine logs directory based on execution mode
+    if getattr(sys, 'frozen', False):
+        # Running as exe - use AppData
+        from app_data_manager import get_app_data_dir
+        logs_dir = os.path.join(get_app_data_dir(), 'logs')
+        print(f"Exe mode: Using AppData for logs: {logs_dir}")
+    else:
+        # Running as script - use local logs folder
+        logs_dir = os.path.join(os.path.dirname(__file__), 'logs')
+    
     if not os.path.exists(logs_dir):
         os.makedirs(logs_dir)
         print(f"Created logs directory: {logs_dir}")
