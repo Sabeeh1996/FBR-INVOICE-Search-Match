@@ -4,11 +4,17 @@ Sends MAC address information to administrator on first application run.
 """
 
 import os
+import sys
 import json
 import logging
 import threading
 from datetime import datetime
 from typing import Optional
+
+
+def is_running_as_exe():
+    """Check if running as PyInstaller bundled executable."""
+    return getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS')
 
 
 class FirstRunNotifier:
@@ -24,7 +30,14 @@ class FirstRunNotifier:
         Args:
             config_file (str): Path to notification configuration file
         """
-        self.config_file = config_file
+        # When running as exe, store config in AppData
+        if is_running_as_exe():
+            from app_data_manager import get_writable_file_path
+            self.config_file = get_writable_file_path(config_file)
+            logging.info(f"Exe mode: Using AppData for notification config: {self.config_file}")
+        else:
+            self.config_file = config_file
+            
         self.config = self._load_config()
         self.notification_log = "logs/first_run_notifications.txt"
         

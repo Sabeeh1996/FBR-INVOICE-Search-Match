@@ -468,117 +468,89 @@ class MACAuthenticator:
     def _sync_to_github_async(self):
         """
         Asynchronously sync whitelist to GitHub in background.
-        Runs git commands in separate thread to avoid blocking app startup.
-        Handles pull/merge automatically before pushing.
+        Uses GitHub API directly - works without git installation.
+        Perfect for exe distribution on any PC.
         """
         def sync_task():
             try:
-                logging.info("🔄 Starting automatic GitHub sync...")
+                logging.info("🔄 Starting automatic GitHub sync via API...")
                 
-                # Check if git is available
-                subprocess.run(['git', '--version'], capture_output=True, check=True)
+                # Read the local whitelist file
+                if not os.path.exists(self.whitelist_file):
+                    logging.warning("⚠️  Local whitelist file not found, skipping sync")
+                    return
                 
-                cwd = os.path.dirname(os.path.abspath(__file__))
-                repo_url = f"https://{self.GITHUB_TOKEN}@github.com/Sabeeh1996/FBR-INVOICE-Search-Match.git"
+                with open(self.whitelist_file, 'r', encoding='utf-8') as f:
+                    whitelist_content = f.read()
                 
-                # First, fetch latest changes to see what we're dealing with
-                subprocess.run(['git', 'fetch', repo_url, 'develop'], capture_output=True, cwd=cwd)
+                # GitHub API endpoint
+                api_url = "https://api.github.com/repos/Sabeeh1996/FBR-INVOICE-Search-Match/contents/mac_whitelist.json"
                 
-                # Check current status
-                status_result = subprocess.run(
-                    ['git', 'status', '--porcelain'],
-                    capture_output=True,
-                    text=True,
-                    cwd=cwd
+                # Get current file SHA (required for update)
+                logging.info("   Fetching current file info from GitHub...")
+                get_req = urllib.request.Request(
+                    api_url + "?ref=develop",
+                    headers={
+                        'Authorization': f'token {self.GITHUB_TOKEN}',
+                        'Accept': 'application/vnd.github.v3+json'
+                    }
                 )
                 
-                # If there are changes, commit them
-                if status_result.stdout.strip():
-                    # Add file
-                    subprocess.run(
-                        ['git', 'add', self.whitelist_file],
-                        capture_output=True,
-                        cwd=cwd
-                    )
-                    
-                    # Commit local changes
-                    commit_result = subprocess.run(
-                        ['git', 'commit', '-m', 'Auto-authorize new device [automated]'],
-                        capture_output=True,
-                        text=True,
-                        cwd=cwd
-                    )
-                    
-                    if commit_result.returncode != 0:
-                        logging.info("✅ No changes to sync")
-                        return
+                try:
+                    with urllib.request.urlopen(get_req, timeout=10) as response:
+                        file_info = json.loads(response.read().decode())
+                        current_sha = file_info['sha']
+                except urllib.error.HTTPError as e:
+                    if e.code == 404:
+                        # File doesn't exist, create it
+                        current_sha = None
+                        logging.info("   File doesn't exist, will create new")
+                    else:
+                        raise
                 
-                # Try to push first (fast-forward if possible)
-                logging.info("   Pushing to GitHub...")
-                push_result = subprocess.run(
-                    ['git', 'push', repo_url, 'develop'],
-                    capture_output=True,
-                    text=True,
-                    cwd=cwd
+                # Encode content to base64
+                import base64
+                content_base64 = base64.b64encode(whitelist_content.encode('utf-8')).decode('utf-8')
+                
+                # Prepare update data
+                update_data = {
+                    "message": "Auto-authorize new device [automated]",
+                    "content": content_base64,
+                    "branch": "develop"
+                }
+                
+                if current_sha:
+                    update_data["sha"] = current_sha
+                
+                # Push to GitHub
+                logging.info("   Uploading to GitHub...")
+                put_req = urllib.request.Request(
+                    api_url,
+                    data=json.dumps(update_data).encode('utf-8'),
+                    headers={
+                        'Authorization': f'token {self.GITHUB_TOKEN}',
+                        'Accept': 'application/vnd.github.v3+json',
+                        'Content-Type': 'application/json'
+                    },
+                    method='PUT'
                 )
                 
-                # If push succeeded, we're done
-                if push_result.returncode == 0:
+                with urllib.request.urlopen(put_req, timeout=15) as response:
+                    result = json.loads(response.read().decode())
                     logging.info("✅ Whitelist automatically synced to GitHub!")
                     logging.info("   All devices will see this authorization on next startup")
                     return
-                
-                # Push failed, need to pull and rebase
-                logging.info("   Syncing with remote changes...")
-                
-                # Pull with rebase
-                pull_result = subprocess.run(
-                    ['git', 'pull', '--rebase', repo_url, 'develop'],
-                    capture_output=True,
-                    text=True,
-                    cwd=cwd
-                )
-                
-                # If rebase had conflicts, abort and try force push of our version
-                if pull_result.returncode != 0:
-                    logging.warning("   Rebase had conflicts, resolving...")
-                    subprocess.run(['git', 'rebase', '--abort'], capture_output=True, cwd=cwd)
                     
-                    # Reset to remote and re-apply our changes
-                    subprocess.run(['git', 'reset', '--hard', 'FETCH_HEAD'], capture_output=True, cwd=cwd)
-                    
-                    # Re-read the file and commit again
-                    subprocess.run(['git', 'add', self.whitelist_file], capture_output=True, cwd=cwd)
-                    subprocess.run(
-                        ['git', 'commit', '-m', 'Auto-authorize new device [automated]'],
-                        capture_output=True,
-                        cwd=cwd
-                    )
-                
-                # Try push again
-                result = subprocess.run(
-                    ['git', 'push', repo_url, 'develop'],
-                    capture_output=True,
-                    text=True,
-                    cwd=cwd
-                )
-                
-                if result.returncode == 0:
-                    logging.info("✅ Whitelist automatically synced to GitHub!")
-                    logging.info("   All devices will see this authorization on next startup")
-                else:
-                    logging.warning(f"⚠️ Auto-sync push failed: {result.stderr.split('error:')[0] if 'error:' in result.stderr else result.stderr[:100]}")
-                    logging.info("   Run 'python sync_whitelist.py' manually to sync")
-                    
-            except subprocess.CalledProcessError as e:
-                logging.warning(f"⚠️ Auto-sync to GitHub failed: {e}")
-                logging.info("   This is normal if git is not configured or network unavailable")
-                logging.info("   Run 'python sync_whitelist.py' manually when ready")
-            except FileNotFoundError:
-                logging.warning("⚠️ Git not found - cannot auto-sync to GitHub")
-                logging.info("   Run 'python sync_whitelist.py' manually after installing git")
+            except urllib.error.HTTPError as e:
+                error_body = e.read().decode('utf-8') if hasattr(e, 'read') else str(e)
+                logging.warning(f"⚠️ GitHub API sync failed (HTTP {e.code}): {error_body[:200]}")
+                logging.info("   Device is authorized locally. Sync will retry on next run.")
+            except urllib.error.URLError as e:
+                logging.warning(f"⚠️ Network error during GitHub sync: {str(e)}")
+                logging.info("   Device is authorized locally. Check internet connection.")
             except Exception as e:
-                logging.warning(f"⚠️ Unexpected error during auto-sync: {e}")
+                logging.warning(f"⚠️ Unexpected error during GitHub sync: {str(e)}")
+                logging.info("   Device is authorized locally. Sync will retry later.")
         
         # Run sync in background thread
         sync_thread = threading.Thread(target=sync_task, daemon=True)
