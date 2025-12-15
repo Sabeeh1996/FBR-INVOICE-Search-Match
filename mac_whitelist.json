@@ -79,7 +79,7 @@
       "device_name": "pc-fmc pc",
       "mac_address": "98:AF:65:64:61:16",
       "mac_hash": "58f9f30b8353498706f7709e4e07f62334b3c1688e996c9ab1db761367e96c6f",
-      "status": "active",
+      "status": "revoked",
       "authorized_date": "2025-12-15T20:20:30.264675",
       "last_updated": "2025-12-15T20:20:30.264675",
       "notes": "Auto-authorized device #3",
