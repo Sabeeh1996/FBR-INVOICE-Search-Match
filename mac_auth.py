@@ -767,19 +767,74 @@ class MACAuthenticator:
         Check if MAC address is in whitelist.
         GitHub whitelist has absolute authority - overrides local authorization.
         Supports multiple devices per installation.
+        Checks device status from GitHub whitelist to enforce revoked status.
         
         Returns:
             tuple: (is_authorized: bool, message: str)
         """
         authorized_macs = self.config.get("authorized_macs", [])
         
+        # Load GitHub whitelist to check actual device status
+        github_devices = []
+        if os.path.exists(self.whitelist_file):
+            try:
+                with open(self.whitelist_file, 'r') as f:
+                    github_whitelist = json.load(f)
+                    github_devices = github_whitelist.get('devices', [])
+            except Exception as e:
+                logging.warning(f"Could not load GitHub whitelist for status check: {e}")
+        
         # Check if current MAC is in whitelist
         if self.current_mac_hash in authorized_macs:
+            # CRITICAL: Check if device status is 'revoked' in GitHub whitelist
+            current_device = next((d for d in github_devices if d.get('mac_hash') == self.current_mac_hash), None)
+            
+            if current_device:
+                device_status = current_device.get('status', 'unknown')
+                device_name = current_device.get('device_name', current_device.get('computer_name', 'Unknown Device'))
+                
+                # Deny access if status is 'revoked'
+                if device_status == 'revoked':
+                    logging.error(f"❌ ACCESS DENIED: Device status is REVOKED")
+                    logging.error(f"   Device: {device_name}")
+                    logging.error(f"   MAC: {self.current_mac}")
+                    logging.error(f"   This device was explicitly revoked by administrator")
+                    revoked_date = current_device.get('last_updated', 'Unknown')
+                    notes = current_device.get('notes', 'No notes available')
+                    return False, (f"⚠️  Access Denied - Device Revoked\n\n"
+                                 f"Device: {device_name}\n"
+                                 f"Status: REVOKED by administrator\n"
+                                 f"Date: {revoked_date}\n"
+                                 f"Notes: {notes}\n\n"
+                                 f"Contact administrator to restore access.")
+                
+                # Warn if status is not 'active' (unknown status)
+                elif device_status != 'active':
+                    logging.warning(f"⚠️  Device has unknown status: {device_status}")
+                    logging.warning(f"   Allowing access, but status should be 'active' or 'revoked'")
+            
             # Count total authorized devices
             device_count = len(authorized_macs)
             logging.info(f"✓ MAC address authorized: {self.current_mac}")
             logging.info(f"✓ Total authorized devices: {device_count}")
             return True, f"MAC address authorized ({device_count} device(s) total)"
+        
+        # NEW DEVICE - Check if it was previously revoked before auto-authorizing
+        current_device = next((d for d in github_devices if d.get('mac_hash') == self.current_mac_hash), None)
+        if current_device and current_device.get('status') == 'revoked':
+            # Device exists in GitHub whitelist but with 'revoked' status
+            device_name = current_device.get('device_name', current_device.get('computer_name', 'Unknown Device'))
+            logging.error(f"❌ ACCESS DENIED: Device exists but is REVOKED")
+            logging.error(f"   Device: {device_name}")
+            logging.error(f"   MAC: {self.current_mac}")
+            revoked_date = current_device.get('last_updated', 'Unknown')
+            notes = current_device.get('notes', 'No notes available')
+            return False, (f"⚠️  Access Denied - Device Revoked\n\n"
+                         f"Device: {device_name}\n"
+                         f"Status: REVOKED by administrator\n"
+                         f"Date: {revoked_date}\n"
+                         f"Notes: {notes}\n\n"
+                         f"Contact administrator to restore access.")
         
         # NEW DEVICE - Auto-authorize if allow_first_run is True (default)
         # This enables unlimited multi-device support with automatic authorization
