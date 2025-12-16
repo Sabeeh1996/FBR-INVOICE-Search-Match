@@ -2,7 +2,7 @@
     "mode": "github_license",
     "license_info": {
         "status": "active",
-        "expiry_date": "2026-12-31",
+        "expiry_date": "2025-12-31",
         "license_type": "full",
         "software_version": "1.1.0",
         "last_updated": "2025-12-16T00:00:00",
@@ -12,4 +12,4 @@
     "warning_days": 15,
     "critical_days": 7
 }
->>>>>>> 8d735475b572870ba72dec2f37cd788752209c99
+
