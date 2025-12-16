@@ -24,7 +24,7 @@ class LicenseManager:
     GITHUB_TOKEN = "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"
     
     # GitHub URL for license config
-    GITHUB_LICENSE_URL = "https://raw.githubusercontent.com/Sabeeh1996/FBR-INVOICE-Search-Match/develop/license_config.json"
+    GITHUB_LICENSE_URL = "https://raw.githubusercontent.com/Sabeeh1996/fbr-inv-check-expiry-mac-ogdcl/main/license_config.json"
     
     # Local cache file for offline fallback
     GITHUB_CACHE_FILE = "github_license_config.json"

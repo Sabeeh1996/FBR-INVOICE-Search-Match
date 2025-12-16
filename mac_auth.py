@@ -71,7 +71,7 @@ class MACAuthenticator:
         
         self.auto_sync_github = auto_sync_github
         self.config_existed_before = os.path.exists(self.config_file)  # Track if config existed
-        self.github_url = github_url or "https://raw.githubusercontent.com/Sabeeh1996/FBR-INVOICE-Search-Match/develop/mac_whitelist.json"
+        self.github_url = github_url or "https://raw.githubusercontent.com/Sabeeh1996/fbr-inv-check-expiry-mac-ogdcl/main/mac_whitelist.json"
         self.config = self._load_config()
         self.current_mac = self.get_mac_address()
         self.current_mac_hash = self._hash_mac(self.current_mac) if self.current_mac else None
