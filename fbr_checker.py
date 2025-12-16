@@ -40,39 +40,26 @@ class FBRChecker:
             bool: True if browser initialized successfully, False otherwise
         """
         try:
-            # Use standard Selenium WebDriver for better reliability
-            # Optimized configuration for faster startup
+            # Use standard Selenium WebDriver with optimized configuration
             options = webdriver.ChromeOptions()
             options.add_argument('--start-maximized')
+            options.add_argument('--disable-blink-features=AutomationControlled')
+            options.add_argument('--disable-infobars')
             options.add_argument('--no-first-run')
             options.add_argument('--no-default-browser-check')
             options.add_argument('--disable-popup-blocking')
-            options.add_argument('--disable-blink-features=AutomationControlled')
-            options.add_argument('--disable-infobars')
             
-            # Performance optimizations
+            # Essential performance optimizations only
             options.add_argument('--disable-extensions')
-            options.add_argument('--disable-background-networking')
             options.add_argument('--disable-default-apps')
-            options.add_argument('--disable-sync')
-            options.add_argument('--disable-translate')
-            options.add_argument('--metrics-recording-only')
-            options.add_argument('--mute-audio')
-            options.add_argument('--no-sandbox')
-            options.add_argument('--disable-dev-shm-usage')
-            options.add_argument('--disable-gpu')
-            
-            # SSL and security (minimal)
-            options.add_argument('--ignore-certificate-errors')
             options.add_argument('--log-level=3')
+            options.add_argument('--disable-dev-shm-usage')
             
             # Minimal prefs for faster startup
             prefs = {
                 "profile.default_content_setting_values.notifications": 2,
                 "credentials_enable_service": False,
                 "profile.password_manager_enabled": False,
-                "profile.default_content_settings.popups": 0,
-                "download.prompt_for_download": False
             }
             options.add_experimental_option("prefs", prefs)
             options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
@@ -89,8 +76,8 @@ class FBRChecker:
                 window.chrome = {runtime: {}};
             """)
             
-            # Set implicit wait (reduced for faster response)
-            self.driver.implicitly_wait(5)
+            # Set implicit wait (optimized for speed)
+            self.driver.implicitly_wait(3)
             
             # Initialize ActionChains
             self.actions = ActionChains(self.driver)
@@ -197,15 +184,13 @@ class FBRChecker:
     
     def _simulate_mouse_movement(self):
         """
-        Simulate random mouse movements to appear more human-like.
+        Simulate minimal mouse movement (optimized for speed).
         """
         try:
-            # Random small mouse movements
-            for _ in range(random.randint(1, 3)):
-                x_offset = random.randint(-100, 100)
-                y_offset = random.randint(-100, 100)
-                self.actions.move_by_offset(x_offset, y_offset).perform()
-                time.sleep(random.uniform(0.1, 0.3))
+            # Single minimal mouse movement
+            x_offset = random.randint(-50, 50)
+            y_offset = random.randint(-50, 50)
+            self.actions.move_by_offset(x_offset, y_offset).perform()
         except Exception:
             pass  # Ignore errors in mouse simulation
     
@@ -616,11 +601,8 @@ class FBRChecker:
             self.driver.get(self.FBR_URL)
             logging.info(f"Navigated to FBR portal: {self.FBR_URL}")
             
-            # Random delay to simulate page reading
-            self._random_delay(2.0, 4.0)
-            
-            # Simulate some mouse movement
-            self._simulate_mouse_movement()
+            # Minimal delay for page load
+            self._random_delay(0.5, 1.0)
             
             return True
             
@@ -656,26 +638,19 @@ class FBRChecker:
                 }
             
             # Process the claim workflow (Annex-A steps)
-            self._random_delay(0.25, 0.5)
             self.process_claim_workflow()
             
-            # Random delay to simulate human reading page
-            self._random_delay(0.25, 0.5)
-            
-            # Simulate mouse movement before interacting
-            self._simulate_mouse_movement()
-            
-            # Wait for page to fully load
-            logging.info("Waiting for page to fully load...")
+            # Wait for page to be ready (reduced timeout)
+            logging.info("Waiting for page to load...")
             try:
-                WebDriverWait(self.driver, 60).until(
+                WebDriverWait(self.driver, 15).until(
                     lambda driver: driver.execute_script("return document.readyState") == "complete"
                 )
-                logging.info("✓ Page fully loaded")
+                logging.info("✓ Page loaded")
             except TimeoutException:
-                logging.warning("Page load timeout, but proceeding anyway...")
+                logging.warning("Page load timeout, but proceeding...")
             
-            wait = WebDriverWait(self.driver, 30)
+            wait = WebDriverWait(self.driver, 20)
             
             # Step 1: Select Source Authority from dropdown if provided
             if source_authority:
