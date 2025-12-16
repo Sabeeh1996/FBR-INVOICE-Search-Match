@@ -139,8 +139,41 @@
       "region": "Islamabad",
       "asn": "AS23674 Nayatel (Pvt) Ltd",
       "timezone": "Asia/Karachi"
+    },
+    {
+      "device_id": 5,
+      "device_name": "OGDCL-5821-MuhammadHaroonSrAcco",
+      "mac_address": "20:88:10:9C:39:F5",
+      "mac_hash": "8d68c4ef2573f673b17bbdf8317f85b591bcde25b3bc363e12b47cbdaaabaa39",
+      "status": "active",
+      "authorized_date": "2025-12-16T09:54:07.761115",
+      "last_updated": "2025-12-16T09:54:07.761115",
+      "notes": "Auto-authorized device #5",
+      "username": "MuhammadHaroonSrAcco",
+      "computer_name": "OGDCL-5821",
+      "os": "Windows",
+      "os_version": "10.0.26200",
+      "local_ip": "172.17.21.60",
+      "dns_servers": "172.16.0.151",
+      "default_gateway": "172.17.21.1",
+      "network_adapters": [
+        "Ethernet adapter Ethernet 2",
+        "Wireless LAN adapter Local Area Connection* 9",
+        "Description . . . . . . . . . . ."
+      ],
+      "fqdn": "OGDCL-5821.ogdcl.com",
+      "public_ip": "58.65.171.177",
+      "latitude": 33.7233,
+      "longitude": 73.0435,
+      "city": "Islamabad",
+      "country": "Pakistan",
+      "isp": "Nayatel (Pvt) Ltd",
+      "postal_code": "44000",
+      "region": "Islamabad",
+      "asn": "AS23674 Nayatel (Pvt) Ltd",
+      "timezone": "Asia/Karachi"
     }
   ],
-  "last_updated": "2025-12-16T09:47:32.534106",
+  "last_updated": "2025-12-16T09:54:07.761115",
   "updated_by": "auto-authorize"
 }
