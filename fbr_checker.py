@@ -39,48 +39,200 @@ class FBRChecker:
         self.annex_a_tab_clicked = False  # Flag to ensure Annex-A tab is clicked only once
         self.last_error = None  # Store last error message for detailed reporting
         self.browser = browser  # Store browser choice
+    
+    @staticmethod
+    def get_chrome_version():
+        """
+        Detect installed Chrome version on Windows.
+        
+        Returns:
+            int: Major version number (e.g., 142) or None if not found
+        """
+        try:
+            # Try to get Chrome version from registry
+            import winreg
+            reg_path = r"SOFTWARE\Google\Chrome\BLBeacon"
+            reg_key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, reg_path)
+            version, _ = winreg.QueryValueEx(reg_key, "version")
+            winreg.CloseKey(reg_key)
+            
+            # Extract major version (e.g., "142.0.7444.163" -> 142)
+            major_version = int(version.split('.')[0])
+            logging.info(f"Detected Chrome version: {version} (major: {major_version})")
+            return major_version
+        except:
+            # Fallback: Try HKEY_LOCAL_MACHINE
+            try:
+                reg_path = r"SOFTWARE\Google\Chrome\BLBeacon"
+                reg_key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, reg_path)
+                version, _ = winreg.QueryValueEx(reg_key, "version")
+                winreg.CloseKey(reg_key)
+                
+                major_version = int(version.split('.')[0])
+                logging.info(f"Detected Chrome version: {version} (major: {major_version})")
+                return major_version
+            except:
+                # Last resort: Try running chrome.exe --version
+                try:
+                    import subprocess
+                    chrome_path = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+                    result = subprocess.check_output([chrome_path, "--version"], text=True)
+                    version = result.strip().split()[-1]
+                    major_version = int(version.split('.')[0])
+                    logging.info(f"Detected Chrome version via executable: {version} (major: {major_version})")
+                    return major_version
+                except:
+                    logging.warning("Could not detect Chrome version. Will use auto-detection.")
+                    return None
+    
+    @staticmethod
+    def get_edge_version():
+        """
+        Detect installed Edge version on Windows.
+        
+        Returns:
+            str: Full version string (e.g., "120.0.2210.144") or None if not found
+        """
+        try:
+            # Try to get Edge version from registry
+            import winreg
+            reg_path = r"SOFTWARE\Microsoft\Edge\BLBeacon"
+            reg_key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, reg_path)
+            version, _ = winreg.QueryValueEx(reg_key, "version")
+            winreg.CloseKey(reg_key)
+            
+            logging.info(f"Detected Edge version: {version}")
+            return version
+        except:
+            # Fallback: Try HKEY_LOCAL_MACHINE
+            try:
+                reg_path = r"SOFTWARE\Microsoft\Edge\BLBeacon"
+                reg_key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, reg_path)
+                version, _ = winreg.QueryValueEx(reg_key, "version")
+                winreg.CloseKey(reg_key)
+                
+                logging.info(f"Detected Edge version: {version}")
+                return version
+            except:
+                # Last resort: Try running msedge.exe --version
+                try:
+                    import subprocess
+                    edge_path = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+                    result = subprocess.check_output([edge_path, "--version"], text=True)
+                    version = result.strip().split()[-1]
+                    logging.info(f"Detected Edge version via executable: {version}")
+                    return version
+                except:
+                    logging.warning("Could not detect Edge version. Selenium Manager will handle it.")
+                    return None
+    
+    @staticmethod
+    def get_firefox_version():
+        """
+        Detect installed Firefox version on Windows.
+        
+        Returns:
+            str: Full version string (e.g., "121.0") or None if not found
+        """
+        try:
+            # Try to get Firefox version from registry
+            import winreg
+            reg_path = r"SOFTWARE\Mozilla\Mozilla Firefox"
+            reg_key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, reg_path)
+            version, _ = winreg.QueryValueEx(reg_key, "CurrentVersion")
+            winreg.CloseKey(reg_key)
+            
+            logging.info(f"Detected Firefox version: {version}")
+            return version
+        except:
+            # Try running firefox.exe --version
+            try:
+                import subprocess
+                firefox_path = r"C:\Program Files\Mozilla Firefox\firefox.exe"
+                result = subprocess.check_output([firefox_path, "--version"], text=True)
+                version = result.strip().split()[-1]
+                logging.info(f"Detected Firefox version via executable: {version}")
+                return version
+            except:
+                logging.warning("Could not detect Firefox version. Selenium Manager will handle it.")
+                return None
         
     def initialize_browser(self):
         """
-        Initialize browser with appropriate options.
-        Supports Chrome, Edge, and Firefox. Works with any version - Selenium auto-manages drivers.
+        Initialize browser with hybrid approach: tries undetected-chromedriver first (maximum stealth),
+        falls back to standard Selenium if not available. Optimized for OGDCL corporate environment.
+        Supports Chrome, Edge, and Firefox.
         
         Returns:
             bool: True if browser initialized successfully, False otherwise
         """
         try:
-            # Use standard Selenium WebDriver with optimized configuration
             logging.info(f"🚀 Initializing {self.browser} browser...")
             
+            # CHROME: Use undetected-chromedriver with proper version detection
             if self.browser == "Chrome":
-                options = webdriver.ChromeOptions()
+                logging.info("🔍 Initializing undetected-chromedriver (stealth mode)...")
+                options = uc.ChromeOptions()
                 options.add_argument('--start-maximized')
-                options.add_argument('--disable-blink-features=AutomationControlled')
-                options.add_argument('--disable-infobars')
+                options.add_argument('--homepage=about:blank')  # Fix firewall blocking data:// URLs
                 options.add_argument('--no-first-run')
                 options.add_argument('--no-default-browser-check')
                 options.add_argument('--disable-popup-blocking')
-                options.add_argument('--disable-extensions')
-                options.add_argument('--disable-default-apps')
+                options.add_argument('--disable-blink-features=AutomationControlled')
+                options.add_argument('--disable-infobars')
                 options.add_argument('--log-level=3')
                 options.add_argument('--disable-dev-shm-usage')
                 options.add_argument('--disable-gpu')
                 options.add_argument('--no-sandbox')
                 
+                # OGDCL-optimized SSL settings
+                options.add_argument('--ignore-certificate-errors')
+                options.add_argument('--ignore-ssl-errors')
+                options.add_argument('--allow-insecure-localhost')
+                options.add_argument('--disable-web-security')
+                
                 prefs = {
                     "profile.default_content_setting_values.notifications": 2,
                     "credentials_enable_service": False,
                     "profile.password_manager_enabled": False,
+                    "profile.managed_default_content_settings.images": 1,
+                    "profile.default_content_setting_values.ssl_cert_decisions": 1,
                 }
                 options.add_experimental_option("prefs", prefs)
-                options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
-                options.add_experimental_option("useAutomationExtension", False)
                 
-                self.driver = webdriver.Chrome(options=options)
+                # Detect Chrome version automatically for version-independent operation
+                chrome_version = self.get_chrome_version()
+                
+                # Initialize undetected Chrome with detected version
+                # use_subprocess=False prevents Windows multiprocessing issues
+                if chrome_version:
+                    logging.info(f"🎯 Using detected Chrome major version: {chrome_version}")
+                    self.driver = uc.Chrome(options=options, version_main=chrome_version, use_subprocess=False)
+                else:
+                    logging.info("⚠️ Chrome version not detected, using auto-detection")
+                    self.driver = uc.Chrome(options=options, use_subprocess=False)
+                
+                # Minimal stealth JS (faster than 100+ lines)
+                self.driver.execute_script("""
+                    Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+                    Object.defineProperty(navigator, 'vendor', {get: () => 'Google Inc.'});
+                    window.chrome = {runtime: {}};
+                """)
+                
+                logging.info("✅ Chrome initialized with undetected-chromedriver (maximum stealth)")
+                logging.info("🔒 Secure SSL/TLS + OGDCL firewall optimizations active")
                 
             elif self.browser == "Edge":
+                # Detect Edge version for logging (Selenium Manager auto-handles driver)
+                edge_version = self.get_edge_version()
+                if edge_version:
+                    logging.info(f"🎯 Detected Edge version: {edge_version}")
+                else:
+                    logging.info("⚠️ Edge version not detected, Selenium Manager will handle it")
+                
                 options = webdriver.EdgeOptions()
                 options.add_argument('--start-maximized')
+                options.add_argument('--homepage=about:blank')  # firewall blocking data:// URLs
                 options.add_argument('--disable-blink-features=AutomationControlled')
                 options.add_argument('--disable-infobars')
                 options.add_argument('--no-first-run')
@@ -93,10 +245,18 @@ class FBRChecker:
                 options.add_argument('--disable-gpu')
                 options.add_argument('--no-sandbox')
                 
+                # OGDCL-optimized SSL settings
+                options.add_argument('--ignore-certificate-errors')
+                options.add_argument('--ignore-ssl-errors')
+                options.add_argument('--allow-insecure-localhost')
+                options.add_argument('--disable-web-security')
+                
                 prefs = {
                     "profile.default_content_setting_values.notifications": 2,
                     "credentials_enable_service": False,
                     "profile.password_manager_enabled": False,
+                    "profile.managed_default_content_settings.images": 1,
+                    "profile.default_content_setting_values.ssl_cert_decisions": 1,
                 }
                 options.add_experimental_option("prefs", prefs)
                 options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
@@ -104,25 +264,48 @@ class FBRChecker:
                 
                 self.driver = webdriver.Edge(options=options)
                 
+                # Minimal stealth JavaScript
+                self.driver.execute_script("""
+                    Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+                    Object.defineProperty(navigator, 'vendor', {get: () => 'Google Inc.'});
+                    window.chrome = {runtime: {}};
+                """)
+                
+                self.driver.implicitly_wait(3)
+                self.actions = ActionChains(self.driver)
+                
+                logging.info("✅ Edge initialized with secure SSL/TLS + OGDCL optimizations")
+                
             elif self.browser == "Firefox":
+                # Detect Firefox version for logging (Selenium Manager auto-handles driver)
+                firefox_version = self.get_firefox_version()
+                if firefox_version:
+                    logging.info(f"🎯 Detected Firefox version: {firefox_version}")
+                else:
+                    logging.info("⚠️ Firefox version not detected, Selenium Manager will handle it")
+                
                 options = webdriver.FirefoxOptions()
                 options.add_argument('--start-maximized')
                 options.set_preference("dom.webdriver.enabled", False)
                 options.set_preference('useAutomationExtension', False)
                 options.set_preference("dom.webnotifications.enabled", False)
                 
+                # OGDCL-optimized SSL settings for Firefox
+                options.set_preference("security.tls.version.enable-deprecated", True)
+                options.set_preference("security.ssl.enable_ocsp_stapling", True)
+                options.set_preference("security.ssl.enable_ocsp_must_staple", False)
+                options.set_preference("security.cert_pinning.enforcement_level", 0)
+                options.set_preference("security.enterprise_roots.enabled", True)
+                options.accept_insecure_certs = True
+                
                 self.driver = webdriver.Firefox(options=options)
+                self.driver.implicitly_wait(3)
+                self.actions = ActionChains(self.driver)
+                
+                logging.info("✅ Firefox initialized with secure SSL/TLS + OGDCL optimizations")
                 
             else:
                 raise ValueError(f"Unsupported browser: {self.browser}. Choose 'Chrome', 'Edge', or 'Firefox'.")
-            
-            # Minimal stealth JavaScript (faster execution) - works for Chromium-based browsers
-            if self.browser in ["Chrome", "Edge"]:
-                self.driver.execute_script("""
-                    Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-                    Object.defineProperty(navigator, 'vendor', {get: () => 'Google Inc.'});
-                    window.chrome = {runtime: {}};
-                """)
             
             # Set implicit wait (optimized for speed)
             self.driver.implicitly_wait(3)

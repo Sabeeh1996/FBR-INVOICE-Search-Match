@@ -153,8 +153,8 @@ class FBRInvoiceCheckerGUI:
         self.root = root
         self.root.title("🧾 FBR Invoice Checker Bot v2.1")
         # Start with a reasonable default size but allow resizing for responsiveness
-        self.root.geometry("900x650")
-        self.root.minsize(720, 480)
+        self.root.geometry("1000x800")
+        self.root.minsize(900, 600)
         self.root.resizable(True, True)
         
         # License manager
@@ -368,33 +368,38 @@ class FBRInvoiceCheckerGUI:
         browse_btn.bind('<Enter>', lambda e: _on_enter(browse_btn, 'BrowseHover.TButton'))
         browse_btn.bind('<Leave>', lambda e: _on_leave(browse_btn, 'Browse.TButton'))
         
-        # Browser selection section
-        browser_frame = ttk.LabelFrame(main_frame, text="Browser Selection", padding="10", style='Panel.TLabelframe')
-        browser_frame.grid(row=(3 if license_frame_created else 2), column=0, sticky=(tk.W, tk.E), pady=(0, 15))
-        browser_frame.columnconfigure(1, weight=1)
+        # Browser selection section (HIDDEN - Chrome hardcoded)
+        # Hardcode Chrome browser (backend still supports Chrome/Edge/Firefox)
+        self.selected_browser.set("Chrome")
         
-        ttk.Label(browser_frame, text="Browser:", style='Normal.TLabel').grid(row=0, column=0, sticky=tk.W, padx=(0, 10))
-        
-        # Detect available browsers
-        available_browsers = detect_available_browsers()
-        self.selected_browser.set(available_browsers[0])  # Set default to first available
-        
-        browser_combo = ttk.Combobox(
-            browser_frame, 
-            textvariable=self.selected_browser,
-            values=available_browsers,
-            state='readonly',
-            width=30
-        )
-        browser_combo.grid(row=0, column=1, sticky=tk.W, padx=(0, 10))
-        
-        # Browser info label
-        browser_info = ttk.Label(
-            browser_frame,
-            text=f"({len(available_browsers)} browser(s) detected)",
-            style='Sub.TLabel'
-        )
-        browser_info.grid(row=0, column=2, sticky=tk.W)
+        # Browser selection UI hidden per user request
+        # Uncomment below to restore browser selection dropdown:
+        # browser_frame = ttk.LabelFrame(main_frame, text="Browser Selection", padding="10", style='Panel.TLabelframe')
+        # browser_frame.grid(row=(3 if license_frame_created else 2), column=0, sticky=(tk.W, tk.E), pady=(0, 15))
+        # browser_frame.columnconfigure(1, weight=1)
+        # 
+        # ttk.Label(browser_frame, text="Browser:", style='Normal.TLabel').grid(row=0, column=0, sticky=tk.W, padx=(0, 10))
+        # 
+        # # Detect available browsers
+        # available_browsers = detect_available_browsers()
+        # self.selected_browser.set(available_browsers[0])  # Set default to first available
+        # 
+        # browser_combo = ttk.Combobox(
+        #     browser_frame, 
+        #     textvariable=self.selected_browser,
+        #     values=available_browsers,
+        #     state='readonly',
+        #     width=30
+        # )
+        # browser_combo.grid(row=0, column=1, sticky=tk.W, padx=(0, 10))
+        # 
+        # # Browser info label
+        # browser_info = ttk.Label(
+        #     browser_frame,
+        #     text=f"({len(available_browsers)} browser(s) detected)",
+        #     style='Sub.TLabel'
+        # )
+        # browser_info.grid(row=0, column=2, sticky=tk.W)
         
         # Control buttons - centered with proper spacing
         button_frame = ttk.Frame(main_frame, style='Main.TFrame')
@@ -753,8 +758,7 @@ class FBRInvoiceCheckerGUI:
 4. Try running as Administrator
 5. Reinstall {browser_choice} browser if issue persists
 
-Note: Selenium should automatically download the required driver.
-If error persists, try selecting a different browser from the dropdown."""
+Note: Selenium should automatically download the required driver."""
                 
                 messagebox.showerror("Browser Initialization Error", error_msg)
                 self.root.after(0, lambda: self.start_btn.config(state='normal'))
@@ -854,7 +858,6 @@ If error persists, try selecting a different browser from the dropdown."""
         self.current_mode = 'stwh'
         
         # Update workflow indicator
-        self.root.after(0, lambda: self.workflow_indicator.config(text="📥 LOAD STWH", fg="#3498DB"))
         self.root.after(0, lambda: self.workflow_indicator.config(text="📥 LOAD STWH", fg="#3498DB"))
         
         # Reset statistics
@@ -992,7 +995,7 @@ If error persists, try selecting a different browser from the dropdown."""
             if self.last_processed_row is not None:
                 # Find the index of the row after the last processed one
                 for idx, inv in enumerate(invoices):
-                    if inv['row_number'] > self.last_processed_row:
+                    if inv['row'] > self.last_processed_row:
                         start_index = idx
                         break
                 self.log_message(f"▶️ Resuming from row {self.last_processed_row + 1}")
@@ -1036,21 +1039,6 @@ If error persists, try selecting a different browser from the dropdown."""
                 try:
                     result = self.fbr_checker.verify_invoice(registration_no, source_authority=source_auth, invoice_no_field=number, date_field=date, sales_tax_fed_st_mode=sales_tax_fed_st_mode)
                     
-                    # Check if stopped immediately after verification (before updating Excel)
-                    if not self.is_running:
-                        self.log_message("⏹️ Processing stopped by user")
-                        # Save current invoice result before stopping
-                        if isinstance(result, dict):
-                            status = result.get('status', '⚠️ Error')
-                            value_of_purchases = result.get('value_of_purchases', 'N/A')
-                            fbr_sales_tax = result.get('fbr_sales_tax', 'N/A')
-                        else:
-                            status = result
-                            value_of_purchases = 'N/A'
-                            fbr_sales_tax = 'N/A'
-                        self.excel_handler.update_invoice_status(row_number, status, value_of_purchases, fbr_sales_tax)
-                        break
-                    
                     # Handle both dict and string return types for backwards compatibility
                     if isinstance(result, dict):
                         status = result.get('status', '⚠️ Error')
@@ -1060,6 +1048,7 @@ If error persists, try selecting a different browser from the dropdown."""
                         # Check if browser was closed by user
                         if 'Browser Closed' in status:
                             self.log_message(f"⚠️ Browser was closed by user. Stopping processing...")
+                            self.excel_handler.update_invoice_status(row_number, status, value_of_purchases, fbr_sales_tax)
                             self.log_message(f"✅ Progress saved to Excel file up to row {row_number}")
                             break  # Exit the loop gracefully
                     else:
