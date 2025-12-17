@@ -9,39 +9,6 @@
   "mode": "github_whitelist",
   "devices": [
     {
-      "device_id": 1,
-      "device_name": "DESKTOP-46BDVA7-sabeeh bhai 1995",
-      "mac_address": "95:11:BD:A6:21:5B",
-      "mac_hash": "65158b05d949d8d5afb6472965bcefcde59a8671ef106d3150886e6e7b0e493a",
-      "status": "active",
-      "authorized_date": "2025-12-15T20:08:03.201312",
-      "last_updated": "2025-12-15T20:08:03.201312",
-      "notes": "Auto-authorized device #1",
-      "username": "sabeeh bhai 1995",
-      "computer_name": "DESKTOP-46BDVA7",
-      "os": "Windows",
-      "os_version": "10.0.26200",
-      "local_ip": "192.168.18.50",
-      "dns_servers": "1%17",
-      "default_gateway": "1%17",
-      "network_adapters": [
-        "Wireless LAN adapter Local Area Connection* 1",
-        "Description . . . . . . . . . . .",
-        "Wireless LAN adapter Local Area Connection* 10"
-      ],
-      "fqdn": "DESKTOP-46BDVA7",
-      "public_ip": "154.192.2.90",
-      "latitude": 33.7233,
-      "longitude": 73.0435,
-      "city": "Islamabad",
-      "country": "Pakistan",
-      "isp": "Nayatel Private Limited",
-      "postal_code": "44000",
-      "region": "Islamabad",
-      "asn": "AS23674 Nayatel (Pvt) Ltd",
-      "timezone": "Asia/Karachi"
-    },
-    {
       "device_id": 2,
       "device_name": "LAP-709-OGDCL",
       "mac_address": "F8:AC:65:D0:CA:C2",
@@ -172,8 +139,41 @@
       "region": "Islamabad",
       "asn": "AS23674 Nayatel (Pvt) Ltd",
       "timezone": "Asia/Karachi"
+    },
+    {
+      "device_id": 5,
+      "device_name": "DESKTOP-46BDVA7-sabeeh bhai 1995",
+      "mac_address": "95:11:BD:A6:21:5B",
+      "mac_hash": "65158b05d949d8d5afb6472965bcefcde59a8671ef106d3150886e6e7b0e493a",
+      "status": "active",
+      "authorized_date": "2025-12-17T09:48:55.007432",
+      "last_updated": "2025-12-17T09:48:55.007432",
+      "notes": "Auto-authorized device #5",
+      "username": "sabeeh bhai 1995",
+      "computer_name": "DESKTOP-46BDVA7",
+      "os": "Windows",
+      "os_version": "10.0.26200",
+      "local_ip": "192.168.10.33",
+      "dns_servers": "8.8.8.8",
+      "default_gateway": "192.168.10.1",
+      "network_adapters": [
+        "Wireless LAN adapter Local Area Connection* 1",
+        "Description . . . . . . . . . . .",
+        "Wireless LAN adapter Local Area Connection* 10"
+      ],
+      "fqdn": "DESKTOP-46BDVA7",
+      "public_ip": "39.60.138.69",
+      "latitude": 33.6099,
+      "longitude": 73.0301,
+      "city": "Rawalpindi",
+      "country": "Pakistan",
+      "isp": "Pakistan Telecommuication company limited",
+      "postal_code": "46000",
+      "region": "Punjab",
+      "asn": "AS17557 Pakistan Telecommunication Company Limited",
+      "timezone": "Asia/Karachi"
     }
   ],
-  "last_updated": "2025-12-16T09:54:07.761115",
+  "last_updated": "2025-12-17T09:48:55.008429",
   "updated_by": "auto-authorize"
 }
