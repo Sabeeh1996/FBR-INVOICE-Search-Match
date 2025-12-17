@@ -871,6 +871,7 @@ class FBRChecker:
                     (By.XPATH, "//input[@id='correspondenceTabs:loadAnnexAform:annexAFromDate_input']"),
                 ]
                 
+                
                 from_date_input = None
                 for by_type, selector in from_date_selectors:
                     try:
@@ -943,6 +944,101 @@ class FBRChecker:
                 
                 logging.info(f"✓ STEP 4 COMPLETED & VERIFIED: Dates set to '{date_formatted}'")
                 self._random_delay(0.25, 0.5)
+
+            # if date_field and date_field != 'N/A':
+            #     logging.info(f"STEP 4: Selecting dates: {date_field}")
+                
+            #     # Parse the date
+            #     parsed_date = self._select_date_from_datepicker(date_field)
+                
+            #     if not parsed_date:
+            #         logging.error(f"STEP 4 FAILED: Could not parse date: {date_field}")
+            #         return {
+            #             'status': '⚠️ Error - Date parsing failed',
+            #             'value_of_purchases': 'N/A'
+            #         }
+                
+            #     date_formatted = parsed_date['formatted']
+                
+            #     # Select From Date
+            #     from_date_selectors = [
+            #         (By.ID, "correspondenceTabs:loadAnnexAform:annexAFromDate_input"),
+            #         (By.NAME, "correspondenceTabs:loadAnnexAform:annexAFromDate_input"),
+            #         (By.XPATH, "//input[@id='correspondenceTabs:loadAnnexAform:annexAFromDate_input']"),
+            #     ]
+                
+            #     from_date_input = None
+            #     for by_type, selector in from_date_selectors:
+            #         try:
+            #             # Wait for element to be visible and present
+            #             from_date_input = wait.until(EC.visibility_of_element_located((by_type, selector)))
+            #             logging.info(f"Found From Date input using selector: {selector}")
+            #             break
+            #         except TimeoutException:
+            #             continue
+                
+            #     if not from_date_input:
+            #         logging.error("STEP 4 FAILED: From Date input field not found")
+            #         return {
+            #             'status': '⚠️ Error - From Date field not found',
+            #             'value_of_purchases': 'N/A'
+            #         }
+                
+            #     # Click to open datepicker, then use JavaScript to set value directly
+            #     # (readonly fields require JS to set value)
+            #     self.driver.execute_script(f"arguments[0].value = '{date_formatted}';", from_date_input)
+            #     self._random_delay(0.1, 0.25)
+                
+            #     # Verify From Date was set
+            #     from_date_value = from_date_input.get_attribute('value')
+            #     if from_date_value != date_formatted:
+            #         logging.error(f"STEP 4 FROM DATE VERIFICATION FAILED: Expected '{date_formatted}', got '{from_date_value}'")
+            #         return {
+            #             'status': '⚠️ Error - From Date verification failed',
+            #             'value_of_purchases': 'N/A'
+            #         }
+                
+            #     logging.info(f"✓ From Date verified: {from_date_value}")
+                
+            #     # Select To Date (same date)
+            #     to_date_selectors = [
+            #         (By.ID, "correspondenceTabs:loadAnnexAform:annexAToDate_input"),
+            #         (By.NAME, "correspondenceTabs:loadAnnexAform:annexAToDate_input"),
+            #         (By.XPATH, "//input[@id='correspondenceTabs:loadAnnexAform:annexAToDate_input']"),
+            #     ]
+                
+            #     to_date_input = None
+            #     for by_type, selector in to_date_selectors:
+            #         try:
+            #             # Wait for element to be visible and present
+            #             to_date_input = wait.until(EC.visibility_of_element_located((by_type, selector)))
+            #             logging.info(f"Found To Date input using selector: {selector}")
+            #             break
+            #         except TimeoutException:
+            #             continue
+                
+            #     if not to_date_input:
+            #         logging.error("STEP 4 FAILED: To Date input field not found")
+            #         return {
+            #             'status': '⚠️ Error - To Date field not found',
+            #             'value_of_purchases': 'N/A'
+            #         }
+                
+            #     # Use JavaScript to set value directly
+            #     self.driver.execute_script(f"arguments[0].value = '{date_formatted}';", to_date_input)
+            #     self._random_delay(0.1, 0.25)
+                
+            #     # Verify To Date was set
+            #     to_date_value = to_date_input.get_attribute('value')
+            #     if to_date_value != date_formatted:
+            #         logging.error(f"STEP 4 TO DATE VERIFICATION FAILED: Expected '{date_formatted}', got '{to_date_value}'")
+            #         return {
+            #             'status': '⚠️ Error - To Date verification failed',
+            #             'value_of_purchases': 'N/A'
+            #         }
+                
+            #     logging.info(f"✓ STEP 4 COMPLETED & VERIFIED: Dates set to '{date_formatted}'")
+            #     self._random_delay(0.25, 0.5)
             
             # Step 5: Click the Search button in Annex-A form
             logging.info("STEP 5: Clicking Search button in Annex-A form...")
