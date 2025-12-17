@@ -2006,6 +2006,13 @@ class FBRChecker:
 
                 ####################################################################################
                 
+                # IMPORTANT: Stay on Annex-A form for next invoice processing
+                # The form remains on the same page, ready for next search
+                # Do NOT navigate away or reset annex_a_tab_clicked flag
+                # This allows continuous processing without clicking Annex-A tab again
+                logging.info("✓ Ready for next invoice (staying on Annex-A form)")
+                self._random_delay(0.5, 1.0)
+                
                 # Log the final values being returned
                 logging.info(f"FINAL RESULT - Status: {final_status}")
                 logging.info(f"FINAL RESULT - Value of Purchases: {value_of_purchases}")
