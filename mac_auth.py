@@ -485,13 +485,13 @@ class MACAuthenticator:
                 with open(self.whitelist_file, 'r', encoding='utf-8') as f:
                     whitelist_content = f.read()
                 
-                # GitHub API endpoint
-                api_url = "https://api.github.com/repos/Sabeeh1996/FBR-INVOICE-Search-Match/contents/mac_whitelist.json"
+                # GitHub API endpoint for new config repository
+                api_url = "https://api.github.com/repos/Sabeeh1996/fbr-inv-check-expiry-mac-ogdcl/contents/mac_whitelist.json"
                 
                 # Get current file SHA (required for update)
                 logging.info("   Fetching current file info from GitHub...")
                 get_req = urllib.request.Request(
-                    api_url + "?ref=develop",
+                    api_url + "?ref=main",
                     headers={
                         'Authorization': f'token {self.GITHUB_TOKEN}',
                         'Accept': 'application/vnd.github.v3+json'
@@ -518,7 +518,7 @@ class MACAuthenticator:
                 update_data = {
                     "message": "Auto-authorize new device [automated]",
                     "content": content_base64,
-                    "branch": "develop"
+                    "branch": "main"
                 }
                 
                 if current_sha:
