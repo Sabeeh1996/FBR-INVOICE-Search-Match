@@ -635,7 +635,26 @@ class FBRInvoiceCheckerGUI:
             
             if not self.fbr_checker.initialize_browser():
                 self.log_message("❌ Error: Failed to initialize Chrome browser")
-                messagebox.showerror("Error", "ChromeDriver not found or failed to initialize.\n\nPlease ensure Chrome browser is installed.")
+                
+                # Extract actual error message for better debugging
+                error_detail = ""
+                if hasattr(self.fbr_checker, 'last_error') and self.fbr_checker.last_error:
+                    error_detail = f"\n\nError Detail:\n{self.fbr_checker.last_error}"
+                
+                error_msg = f"""Failed to initialize Chrome browser.{error_detail}
+
+🔧 Troubleshooting Steps:
+
+1. Ensure Google Chrome is installed and up to date
+2. Close all Chrome browser windows and try again
+3. Check if antivirus is blocking ChromeDriver
+4. Try running as Administrator
+5. Reinstall Chrome browser if issue persists
+
+Note: Selenium should automatically download ChromeDriver.
+If error persists, the issue may be Chrome version compatibility."""
+                
+                messagebox.showerror("Browser Initialization Error", error_msg)
                 self.root.after(0, lambda: self.start_btn.config(state='normal'))
                 return
             

@@ -13,6 +13,9 @@ import undetected_chromedriver as uc
 import logging
 import time
 import random
+import subprocess
+import sys
+import re
 
 
 class FBRChecker:
@@ -31,15 +34,58 @@ class FBRChecker:
         self.max_retries = 3
         self.actions = None  # ActionChains for mouse movements
         self.annex_a_tab_clicked = False  # Flag to ensure Annex-A tab is clicked only once
+        self.last_error = None  # Store last error message for detailed reporting
+    
+    def _get_chrome_version(self):
+        """
+        Detect installed Chrome version.
+        
+        Returns:
+            str: Chrome version or None if not found
+        """
+        try:
+            # Windows Chrome version detection
+            if sys.platform == 'win32':
+                import winreg
+                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r'Software\Google\Chrome\BLBeacon')
+                version, _ = winreg.QueryValueEx(key, 'version')
+                winreg.CloseKey(key)
+                logging.info(f"Detected Chrome version: {version}")
+                return version
+        except Exception as e:
+            logging.warning(f"Could not detect Chrome version: {str(e)}")
+        
+        # Fallback: Try command line
+        try:
+            if sys.platform == 'win32':
+                cmd = r'reg query "HKEY_CURRENT_USER\Software\Google\Chrome\BLBeacon" /v version'
+                result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+                match = re.search(r'version\s+REG_SZ\s+([\d.]+)', result.stdout)
+                if match:
+                    version = match.group(1)
+                    logging.info(f"Detected Chrome version (cmd): {version}")
+                    return version
+        except Exception as e:
+            logging.warning(f"Command-line Chrome detection failed: {str(e)}")
+        
+        return None
         
     def initialize_browser(self):
         """
         Initialize Chrome browser with appropriate options.
+        Works with any Chrome version - Selenium auto-manages ChromeDriver.
         
         Returns:
             bool: True if browser initialized successfully, False otherwise
         """
         try:
+            # Detect Chrome version for logging
+            chrome_version = self._get_chrome_version()
+            if chrome_version:
+                logging.info(f"\u1f50d Detected Chrome version: {chrome_version}")
+            else:
+                logging.info("Chrome version detection skipped - Selenium will auto-detect")
+            
             # Use standard Selenium WebDriver with optimized configuration
             options = webdriver.ChromeOptions()
             options.add_argument('--start-maximized')
@@ -55,6 +101,10 @@ class FBRChecker:
             options.add_argument('--log-level=3')
             options.add_argument('--disable-dev-shm-usage')
             
+            # Compatibility flags for different Chrome versions
+            options.add_argument('--disable-gpu')  # Helps with older systems
+            options.add_argument('--no-sandbox')  # Compatibility mode
+            
             # Minimal prefs for faster startup
             prefs = {
                 "profile.default_content_setting_values.notifications": 2,
@@ -65,8 +115,8 @@ class FBRChecker:
             options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
             options.add_experimental_option("useAutomationExtension", False)
             
-            # Initialize Chrome WebDriver with Selenium
-            logging.info("🚀 Initializing Chrome browser (optimized for speed)...")
+            # Initialize Chrome WebDriver with Selenium Manager (auto-downloads correct ChromeDriver)
+            logging.info("🚀 Initializing Chrome browser (auto-detecting ChromeDriver version)...")
             self.driver = webdriver.Chrome(options=options)
             
             # Minimal stealth JavaScript (faster execution)
@@ -82,12 +132,29 @@ class FBRChecker:
             # Initialize ActionChains
             self.actions = ActionChains(self.driver)
             
-            logging.info("✅ Chrome browser initialized successfully (optimized mode)")
+            logging.info("✅ Chrome browser initialized successfully (compatible with all versions)")
             return True
             
         except Exception as e:
-            logging.error(f"Failed to initialize Chrome browser: {str(e)}")
-            logging.error("Make sure to run: pip install undetected-chromedriver")
+            error_msg = str(e)
+            self.last_error = error_msg
+            logging.error(f"Failed to initialize Chrome browser: {error_msg}")
+            
+            # Provide specific guidance based on error type
+            if "PATH" in error_msg.upper() or "chromedriver" in error_msg.lower():
+                logging.error("ChromeDriver PATH issue. Selenium Manager should auto-download it.")
+                logging.error("If this persists, check internet connection or firewall settings.")
+            elif "session not created" in error_msg.lower() or "version" in error_msg.lower():
+                logging.error("Chrome version compatibility issue detected.")
+                logging.error("Solution: Update Chrome browser to the latest version.")
+            elif "chrome not reachable" in error_msg.lower():
+                logging.error("Chrome browser not accessible. Verify Chrome is installed correctly.")
+                logging.error("Try: 1) Reinstalling Chrome, 2) Running as Administrator")
+            elif "timeout" in error_msg.lower():
+                logging.error("Browser startup timeout. Close other Chrome instances and try again.")
+            else:
+                logging.error(f"Unexpected error type: {error_msg[:100]}")
+            
             return False
     
     def _random_delay(self, min_seconds=0.5, max_seconds=2.0):
