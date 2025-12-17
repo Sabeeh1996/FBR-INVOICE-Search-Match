@@ -488,7 +488,7 @@ class FBRInvoiceCheckerGUI:
         
         # Progress section - fully responsive
         progress_frame = ttk.LabelFrame(main_frame, text="Progress", padding="10", style='Panel.TLabelframe')
-        progress_frame.grid(row=(4 if license_frame_created else 3), column=0, sticky=(tk.W, tk.E), pady=(0, 15))
+        progress_frame.grid(row=(5 if license_frame_created else 4), column=0, sticky=(tk.W, tk.E), pady=(0, 15))
         progress_frame.columnconfigure(0, weight=1)
         
         # Let progress bar expand horizontally with the window
