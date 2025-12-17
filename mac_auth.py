@@ -189,7 +189,33 @@ class MACAuthenticator:
             import urllib.request
             import json
             
-            # Try ipapi.co first (higher precision, 6 decimal places)
+            # Try geolocation-db.com first (PRIMARY - high accuracy, free, reliable)
+            try:
+                req = urllib.request.Request(
+                    'https://geolocation-db.com/json/',
+                    headers={'User-Agent': 'FBR-Invoice-Checker'}
+                )
+                
+                with urllib.request.urlopen(req, timeout=5) as response:
+                    geo_data = json.loads(response.read().decode())
+                    if 'latitude' in geo_data and 'longitude' in geo_data and geo_data['latitude'] is not None:
+                        # Store with high precision
+                        info['public_ip'] = geo_data.get('IPv4', 'Unknown')
+                        info['latitude'] = round(float(geo_data['latitude']), 8)
+                        info['longitude'] = round(float(geo_data['longitude']), 8)
+                        info['city'] = geo_data.get('city', 'Unknown')
+                        info['country'] = geo_data.get('country_name', 'Unknown')
+                        info['postal_code'] = geo_data.get('postal', 'Unknown')
+                        info['region'] = geo_data.get('state', 'Unknown')
+                        info['isp'] = 'Unknown'  # geolocation-db.com doesn't provide ISP
+                        info['asn'] = 'Unknown'  # geolocation-db.com doesn't provide ASN
+                        info['timezone'] = 'Unknown'  # geolocation-db.com doesn't provide timezone
+                        logging.info("✓ Geolocation fetched from geolocation-db.com (PRIMARY)")
+                        return info
+            except Exception as e:
+                logging.debug(f"geolocation-db.com failed, trying ipapi.co: {str(e)}")
+            
+            # Try ipapi.co as backup (higher precision, includes ISP/ASN)
             try:
                 req = urllib.request.Request(
                     'https://ipapi.co/json/',
@@ -210,9 +236,10 @@ class MACAuthenticator:
                         info['region'] = geo_data.get('region', 'Unknown')
                         info['asn'] = geo_data.get('asn', 'Unknown')
                         info['timezone'] = geo_data.get('timezone', 'Unknown')
+                        logging.info("✓ Geolocation fetched from ipapi.co (backup)")
                         return info
             except Exception as e:
-                logging.debug(f"ipapi.co failed, trying fallback: {str(e)}")
+                logging.debug(f"ipapi.co failed, trying ip-api.com: {str(e)}")
             
             # Fallback to ip-api.com
             req = urllib.request.Request(
@@ -234,6 +261,7 @@ class MACAuthenticator:
                     info['region'] = geo_data.get('regionName', 'Unknown')
                     info['asn'] = geo_data.get('as', 'Unknown')
                     info['timezone'] = geo_data.get('timezone', 'Unknown')
+                    logging.info("✓ Geolocation fetched from ip-api.com")
                 else:
                     info['latitude'] = 'Unknown'
                     info['longitude'] = 'Unknown'
