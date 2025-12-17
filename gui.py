@@ -16,6 +16,8 @@ import asyncio
 from pathlib import Path
 import os
 import sys
+import subprocess
+import platform
 
 try:
     from PIL import Image, ImageTk
@@ -23,6 +25,74 @@ try:
 except ImportError:
     PIL_AVAILABLE = False
     logging.warning("PIL not installed. Logo will not be displayed. Install with: pip install Pillow")
+
+
+def detect_available_browsers():
+    """
+    Detect available browsers on the system without any external dependencies.
+    Uses OS-specific checks to detect Chrome, Edge, and Firefox.
+    
+    Returns:
+        list: List of available browser names
+    """
+    available = []
+    system = platform.system()
+    
+    if system == "Windows":
+        # Check Chrome
+        chrome_paths = [
+            os.path.expandvars(r"%ProgramFiles%\Google\Chrome\Application\chrome.exe"),
+            os.path.expandvars(r"%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"),
+            os.path.expandvars(r"%LocalAppData%\Google\Chrome\Application\chrome.exe")
+        ]
+        for path in chrome_paths:
+            if os.path.exists(path):
+                available.append("Chrome")
+                break
+        
+        # Check Edge
+        edge_paths = [
+            os.path.expandvars(r"%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe"),
+            os.path.expandvars(r"%ProgramFiles%\Microsoft\Edge\Application\msedge.exe")
+        ]
+        for path in edge_paths:
+            if os.path.exists(path):
+                available.append("Edge")
+                break
+        
+        # Check Firefox
+        firefox_paths = [
+            os.path.expandvars(r"%ProgramFiles%\Mozilla Firefox\firefox.exe"),
+            os.path.expandvars(r"%ProgramFiles(x86)%\Mozilla Firefox\firefox.exe")
+        ]
+        for path in firefox_paths:
+            if os.path.exists(path):
+                available.append("Firefox")
+                break
+    
+    elif system == "Darwin":  # macOS
+        if os.path.exists("/Applications/Google Chrome.app"):
+            available.append("Chrome")
+        if os.path.exists("/Applications/Microsoft Edge.app"):
+            available.append("Edge")
+        if os.path.exists("/Applications/Firefox.app"):
+            available.append("Firefox")
+    
+    elif system == "Linux":
+        # Try to find browsers via which command
+        for browser, cmd in [("Chrome", "google-chrome"), ("Edge", "microsoft-edge"), ("Firefox", "firefox")]:
+            try:
+                result = subprocess.run(["which", cmd], capture_output=True, text=True, timeout=1)
+                if result.returncode == 0:
+                    available.append(browser)
+            except Exception:
+                pass
+    
+    # Always add Chrome as fallback if no browsers detected
+    if not available:
+        available.append("Chrome")
+    
+    return available
 
 # -----------------------------
 # Theme 1 - Modern Light Colors
@@ -92,6 +162,7 @@ class FBRInvoiceCheckerGUI:
         
         # Variables
         self.excel_file_path = tk.StringVar()
+        self.selected_browser = tk.StringVar()
         self.is_running = False
         self.is_paused = False
         self.worker_thread = None
@@ -297,9 +368,37 @@ class FBRInvoiceCheckerGUI:
         browse_btn.bind('<Enter>', lambda e: _on_enter(browse_btn, 'BrowseHover.TButton'))
         browse_btn.bind('<Leave>', lambda e: _on_leave(browse_btn, 'Browse.TButton'))
         
+        # Browser selection section
+        browser_frame = ttk.LabelFrame(main_frame, text="Browser Selection", padding="10", style='Panel.TLabelframe')
+        browser_frame.grid(row=(3 if license_frame_created else 2), column=0, sticky=(tk.W, tk.E), pady=(0, 15))
+        browser_frame.columnconfigure(1, weight=1)
+        
+        ttk.Label(browser_frame, text="Browser:", style='Normal.TLabel').grid(row=0, column=0, sticky=tk.W, padx=(0, 10))
+        
+        # Detect available browsers
+        available_browsers = detect_available_browsers()
+        self.selected_browser.set(available_browsers[0])  # Set default to first available
+        
+        browser_combo = ttk.Combobox(
+            browser_frame, 
+            textvariable=self.selected_browser,
+            values=available_browsers,
+            state='readonly',
+            width=30
+        )
+        browser_combo.grid(row=0, column=1, sticky=tk.W, padx=(0, 10))
+        
+        # Browser info label
+        browser_info = ttk.Label(
+            browser_frame,
+            text=f"({len(available_browsers)} browser(s) detected)",
+            style='Sub.TLabel'
+        )
+        browser_info.grid(row=0, column=2, sticky=tk.W)
+        
         # Control buttons - centered with proper spacing
         button_frame = ttk.Frame(main_frame, style='Main.TFrame')
-        button_frame.grid(row=(3 if license_frame_created else 2), column=0, pady=(0, 15))
+        button_frame.grid(row=(4 if license_frame_created else 3), column=0, pady=(0, 15))
         
         # Create inner frame for centered buttons
         inner_button_frame = ttk.Frame(button_frame)
@@ -629,30 +728,33 @@ class FBRInvoiceCheckerGUI:
         Runs in a separate thread.
         """
         try:
+            # Get selected browser
+            browser_choice = self.selected_browser.get()
+            
             # Initialize browser
-            self.log_message("🌐 Initializing Chrome browser...")
-            self.fbr_checker = FBRChecker()
+            self.log_message(f"🌐 Initializing {browser_choice} browser...")
+            self.fbr_checker = FBRChecker(browser=browser_choice)
             
             if not self.fbr_checker.initialize_browser():
-                self.log_message("❌ Error: Failed to initialize Chrome browser")
+                self.log_message(f"❌ Error: Failed to initialize {browser_choice} browser")
                 
                 # Extract actual error message for better debugging
                 error_detail = ""
                 if hasattr(self.fbr_checker, 'last_error') and self.fbr_checker.last_error:
                     error_detail = f"\n\nError Detail:\n{self.fbr_checker.last_error}"
                 
-                error_msg = f"""Failed to initialize Chrome browser.{error_detail}
+                error_msg = f"""Failed to initialize {browser_choice} browser.{error_detail}
 
 🔧 Troubleshooting Steps:
 
-1. Ensure Google Chrome is installed and up to date
-2. Close all Chrome browser windows and try again
-3. Check if antivirus is blocking ChromeDriver
+1. Ensure {browser_choice} is installed and up to date
+2. Close all {browser_choice} browser windows and try again
+3. Check if antivirus is blocking the browser driver
 4. Try running as Administrator
-5. Reinstall Chrome browser if issue persists
+5. Reinstall {browser_choice} browser if issue persists
 
-Note: Selenium should automatically download ChromeDriver.
-If error persists, the issue may be Chrome version compatibility."""
+Note: Selenium should automatically download the required driver.
+If error persists, try selecting a different browser from the dropdown."""
                 
                 messagebox.showerror("Browser Initialization Error", error_msg)
                 self.root.after(0, lambda: self.start_btn.config(state='normal'))
