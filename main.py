@@ -8,6 +8,7 @@ from tkinter import messagebox
 import logging
 import os
 import sys
+import multiprocessing
 from datetime import datetime
 from gui import FBRInvoiceCheckerGUI
 from license_manager import LicenseManager
@@ -96,22 +97,81 @@ def main():
     # Check for single instance - prevent multiple instances from running
     instance_lock = SingleInstance("FBR_Invoice_Checker_App")
     if not instance_lock.acquire_lock():
-        logging.error("Another instance of the application is already running")
+        logging.warning("Another instance detected")
         
-        # Show error message to user
-        root = tk.Tk()
-        root.withdraw()
-        root.attributes('-topmost', True)
-        root.lift()
-        root.focus_force()
-        messagebox.showerror(
-            "Application Already Running",
-            "⚠️ ANOTHER INSTANCE IS ALREADY RUNNING\n\n"
-            "Only one instance of FBR Invoice Checker can run at a time.\n\n"
-            "Please close the existing instance before starting a new one."
-        )
-        root.destroy()
-        sys.exit(1)
+        # Get PID of running instance
+        old_pid = instance_lock.get_lock_pid()
+        
+        if old_pid:
+            # Check if old instance has visible window (foreground vs background)
+            is_foreground = instance_lock.has_visible_window(old_pid)
+            
+            if is_foreground:
+                # OLD INSTANCE IS FOREGROUND - Don't allow new instance
+                logging.info("Old instance has visible window - blocking new instance")
+                root = tk.Tk()
+                root.withdraw()
+                root.attributes('-topmost', True)
+                root.lift()
+                root.focus_force()
+                messagebox.showwarning(
+                    "Application Already Running",
+                    "⚠️ FBR INVOICE CHECKER IS ALREADY OPEN\n\n"
+                    "The application is already running with a visible window.\n\n"
+                    "Please use the existing window or close it first.\n\n"
+                    "💡 Tip: Check your taskbar for the running instance."
+                )
+                root.destroy()
+                logging.info("User notified - exiting second instance")
+                sys.exit(0)
+            else:
+                # OLD INSTANCE IS BACKGROUND/STUCK - Auto-close it
+                logging.info(f"Old instance (PID {old_pid}) is background/stuck - auto-closing")
+                if instance_lock.kill_process(old_pid):
+                    # Wait a moment for process to die
+                    import time
+                    time.sleep(1)
+                    
+                    # Try to acquire lock again
+                    if instance_lock.acquire_lock():
+                        logging.info("✓ Successfully auto-closed background instance and acquired lock")
+                        # Continue with normal startup - no dialog needed
+                    else:
+                        logging.error("Failed to acquire lock after terminating background instance")
+                        root = tk.Tk()
+                        root.withdraw()
+                        root.attributes('-topmost', True)
+                        messagebox.showerror(
+                            "Startup Error",
+                            "❌ Failed to start after closing background instance.\n\n"
+                            "Please restart your computer if this persists."
+                        )
+                        root.destroy()
+                        sys.exit(1)
+                else:
+                    logging.error(f"Failed to terminate background instance (PID: {old_pid})")
+                    root = tk.Tk()
+                    root.withdraw()
+                    root.attributes('-topmost', True)
+                    messagebox.showerror(
+                        "Startup Error",
+                        "❌ Cannot close the background instance.\n\n"
+                        "Please close 'FBR Invoice Checker' from Task Manager."
+                    )
+                    root.destroy()
+                    sys.exit(1)
+        else:
+            logging.error("Cannot determine old instance PID")
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes('-topmost', True)
+            messagebox.showerror(
+                "Startup Error",
+                "❌ Another instance is running but cannot be detected.\n\n"
+                "Please close all FBR Invoice Checker windows and try again."
+            )
+            root.destroy()
+            sys.exit(1)
     
     logging.info("✓ Single instance lock acquired - application starting")
     
@@ -219,4 +279,7 @@ def main():
 
 
 if __name__ == "__main__":
+    # CRITICAL: Prevent spawning new processes in PyInstaller .exe
+    # Required for undetected-chromedriver to work in frozen executables
+    multiprocessing.freeze_support()
     main()
