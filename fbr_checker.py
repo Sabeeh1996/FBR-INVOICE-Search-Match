@@ -454,25 +454,31 @@ class FBRChecker:
         """
         try:
             from datetime import datetime
-            import pandas as pd
+            
+            logging.info(f"Parsing date: '{date_string}' (type: {type(date_string).__name__})")
             
             # Handle datetime objects directly
             if isinstance(date_string, datetime):
                 parsed_date = date_string
+                logging.info(f"Date is datetime object: {parsed_date}")
             elif hasattr(date_string, 'to_pydatetime'):  # pandas Timestamp
                 parsed_date = date_string.to_pydatetime()
+                logging.info(f"Date is pandas Timestamp, converted: {parsed_date}")
             else:
                 # Convert to string and try parsing
                 date_str = str(date_string).strip()
+                logging.info(f"Date as string: '{date_str}'")
                 
-                # Try multiple date formats
+                # Try multiple date formats (most common first)
                 date_formats = [
+                    '%Y-%m-%d %H:%M:%S',  # 2025-07-07 00:00:00 (Excel datetime)
+                    '%Y-%m-%d',           # 2025-04-07
                     '%d-%b-%Y',           # 07-Apr-2025
                     '%d-%B-%Y',           # 07-April-2025
-                    '%Y-%m-%d',           # 2025-04-07
                     '%d/%m/%Y',           # 07/04/2025
                     '%m/%d/%Y',           # 04/07/2025
-                    '%Y-%m-%d %H:%M:%S',  # 2025-07-07 00:00:00
+                    '%d-%m-%Y',           # 07-04-2025
+                    '%d.%m.%Y',           # 07.04.2025
                     '%Y-%m-%d %H:%M:%S.%f',  # 2025-07-07 00:00:00.000
                 ]
                 
@@ -480,6 +486,7 @@ class FBRChecker:
                 for date_format in date_formats:
                     try:
                         parsed_date = datetime.strptime(date_str, date_format)
+                        logging.info(f"Successfully parsed with format '{date_format}': {parsed_date}")
                         break
                     except ValueError:
                         continue
@@ -487,27 +494,35 @@ class FBRChecker:
                 # If all formats fail, try pandas parser as last resort
                 if not parsed_date:
                     try:
+                        import pandas as pd
                         parsed_date = pd.to_datetime(date_str, errors='coerce')
                         if pd.isna(parsed_date):
+                            logging.warning(f"Pandas parser returned NaT for: {date_str}")
                             parsed_date = None
                         else:
                             parsed_date = parsed_date.to_pydatetime()
-                    except Exception:
+                            logging.info(f"Successfully parsed with pandas: {parsed_date}")
+                    except Exception as pd_err:
+                        logging.warning(f"Pandas parser failed: {str(pd_err)}")
                         pass
             
             if parsed_date:
+                formatted_date = parsed_date.strftime('%d-%b-%Y')  # Format: 11-Nov-2025
+                logging.info(f"✓ Date parsed successfully: {formatted_date}")
                 return {
                     'day': parsed_date.day,
                     'month': parsed_date.month,
                     'year': parsed_date.year,
-                    'formatted': parsed_date.strftime('%d-%b-%Y')  # Format: 11-Nov-2025
+                    'formatted': formatted_date
                 }
             else:
-                logging.warning(f"Could not parse date: {date_string}")
+                logging.error(f"❌ Could not parse date: {date_string} (tried all formats)")
                 return None
                 
         except Exception as e:
-            logging.error(f"Error parsing date {date_string}: {str(e)}")
+            logging.error(f"❌ Exception parsing date {date_string}: {str(e)}")
+            import traceback
+            logging.error(traceback.format_exc())
             return None
     
     def click_annex_a_tab(self):
