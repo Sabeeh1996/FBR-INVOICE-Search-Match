@@ -196,6 +196,9 @@ class FBRInvoiceCheckerGUI:
         # Statistics
         self.total_invoices = 0
         self.processed_count = 0
+        self.verified_count = 0
+        self.already_verified_count = 0
+        self.failed_count = 0
         self.claimed_count = 0
         self.not_claimed_count = 0
         self.error_count = 0
@@ -420,7 +423,7 @@ class FBRInvoiceCheckerGUI:
         
         self.verify_btn = ttk.Button(
             inner_button_frame, 
-            text="▶ Verify Invoices", 
+            text="▶ Claim Invoice FBR", 
             command=self.start_verification,
             width=18,
             state='disabled',
@@ -430,9 +433,9 @@ class FBRInvoiceCheckerGUI:
         
         self.load_stwh_btn = ttk.Button(
             inner_button_frame, 
-            text="📥 LOAD STWH", 
+            text="📥 LOAD STWH/Debit Note", 
             command=self.start_load_stwh,
-            width=18,
+            width=20,
             state='disabled',
             style='Start.TButton'
         )
@@ -773,7 +776,7 @@ Note: Selenium should automatically download the required driver."""
                 return
             
             self.log_message("✅ FBR portal opened successfully!")
-            self.log_message("📝 Please select an Excel file and click 'Verify Invoices' or 'LOAD STWH' to start")
+            self.log_message("📝 Please select an Excel file and click 'Claim Invoice FBR' or 'LOAD STWH/Debit Note' to start")
             
             # Enable verify and load stwh buttons after successful browser initialization
             self.root.after(0, lambda: self.verify_btn.config(state='normal'))
@@ -811,10 +814,13 @@ Note: Selenium should automatically download the required driver."""
         self.current_mode = 'verify'
         
         # Update workflow indicator
-        self.root.after(0, lambda: self.workflow_indicator.config(text="▶ Verify Invoices", fg="#27AE60"))
+        self.root.after(0, lambda: self.workflow_indicator.config(text="▶ Claim Invoice FBR", fg="#27AE60"))
         
         # Reset statistics
         self.processed_count = 0
+        self.verified_count = 0
+        self.already_verified_count = 0
+        self.failed_count = 0
         self.claimed_count = 0
         self.not_claimed_count = 0
         self.error_count = 0
@@ -858,10 +864,13 @@ Note: Selenium should automatically download the required driver."""
         self.current_mode = 'stwh'
         
         # Update workflow indicator
-        self.root.after(0, lambda: self.workflow_indicator.config(text="📥 LOAD STWH", fg="#3498DB"))
+        self.root.after(0, lambda: self.workflow_indicator.config(text="📥 LOAD STWH/Debit Note", fg="#3498DB"))
         
         # Reset statistics
         self.processed_count = 0
+        self.verified_count = 0
+        self.already_verified_count = 0
+        self.failed_count = 0
         self.claimed_count = 0
         self.not_claimed_count = 0
         self.error_count = 0
@@ -877,7 +886,7 @@ Note: Selenium should automatically download the required driver."""
         self.worker_thread = threading.Thread(target=self.load_stwh_process, daemon=True)
         self.worker_thread.start()
         
-        self.log_message("🚀 Starting LOAD STWH process...")
+        self.log_message("🚀 Starting LOAD STWH/Debit Note process...")
     
     def pause_processing(self):
         """
@@ -907,7 +916,7 @@ Note: Selenium should automatically download the required driver."""
             self.log_message("▶️ Resuming invoice verification...")
         elif self.current_mode == 'stwh':
             self.worker_thread = threading.Thread(target=self.load_stwh_process, daemon=True)
-            self.log_message("▶️ Resuming LOAD STWH process...")
+            self.log_message("▶️ Resuming LOAD STWH/Debit Note process...")
         else:
             messagebox.showerror("Error", "Unknown processing mode. Please restart.")
             return
@@ -1005,11 +1014,17 @@ Note: Selenium should automatically download the required driver."""
             self.log_message("=" * 80)
             self.log_message("EXCEL COLUMNS: Sr.No | Source | Name | Registration No | Number | Date")
             self.log_message("=" * 80)
+            self.log_message(f"📊 PROCESSING PLAN:")
+            self.log_message(f"   Total invoices in Excel: {self.total_invoices}")
+            self.log_message(f"   Starting from row: {invoices[start_index]['row'] if start_index < len(invoices) else 'N/A'}")
+            self.log_message(f"   Invoices to process: {len(invoices[start_index:])}")
+            self.log_message("=" * 80)
             
             # Process each invoice starting from start_index
-            
+            processed_count = 0
             for invoice_data in invoices[start_index:]:
                 invoice_start_time = time.time()  # Track individual invoice start time
+                processed_count += 1
                 
                 # Check if stopped
                 if not self.is_running:
@@ -1023,6 +1038,8 @@ Note: Selenium should automatically download the required driver."""
                 registration_no = invoice_data['seller_registration_no']
                 seller_name = invoice_data.get('seller_name', 'N/A')
                 number = invoice_data.get('number', 'N/A')
+                
+                self.log_message(f"\n▶️ Processing {processed_count}/{len(invoices[start_index:])} | Row {row_number} | Invoice: {number}")
                 date = invoice_data.get('date', 'N/A')
                 sales_tax_fed_st_mode = invoice_data.get('sales_tax_fed_st_mode', 'N/A')
                 
@@ -1045,12 +1062,19 @@ Note: Selenium should automatically download the required driver."""
                         value_of_purchases = result.get('value_of_purchases', 'N/A')
                         fbr_sales_tax = result.get('fbr_sales_tax', 'N/A')
                         
-                        # Check if browser was closed by user
+                        # Check if browser was closed by user (only stop if browser is actually gone)
                         if 'Browser Closed' in status:
-                            self.log_message(f"⚠️ Browser was closed by user. Stopping processing...")
-                            self.excel_handler.update_invoice_status(row_number, status, value_of_purchases, fbr_sales_tax)
-                            self.log_message(f"✅ Progress saved to Excel file up to row {row_number}")
-                            break  # Exit the loop gracefully
+                            # Verify browser is actually closed before stopping
+                            if not self.fbr_checker.is_browser_alive():
+                                self.log_message(f"⚠️ Browser was closed. Stopping processing...")
+                                self.log_message(f"📊 Processed {processed_count} out of {len(invoices[start_index:])} invoices before stopping")
+                                self.excel_handler.update_invoice_status(row_number, status, value_of_purchases, fbr_sales_tax)
+                                self.log_message(f"✅ Progress saved to Excel file up to row {row_number}")
+                                break  # Exit the loop gracefully
+                            else:
+                                # Browser is still alive, just a connection issue - continue
+                                self.log_message(f"⚠️ Connection issue, but browser is alive. Continuing...")
+                                status = "⚠️ Connection Error - Retrying"
                     else:
                         # Backwards compatibility: if result is a string
                         status = result
@@ -1070,6 +1094,14 @@ Note: Selenium should automatically download the required driver."""
                 
                 # Update statistics
                 self.processed_count += 1
+                
+                # Track verification results
+                if "✅" in status or "Verified" in status:
+                    self.verified_count += 1
+                elif "Already Verified" in status or "Already Claimed" in status:
+                    self.already_verified_count += 1
+                elif "❌" in status or "Error" in status or "Failed" in status:
+                    self.failed_count += 1
                 
                 # Check 'Not Claimed' first because it contains the substring 'Claimed'
                 # (e.g. "Not Claimed" contains "Claimed") which would otherwise
@@ -1125,6 +1157,16 @@ Note: Selenium should automatically download the required driver."""
                 delay = random.uniform(0.25, 0.5)
                 self.log_message(f"⏱️ Waiting {delay:.1f}s before next invoice...")
                 time.sleep(delay)
+            
+            # Log completion stats
+            self.log_message("=" * 80)
+            self.log_message(f"📊 PROCESSING COMPLETED:")
+            self.log_message(f"   Total invoices in Excel: {self.total_invoices}")
+            self.log_message(f"   Invoices processed in this run: {processed_count}")
+            self.log_message(f"   Successfully verified: {self.verified_count}")
+            self.log_message(f"   Already verified: {self.already_verified_count}")
+            self.log_message(f"   Failed verifications: {self.failed_count}")
+            self.log_message("=" * 80)
             
             # Close browser (optional - user can keep it open for manual work)
             # if self.fbr_checker:
