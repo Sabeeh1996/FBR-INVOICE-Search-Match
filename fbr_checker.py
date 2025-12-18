@@ -79,9 +79,9 @@ class FBRChecker:
             options.add_experimental_option("prefs", prefs)
             
             # Initialize undetected Chrome driver
-            # version_main=None allows it to auto-detect Chrome version
+            # version_main=142 matches the current Chrome browser version
             # use_subprocess=False prevents multiprocessing issues on Windows
-            self.driver = uc.Chrome(options=options, version_main=None)
+            self.driver = uc.Chrome(options=options, version_main=142)
             
             # Additional JavaScript injections for complete stealth
             self.driver.execute_script("""
