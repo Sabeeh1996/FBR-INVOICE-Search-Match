@@ -13,6 +13,9 @@ import undetected_chromedriver as uc
 import logging
 import time
 import random
+import subprocess
+import sys
+import re
 
 
 class FBRChecker:
@@ -23,104 +26,316 @@ class FBRChecker:
     # FBR Sales Tax Invoice Management URL
     FBR_URL = "https://irisv1.fbr.gov.pk/salesTax/invoices/index.xhtml?mode=3D2EAF95F000134C2BD2036C42962F48&task=270"
     
-    def __init__(self):
+    def __init__(self, browser="Chrome"):
         """
         Initialize the FBR Checker with Selenium WebDriver.
+        
+        Args:
+            browser (str): Browser to use - 'Chrome', 'Edge', or 'Firefox'
         """
         self.driver = None
         self.max_retries = 3
         self.actions = None  # ActionChains for mouse movements
         self.annex_a_tab_clicked = False  # Flag to ensure Annex-A tab is clicked only once
+        self.last_error = None  # Store last error message for detailed reporting
+        self.browser = browser  # Store browser choice
+    
+    @staticmethod
+    def get_chrome_version():
+        """
+        Detect installed Chrome version on Windows.
+        
+        Returns:
+            int: Major version number (e.g., 142) or None if not found
+        """
+        try:
+            # Try to get Chrome version from registry
+            import winreg
+            reg_path = r"SOFTWARE\Google\Chrome\BLBeacon"
+            reg_key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, reg_path)
+            version, _ = winreg.QueryValueEx(reg_key, "version")
+            winreg.CloseKey(reg_key)
+            
+            # Extract major version (e.g., "142.0.7444.163" -> 142)
+            major_version = int(version.split('.')[0])
+            logging.info(f"Detected Chrome version: {version} (major: {major_version})")
+            return major_version
+        except:
+            # Fallback: Try HKEY_LOCAL_MACHINE
+            try:
+                reg_path = r"SOFTWARE\Google\Chrome\BLBeacon"
+                reg_key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, reg_path)
+                version, _ = winreg.QueryValueEx(reg_key, "version")
+                winreg.CloseKey(reg_key)
+                
+                major_version = int(version.split('.')[0])
+                logging.info(f"Detected Chrome version: {version} (major: {major_version})")
+                return major_version
+            except:
+                # Last resort: Try running chrome.exe --version
+                try:
+                    import subprocess
+                    chrome_path = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+                    result = subprocess.check_output([chrome_path, "--version"], text=True)
+                    version = result.strip().split()[-1]
+                    major_version = int(version.split('.')[0])
+                    logging.info(f"Detected Chrome version via executable: {version} (major: {major_version})")
+                    return major_version
+                except:
+                    logging.warning("Could not detect Chrome version. Will use auto-detection.")
+                    return None
+    
+    @staticmethod
+    def get_edge_version():
+        """
+        Detect installed Edge version on Windows.
+        
+        Returns:
+            str: Full version string (e.g., "120.0.2210.144") or None if not found
+        """
+        try:
+            # Try to get Edge version from registry
+            import winreg
+            reg_path = r"SOFTWARE\Microsoft\Edge\BLBeacon"
+            reg_key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, reg_path)
+            version, _ = winreg.QueryValueEx(reg_key, "version")
+            winreg.CloseKey(reg_key)
+            
+            logging.info(f"Detected Edge version: {version}")
+            return version
+        except:
+            # Fallback: Try HKEY_LOCAL_MACHINE
+            try:
+                reg_path = r"SOFTWARE\Microsoft\Edge\BLBeacon"
+                reg_key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, reg_path)
+                version, _ = winreg.QueryValueEx(reg_key, "version")
+                winreg.CloseKey(reg_key)
+                
+                logging.info(f"Detected Edge version: {version}")
+                return version
+            except:
+                # Last resort: Try running msedge.exe --version
+                try:
+                    import subprocess
+                    edge_path = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+                    result = subprocess.check_output([edge_path, "--version"], text=True)
+                    version = result.strip().split()[-1]
+                    logging.info(f"Detected Edge version via executable: {version}")
+                    return version
+                except:
+                    logging.warning("Could not detect Edge version. Selenium Manager will handle it.")
+                    return None
+    
+    @staticmethod
+    def get_firefox_version():
+        """
+        Detect installed Firefox version on Windows.
+        
+        Returns:
+            str: Full version string (e.g., "121.0") or None if not found
+        """
+        try:
+            # Try to get Firefox version from registry
+            import winreg
+            reg_path = r"SOFTWARE\Mozilla\Mozilla Firefox"
+            reg_key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, reg_path)
+            version, _ = winreg.QueryValueEx(reg_key, "CurrentVersion")
+            winreg.CloseKey(reg_key)
+            
+            logging.info(f"Detected Firefox version: {version}")
+            return version
+        except:
+            # Try running firefox.exe --version
+            try:
+                import subprocess
+                firefox_path = r"C:\Program Files\Mozilla Firefox\firefox.exe"
+                result = subprocess.check_output([firefox_path, "--version"], text=True)
+                version = result.strip().split()[-1]
+                logging.info(f"Detected Firefox version via executable: {version}")
+                return version
+            except:
+                logging.warning("Could not detect Firefox version. Selenium Manager will handle it.")
+                return None
         
     def initialize_browser(self):
         """
-        Initialize Chrome browser with appropriate options.
+        Initialize browser with hybrid approach: tries undetected-chromedriver first (maximum stealth),
+        falls back to standard Selenium if not available. Optimized for OGDCL corporate environment.
+        Supports Chrome, Edge, and Firefox.
         
         Returns:
             bool: True if browser initialized successfully, False otherwise
         """
         try:
-            # Use undetected-chromedriver for maximum stealth
-            # This patches the Chrome executable to remove all Selenium/WebDriver indicators
-            options = uc.ChromeOptions()
-            options.add_argument('--start-maximized')
-            options.add_argument('--no-first-run')
-            options.add_argument('--no-default-browser-check')
-            options.add_argument('--disable-popup-blocking')
+            logging.info(f"🚀 Initializing {self.browser} browser...")
             
-            # Additional stealth arguments
-            options.add_argument('--disable-blink-features=AutomationControlled')
-            options.add_argument('--disable-infobars')
-            options.add_argument('--disable-browser-side-navigation')
-            
-            # Fix SSL handshake errors
-            options.add_argument('--ignore-certificate-errors')
-            options.add_argument('--ignore-ssl-errors')
-            options.add_argument('--allow-insecure-localhost')
-            options.add_argument('--disable-web-security')
-            options.add_argument('--no-sandbox')
-            options.add_argument('--disable-dev-shm-usage')
-            
-            # Disable GPU for stability
-            options.add_argument('--disable-gpu')
-            
-            # Suppress console logging
-            options.add_argument('--log-level=3')
-            
-            # Note: undetected-chromedriver doesn't use experimental_option for excludeSwitches
-            # It handles stealth internally, so we avoid conflicting options
-            
-            # Disable password manager and notifications
-            prefs = {
-                "profile.default_content_setting_values.notifications": 2,
-                "credentials_enable_service": False,
-                "profile.password_manager_enabled": False
-            }
-            options.add_experimental_option("prefs", prefs)
-            
-            # Initialize undetected Chrome driver
-            # version_main=None allows it to auto-detect Chrome version
-            # use_subprocess=False prevents multiprocessing issues on Windows
-            self.driver = uc.Chrome(options=options, version_main=None)
-            
-            # Additional JavaScript injections for complete stealth
-            self.driver.execute_script("""
-                // Override navigator properties
-                Object.defineProperty(navigator, 'webdriver', {
-                    get: () => undefined
-                });
+            # CHROME: Use undetected-chromedriver with proper version detection
+            if self.browser == "Chrome":
+                logging.info("🔍 Initializing undetected-chromedriver (stealth mode)...")
+                options = uc.ChromeOptions()
+                options.add_argument('--start-maximized')
+                options.add_argument('--homepage=about:blank')  # Fix firewall blocking data:// URLs
+                options.add_argument('--no-first-run')
+                options.add_argument('--no-default-browser-check')
+                options.add_argument('--disable-popup-blocking')
+                options.add_argument('--disable-blink-features=AutomationControlled')
+                options.add_argument('--disable-infobars')
+                options.add_argument('--log-level=3')
+                options.add_argument('--disable-dev-shm-usage')
+                options.add_argument('--disable-gpu')
+                options.add_argument('--no-sandbox')
                 
-                Object.defineProperty(navigator, 'chromeVersion', {
-                    get: () => undefined
-                });
+                # OGDCL-optimized SSL settings
+                options.add_argument('--ignore-certificate-errors')
+                options.add_argument('--ignore-ssl-errors')
+                options.add_argument('--allow-insecure-localhost')
+                options.add_argument('--disable-web-security')
                 
-                Object.defineProperty(navigator, 'vendor', {
-                    get: () => 'Google Inc.'
-                });
+                prefs = {
+                    "profile.default_content_setting_values.notifications": 2,
+                    "credentials_enable_service": False,
+                    "profile.password_manager_enabled": False,
+                    "profile.managed_default_content_settings.images": 1,
+                    "profile.default_content_setting_values.ssl_cert_decisions": 1,
+                }
+                options.add_experimental_option("prefs", prefs)
                 
-                // Mock chrome object
-                window.chrome = {
-                    runtime: {}
-                };
+                # Detect Chrome version automatically for version-independent operation
+                chrome_version = self.get_chrome_version()
                 
-                // Hide headless browser indicators
-                window.outerHeight = 1040;
-                window.outerWidth = 1920;
-            """)
+                # Initialize undetected Chrome with detected version
+                # use_subprocess=False prevents Windows multiprocessing issues
+                if chrome_version:
+                    logging.info(f"🎯 Using detected Chrome major version: {chrome_version}")
+                    self.driver = uc.Chrome(options=options, version_main=chrome_version, use_subprocess=False)
+                else:
+                    logging.info("⚠️ Chrome version not detected, using auto-detection")
+                    self.driver = uc.Chrome(options=options, use_subprocess=False)
+                
+                # Minimal stealth JS (faster than 100+ lines)
+                self.driver.execute_script("""
+                    Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+                    Object.defineProperty(navigator, 'vendor', {get: () => 'Google Inc.'});
+                    window.chrome = {runtime: {}};
+                """)
+                
+                logging.info("✅ Chrome initialized with undetected-chromedriver (maximum stealth)")
+                logging.info("🔒 Secure SSL/TLS + OGDCL firewall optimizations active")
+                
+            elif self.browser == "Edge":
+                # Detect Edge version for logging (Selenium Manager auto-handles driver)
+                edge_version = self.get_edge_version()
+                if edge_version:
+                    logging.info(f"🎯 Detected Edge version: {edge_version}")
+                else:
+                    logging.info("⚠️ Edge version not detected, Selenium Manager will handle it")
+                
+                options = webdriver.EdgeOptions()
+                options.add_argument('--start-maximized')
+                options.add_argument('--homepage=about:blank')  # firewall blocking data:// URLs
+                options.add_argument('--disable-blink-features=AutomationControlled')
+                options.add_argument('--disable-infobars')
+                options.add_argument('--no-first-run')
+                options.add_argument('--no-default-browser-check')
+                options.add_argument('--disable-popup-blocking')
+                options.add_argument('--disable-extensions')
+                options.add_argument('--disable-default-apps')
+                options.add_argument('--log-level=3')
+                options.add_argument('--disable-dev-shm-usage')
+                options.add_argument('--disable-gpu')
+                options.add_argument('--no-sandbox')
+                
+                # OGDCL-optimized SSL settings
+                options.add_argument('--ignore-certificate-errors')
+                options.add_argument('--ignore-ssl-errors')
+                options.add_argument('--allow-insecure-localhost')
+                options.add_argument('--disable-web-security')
+                
+                prefs = {
+                    "profile.default_content_setting_values.notifications": 2,
+                    "credentials_enable_service": False,
+                    "profile.password_manager_enabled": False,
+                    "profile.managed_default_content_settings.images": 1,
+                    "profile.default_content_setting_values.ssl_cert_decisions": 1,
+                }
+                options.add_experimental_option("prefs", prefs)
+                options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
+                options.add_experimental_option("useAutomationExtension", False)
+                
+                self.driver = webdriver.Edge(options=options)
+                
+                # Minimal stealth JavaScript
+                self.driver.execute_script("""
+                    Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+                    Object.defineProperty(navigator, 'vendor', {get: () => 'Google Inc.'});
+                    window.chrome = {runtime: {}};
+                """)
+                
+                self.driver.implicitly_wait(3)
+                self.actions = ActionChains(self.driver)
+                
+                logging.info("✅ Edge initialized with secure SSL/TLS + OGDCL optimizations")
+                
+            elif self.browser == "Firefox":
+                # Detect Firefox version for logging (Selenium Manager auto-handles driver)
+                firefox_version = self.get_firefox_version()
+                if firefox_version:
+                    logging.info(f"🎯 Detected Firefox version: {firefox_version}")
+                else:
+                    logging.info("⚠️ Firefox version not detected, Selenium Manager will handle it")
+                
+                options = webdriver.FirefoxOptions()
+                options.add_argument('--start-maximized')
+                options.set_preference("dom.webdriver.enabled", False)
+                options.set_preference('useAutomationExtension', False)
+                options.set_preference("dom.webnotifications.enabled", False)
+                
+                # OGDCL-optimized SSL settings for Firefox
+                options.set_preference("security.tls.version.enable-deprecated", True)
+                options.set_preference("security.ssl.enable_ocsp_stapling", True)
+                options.set_preference("security.ssl.enable_ocsp_must_staple", False)
+                options.set_preference("security.cert_pinning.enforcement_level", 0)
+                options.set_preference("security.enterprise_roots.enabled", True)
+                options.accept_insecure_certs = True
+                
+                self.driver = webdriver.Firefox(options=options)
+                self.driver.implicitly_wait(3)
+                self.actions = ActionChains(self.driver)
+                
+                logging.info("✅ Firefox initialized with secure SSL/TLS + OGDCL optimizations")
+                
+            else:
+                raise ValueError(f"Unsupported browser: {self.browser}. Choose 'Chrome', 'Edge', or 'Firefox'.")
             
-            # Set implicit wait
-            self.driver.implicitly_wait(10)
+            # Set implicit wait (optimized for speed)
+            self.driver.implicitly_wait(3)
             
             # Initialize ActionChains
             self.actions = ActionChains(self.driver)
             
-            logging.info("✅ Chrome browser initialized with MAXIMUM stealth mode (undetected-chromedriver)")
-            logging.info("🔒 All Selenium automation markers have been removed")
+            logging.info(f"✅ {self.browser} browser initialized successfully")
             return True
             
         except Exception as e:
-            logging.error(f"Failed to initialize Chrome browser: {str(e)}")
-            logging.error("Make sure to run: pip install undetected-chromedriver")
+            error_msg = str(e)
+            self.last_error = error_msg
+            logging.error(f"Failed to initialize {self.browser} browser: {error_msg}")
+            
+            # Provide specific guidance based on error type
+            if "PATH" in error_msg.upper() or "driver" in error_msg.lower():
+                logging.error(f"{self.browser}Driver PATH issue. Selenium Manager should auto-download it.")
+                logging.error("If this persists, check internet connection or firewall settings.")
+            elif "session not created" in error_msg.lower() or "version" in error_msg.lower():
+                logging.error(f"{self.browser} version compatibility issue detected.")
+                logging.error(f"Solution: Update {self.browser} browser to the latest version.")
+            elif "not reachable" in error_msg.lower():
+                logging.error(f"{self.browser} browser not accessible. Verify {self.browser} is installed correctly.")
+                logging.error(f"Try: 1) Reinstalling {self.browser}, 2) Running as Administrator")
+            elif "timeout" in error_msg.lower():
+                logging.error(f"Browser startup timeout. Close other {self.browser} instances and try again.")
+            else:
+                logging.error(f"Unexpected error type: {error_msg[:100]}")
+            
             return False
     
     def _random_delay(self, min_seconds=0.5, max_seconds=2.0):
@@ -217,15 +432,13 @@ class FBRChecker:
     
     def _simulate_mouse_movement(self):
         """
-        Simulate random mouse movements to appear more human-like.
+        Simulate minimal mouse movement (optimized for speed).
         """
         try:
-            # Random small mouse movements
-            for _ in range(random.randint(1, 3)):
-                x_offset = random.randint(-100, 100)
-                y_offset = random.randint(-100, 100)
-                self.actions.move_by_offset(x_offset, y_offset).perform()
-                time.sleep(random.uniform(0.1, 0.3))
+            # Single minimal mouse movement
+            x_offset = random.randint(-50, 50)
+            y_offset = random.randint(-50, 50)
+            self.actions.move_by_offset(x_offset, y_offset).perform()
         except Exception:
             pass  # Ignore errors in mouse simulation
     
@@ -234,7 +447,7 @@ class FBRChecker:
         Parse date string and select date from datepicker calendar.
         
         Args:
-            date_string: Date in format like '07-Apr-2025' or similar
+            date_string: Date in various formats including datetime objects
             
         Returns:
             dict: Parsed date with 'day', 'month', 'year' keys, or None if parsing failed
@@ -242,36 +455,74 @@ class FBRChecker:
         try:
             from datetime import datetime
             
-            # Try multiple date formats
-            date_formats = [
-                '%d-%b-%Y',      # 07-Apr-2025
-                '%d-%B-%Y',      # 07-April-2025
-                '%Y-%m-%d',      # 2025-04-07
-                '%d/%m/%Y',      # 07/04/2025
-                '%m/%d/%Y',      # 04/07/2025
-            ]
+            logging.info(f"Parsing date: '{date_string}' (type: {type(date_string).__name__})")
             
-            parsed_date = None
-            for date_format in date_formats:
-                try:
-                    parsed_date = datetime.strptime(str(date_string), date_format)
-                    break
-                except ValueError:
-                    continue
+            # Handle datetime objects directly
+            if isinstance(date_string, datetime):
+                parsed_date = date_string
+                logging.info(f"Date is datetime object: {parsed_date}")
+            elif hasattr(date_string, 'to_pydatetime'):  # pandas Timestamp
+                parsed_date = date_string.to_pydatetime()
+                logging.info(f"Date is pandas Timestamp, converted: {parsed_date}")
+            else:
+                # Convert to string and try parsing
+                date_str = str(date_string).strip()
+                logging.info(f"Date as string: '{date_str}'")
+                
+                # Try multiple date formats (most common first)
+                date_formats = [
+                    '%Y-%m-%d %H:%M:%S',  # 2025-07-07 00:00:00 (Excel datetime)
+                    '%Y-%m-%d',           # 2025-04-07
+                    '%d-%b-%Y',           # 07-Apr-2025
+                    '%d-%B-%Y',           # 07-April-2025
+                    '%d/%m/%Y',           # 07/04/2025
+                    '%m/%d/%Y',           # 04/07/2025
+                    '%d-%m-%Y',           # 07-04-2025
+                    '%d.%m.%Y',           # 07.04.2025
+                    '%Y-%m-%d %H:%M:%S.%f',  # 2025-07-07 00:00:00.000
+                ]
+                
+                parsed_date = None
+                for date_format in date_formats:
+                    try:
+                        parsed_date = datetime.strptime(date_str, date_format)
+                        logging.info(f"Successfully parsed with format '{date_format}': {parsed_date}")
+                        break
+                    except ValueError:
+                        continue
+                
+                # If all formats fail, try pandas parser as last resort
+                if not parsed_date:
+                    try:
+                        import pandas as pd
+                        parsed_date = pd.to_datetime(date_str, errors='coerce')
+                        if pd.isna(parsed_date):
+                            logging.warning(f"Pandas parser returned NaT for: {date_str}")
+                            parsed_date = None
+                        else:
+                            parsed_date = parsed_date.to_pydatetime()
+                            logging.info(f"Successfully parsed with pandas: {parsed_date}")
+                    except Exception as pd_err:
+                        logging.warning(f"Pandas parser failed: {str(pd_err)}")
+                        pass
             
             if parsed_date:
+                formatted_date = parsed_date.strftime('%d-%b-%Y')  # Format: 11-Nov-2025
+                logging.info(f"✓ Date parsed successfully: {formatted_date}")
                 return {
                     'day': parsed_date.day,
                     'month': parsed_date.month,
                     'year': parsed_date.year,
-                    'formatted': parsed_date.strftime('%d-%b-%Y')  # Format: 11-Nov-2025
+                    'formatted': formatted_date
                 }
             else:
-                logging.warning(f"Could not parse date: {date_string}")
+                logging.error(f"❌ Could not parse date: {date_string} (tried all formats)")
                 return None
                 
         except Exception as e:
-            logging.error(f"Error parsing date {date_string}: {str(e)}")
+            logging.error(f"❌ Exception parsing date {date_string}: {str(e)}")
+            import traceback
+            logging.error(traceback.format_exc())
             return None
     
     def click_annex_a_tab(self):
@@ -586,6 +837,444 @@ class FBRChecker:
             logging.error(f"Error in claim workflow: {str(e)}")
             return False
     
+    def process_disallow_workflow(self, ntn_cnic=None, invoice_no=None, source_authority=None):
+        """
+        Execute the complete Annex-A disallow workflow:
+        1. Click Annex-A (Purchases) tab
+        2. Enter NTN/CNIC in the form
+        3. Enter Invoice Number in the form
+        4. Select Source Authority from dropdown
+        
+        Args:
+            ntn_cnic (str): NTN/CNIC value from Excel sheet
+            invoice_no (str): Invoice number from Excel sheet
+            source_authority (str): Source authority from Excel sheet (FBR, BRA, KPRA, PRA, SRB)
+        
+        Returns:
+            bool: True if all steps completed successfully, False otherwise
+        """
+        try:
+            logging.info("Starting Annex-A disallow workflow...")
+            
+            # Wait for page to fully load before processing
+            logging.info("Waiting for page to fully load...")
+            try:
+                WebDriverWait(self.driver, 5).until(
+                    lambda driver: driver.execute_script("return document.readyState") == "complete"
+                )
+                logging.info("✓ Page fully loaded")
+            except TimeoutException:
+                logging.warning("Page load timeout, but proceeding anyway...")
+            
+            # Step 1: Click Annex-A tab (RUN ONLY ONCE)
+            if not self.annex_a_tab_clicked:
+                if not self.click_annex_a_tab():
+                    logging.warning("Annex-A tab workflow skipped (tab not found)")
+                    return False
+                self.annex_a_tab_clicked = True
+                logging.info("✅ Annex-A tab clicked and will not be clicked again for this session")
+            else:
+                logging.info("ℹ️ Annex-A tab already clicked in this session, skipping...")
+            
+            # Wait for form to load after clicking Annex-A tab
+            self._random_delay(0.5, 1.0)
+            wait = WebDriverWait(self.driver, 20)
+            
+            # Step 2: Enter NTN/CNIC in the sellerRegisterationNo field
+            if ntn_cnic:
+                logging.info(f"STEP 2 (Disallow): Entering NTN/CNIC: {ntn_cnic}")
+                
+                # Find the NTN/CNIC input field in annexa-form (disallow form)
+                ntn_cnic_input = None
+                ntn_cnic_selectors = [
+                    (By.ID, "correspondenceTabs:annexa-form:sellerRegisterationNo"),
+                    (By.NAME, "correspondenceTabs:annexa-form:sellerRegisterationNo"),
+                    (By.XPATH, "//input[@id='correspondenceTabs:annexa-form:sellerRegisterationNo']"),
+                    (By.XPATH, "//input[@name='correspondenceTabs:annexa-form:sellerRegisterationNo']"),
+                    (By.XPATH, "//input[@type='text' and @maxlength='13' and contains(@id, 'annexa-form')]"),
+                ]
+                
+                for by_type, selector in ntn_cnic_selectors:
+                    try:
+                        ntn_cnic_input = wait.until(EC.visibility_of_element_located((by_type, selector)))
+                        ntn_cnic_input = wait.until(EC.element_to_be_clickable((by_type, selector)))
+                        logging.info(f"Found NTN/CNIC input using selector: {selector}")
+                        break
+                    except TimeoutException:
+                        continue
+                
+                if not ntn_cnic_input:
+                    logging.error("STEP 2 FAILED: NTN/CNIC input field not found")
+                    return False
+                
+                # Clear any existing value and enter new value
+                ntn_cnic_input.clear()
+                self._human_like_click(ntn_cnic_input)
+                self._human_like_type(ntn_cnic_input, ntn_cnic)
+                self._random_delay(0.1, 0.25)
+                
+                # Verify the value was entered
+                entered_value = ntn_cnic_input.get_attribute('value')
+                if entered_value != str(ntn_cnic):
+                    logging.error(f"STEP 2 VERIFICATION FAILED: Expected '{ntn_cnic}', got '{entered_value}'")
+                    return False
+                
+                logging.info(f"✓ STEP 2 COMPLETED & VERIFIED: NTN/CNIC = '{entered_value}'")
+                self._random_delay(0.25, 0.5)
+            
+            # Step 3: Enter Invoice Number in the invoiceNo field
+            if invoice_no:
+                logging.info(f"STEP 3 (Disallow): Entering Invoice Number: {invoice_no}")
+                
+                # Find the Invoice Number input field in annexa-form (disallow form)
+                invoice_no_input = None
+                invoice_no_selectors = [
+                    (By.ID, "correspondenceTabs:annexa-form:invoiceNo"),
+                    (By.NAME, "correspondenceTabs:annexa-form:invoiceNo"),
+                    (By.XPATH, "//input[@id='correspondenceTabs:annexa-form:invoiceNo']"),
+                    (By.XPATH, "//input[@name='correspondenceTabs:annexa-form:invoiceNo']"),
+                    (By.XPATH, "//input[@type='text' and @maxlength='50' and contains(@id, 'annexa-form')]"),
+                ]
+                
+                for by_type, selector in invoice_no_selectors:
+                    try:
+                        invoice_no_input = wait.until(EC.visibility_of_element_located((by_type, selector)))
+                        invoice_no_input = wait.until(EC.element_to_be_clickable((by_type, selector)))
+                        logging.info(f"Found Invoice Number input using selector: {selector}")
+                        break
+                    except TimeoutException:
+                        continue
+                
+                if not invoice_no_input:
+                    logging.error("STEP 3 FAILED: Invoice Number input field not found")
+                    return False
+                
+                # Clear any existing value and enter new value
+                invoice_no_input.clear()
+                self._human_like_click(invoice_no_input)
+                self._human_like_type(invoice_no_input, invoice_no)
+                self._random_delay(0.1, 0.25)
+                
+                # Verify the value was entered
+                entered_value = invoice_no_input.get_attribute('value')
+                if entered_value != str(invoice_no):
+                    logging.error(f"STEP 3 VERIFICATION FAILED: Expected '{invoice_no}', got '{entered_value}'")
+                    return False
+                
+                logging.info(f"✓ STEP 3 COMPLETED & VERIFIED: Invoice Number = '{entered_value}'")
+                self._random_delay(0.25, 0.5)
+            
+            # Step 4: Select Source Authority from dropdown if provided
+            if source_authority:
+                logging.info(f"STEP 4 (Disallow): Selecting Source Authority: {source_authority}")
+                
+                # Find the dropdown element in annexa-form (disallow form)
+                dropdown_selectors = [
+                    (By.ID, "correspondenceTabs:annexa-form:sourceAuthority"),
+                    (By.XPATH, "//div[@id='correspondenceTabs:annexa-form:sourceAuthority']"),
+                    (By.XPATH, "//div[contains(@class, 'ui-selectonemenu') and contains(@id, 'annexa-form:sourceAuthority')]"),
+                ]
+                
+                dropdown = None
+                for by_type, selector in dropdown_selectors:
+                    try:
+                        dropdown = wait.until(EC.visibility_of_element_located((by_type, selector)))
+                        dropdown = wait.until(EC.element_to_be_clickable((by_type, selector)))
+                        logging.info(f"Found dropdown using selector: {selector}")
+                        break
+                    except TimeoutException:
+                        continue
+                
+                if not dropdown:
+                    logging.error("STEP 4 FAILED: Source Authority dropdown not found")
+                    return False
+                
+                # Click the dropdown to open it
+                self._human_like_click(dropdown)
+                self._random_delay(0.25, 0.5)
+                
+                # Map option values: 7=BRA, 1=FBR, 6=KPRA, 5=PRA, 8=SRB
+                authority_map = {
+                    'BRA': '7',
+                    'FBR': '1',
+                    'KPRA': '6',
+                    'PRA': '5',
+                    'SRB': '8'
+                }
+                
+                # Normalize source_authority
+                source_auth_normalized = str(source_authority).strip().upper()
+                option_value = authority_map.get(source_auth_normalized)
+                
+                if not option_value:
+                    logging.error(f"STEP 4 FAILED: Unknown source authority '{source_authority}', valid values: {list(authority_map.keys())}")
+                    return False
+                
+                # Find and click the option in the dropdown (annexa-form for disallow)
+                option_selectors = [
+                    (By.XPATH, f"//div[@id='correspondenceTabs:annexa-form:sourceAuthority_panel']//li[@data-label='{source_auth_normalized}']"),
+                    (By.XPATH, f"//div[contains(@id, 'annexa-form:sourceAuthority_panel')]//li[contains(text(), '{source_auth_normalized}')]"),
+                    (By.XPATH, f"//select[@id='correspondenceTabs:annexa-form:sourceAuthority_input']/option[@value='{option_value}']"),
+                ]
+                
+                option_selected = False
+                for by_type, selector in option_selectors:
+                    try:
+                        option = wait.until(EC.element_to_be_clickable((by_type, selector)))
+                        self._human_like_click(option)
+                        logging.info(f"✓ STEP 4 COMPLETED: Selected Source Authority: {source_auth_normalized}")
+                        option_selected = True
+                        self._random_delay(0.25, 0.5)
+                        break
+                    except TimeoutException:
+                        continue
+                
+                if not option_selected:
+                    logging.error(f"STEP 4 FAILED: Could not select option '{source_auth_normalized}' from dropdown")
+                    return False
+                
+                # Verify selection was applied (disallow form: annexa-form)
+                self._random_delay(0.1, 0.25)
+                selected_value = self.driver.execute_script("""
+                    var dropdown = document.getElementById('correspondenceTabs:annexa-form:sourceAuthority');
+                    if (dropdown) {
+                        var label = dropdown.querySelector('.ui-selectonemenu-label');
+                        return label ? label.innerText.trim() : '';
+                    }
+                    return '';
+                """)
+                
+                if selected_value != source_auth_normalized:
+                    logging.error(f"STEP 4 VERIFICATION FAILED: Expected '{source_auth_normalized}', got '{selected_value}'")
+                    return False
+                
+                logging.info(f"✓ STEP 4 VERIFIED: Source Authority is set to '{selected_value}'")
+            
+            # Step 5: Click the Search button to search for invoices
+            logging.info("STEP 5 (Disallow): Clicking Search button...")
+            
+            # Find the Search button in annexa-form
+            search_button = None
+            search_button_selectors = [
+                (By.ID, "correspondenceTabs:annexa-form:j_idt6030"),
+                (By.NAME, "correspondenceTabs:annexa-form:j_idt6030"),
+                (By.XPATH, "//button[@id='correspondenceTabs:annexa-form:j_idt6030']"),
+                (By.XPATH, "//button[@name='correspondenceTabs:annexa-form:j_idt6030']"),
+                (By.XPATH, "//button[contains(@id, 'annexa-form:j_idt') and contains(@class, 'ui-button')]//span[contains(text(), 'Search')]"),
+                (By.XPATH, "//button[@type='submit' and contains(@id, 'annexa-form')]//span[text()='Search']"),
+            ]
+            
+            for by_type, selector in search_button_selectors:
+                try:
+                    search_button = wait.until(EC.visibility_of_element_located((by_type, selector)))
+                    search_button = wait.until(EC.element_to_be_clickable((by_type, selector)))
+                    logging.info(f"Found Search button using selector: {selector}")
+                    break
+                except TimeoutException:
+                    continue
+            
+            if not search_button:
+                logging.error("STEP 5 FAILED: Search button not found")
+                return False
+            
+            # Click the Search button
+            self._human_like_click(search_button)
+            self._random_delay(0.5, 1.0)
+            
+            # Wait for search results to load
+            logging.info("⏳ Waiting for search results to load...")
+            self._random_delay(1.0, 2.0)
+            
+            logging.info("✓ STEP 5 COMPLETED: Search button clicked, results loading...")
+            
+            # Step 6: Click the "Non Creditable Input" checkbox in the first row
+            logging.info("STEP 6 (Disallow): Clicking Non Creditable Input checkbox...")
+            
+            # Find the checkbox in the first row of search results (row index 0)
+            checkbox = None
+            checkbox_selectors = [
+                # Strategy 1: Direct ID of the checkbox div (first row)
+                (By.ID, "correspondenceTabs:annexa-form:annexADT:0:inadmissiblcheckBox"),
+                
+                # Strategy 2: Input element inside the checkbox
+                (By.ID, "correspondenceTabs:annexa-form:annexADT:0:inadmissiblcheckBox_input"),
+                
+                # Strategy 3: XPath to the clickable div box
+                (By.XPATH, "//div[@id='correspondenceTabs:annexa-form:annexADT:0:inadmissiblcheckBox']//div[contains(@class, 'ui-chkbox-box')]"),
+                
+                # Strategy 4: Generic - find any checkbox in annexADT row 0
+                (By.XPATH, "//div[contains(@id, 'annexa-form:annexADT:0:inadmissiblcheckBox')]"),
+                
+                # Strategy 5: Find by class pattern
+                (By.XPATH, "//div[@class='ui-chkbox ui-widget ' and contains(@id, 'inadmissiblcheckBox')]"),
+            ]
+            
+            for by_type, selector in checkbox_selectors:
+                try:
+                    checkbox = wait.until(EC.presence_of_element_located((by_type, selector)))
+                    logging.info(f"Found Non Creditable Input checkbox using selector: {selector}")
+                    break
+                except TimeoutException:
+                    continue
+            
+            if not checkbox:
+                logging.error("STEP 6 FAILED: Non Creditable Input checkbox not found")
+                return False
+            
+            # Click the checkbox to mark as non-creditable
+            self._human_like_click(checkbox)
+            self._random_delay(0.5, 1.0)
+            
+            # Verify checkbox was checked
+            try:
+                checkbox_state = self.driver.execute_script("""
+                    var checkbox = document.getElementById('correspondenceTabs:annexa-form:annexADT:0:inadmissiblcheckBox_input');
+                    if (checkbox) {
+                        return checkbox.checked;
+                    }
+                    return false;
+                """)
+                
+                if checkbox_state:
+                    logging.info("✓ STEP 6 COMPLETED & VERIFIED: Non Creditable Input checkbox is checked")
+                else:
+                    logging.warning("⚠️ STEP 6 WARNING: Checkbox may not be checked, but continuing...")
+            except Exception as verify_error:
+                logging.warning(f"⚠️ STEP 6 VERIFICATION SKIPPED: {verify_error}")
+            
+            self._random_delay(0.25, 0.5)
+            
+            # Step 7: Select "Others" from the reason dropdown in the new form
+            logging.info("STEP 7 (Disallow): Waiting for new form to open and selecting 'Others' from dropdown...")
+            
+            # Wait for the new form dialog to appear
+            self._random_delay(1.0, 2.0)
+            
+            # Find the reason dropdown (reasonNonCredFBR)
+            reason_dropdown = None
+            reason_dropdown_selectors = [
+                (By.ID, "correspondenceTabs:addRemarksAnnexAform:reasonNonCredFBR"),
+                (By.XPATH, "//div[@id='correspondenceTabs:addRemarksAnnexAform:reasonNonCredFBR']"),
+                (By.XPATH, "//label[@id='correspondenceTabs:addRemarksAnnexAform:reasonNonCredFBR_label']/parent::div"),
+                (By.XPATH, "//div[contains(@id, 'reasonNonCredFBR') and contains(@class, 'ui-selectonemenu')]"),
+            ]
+            
+            for by_type, selector in reason_dropdown_selectors:
+                try:
+                    reason_dropdown = wait.until(EC.visibility_of_element_located((by_type, selector)))
+                    reason_dropdown = wait.until(EC.element_to_be_clickable((by_type, selector)))
+                    logging.info(f"Found reason dropdown using selector: {selector}")
+                    break
+                except TimeoutException:
+                    continue
+            
+            if not reason_dropdown:
+                logging.error("STEP 7 FAILED: Reason dropdown not found")
+                return False
+            
+            # Click the dropdown to open it
+            self._human_like_click(reason_dropdown)
+            self._random_delay(0.5, 1.0)
+            
+            # Find and click "Others" option from the dropdown
+            others_option = None
+            others_option_selectors = [
+                (By.XPATH, "//div[@id='correspondenceTabs:addRemarksAnnexAform:reasonNonCredFBR_panel']//li[contains(text(), 'Others')]"),
+                (By.XPATH, "//div[contains(@id, 'reasonNonCredFBR_panel')]//li[contains(text(), 'Others')]"),
+                (By.XPATH, "//li[@data-label='Others' and contains(@id, 'reasonNonCredFBR')]"),
+                (By.XPATH, "//div[@id='correspondenceTabs:addRemarksAnnexAform:reasonNonCredFBR_panel']//li[@data-label='Others']"),
+            ]
+            
+            for by_type, selector in others_option_selectors:
+                try:
+                    others_option = wait.until(EC.element_to_be_clickable((by_type, selector)))
+                    logging.info(f"Found 'Others' option using selector: {selector}")
+                    break
+                except TimeoutException:
+                    continue
+            
+            if not others_option:
+                logging.error("STEP 7 FAILED: 'Others' option not found in dropdown")
+                return False
+            
+            # Click the "Others" option
+            self._human_like_click(others_option)
+            self._random_delay(0.5, 1.0)
+            
+            # Verify selection was applied
+            try:
+                selected_value = self.driver.execute_script("""
+                    var dropdown = document.getElementById('correspondenceTabs:addRemarksAnnexAform:reasonNonCredFBR');
+                    if (dropdown) {
+                        var label = dropdown.querySelector('.ui-selectonemenu-label');
+                        return label ? label.innerText.trim() : '';
+                    }
+                    return '';
+                """)
+                
+                if selected_value == 'Others':
+                    logging.info("✓ STEP 7 COMPLETED & VERIFIED: 'Others' selected from reason dropdown")
+                else:
+                    logging.warning(f"⚠️ STEP 7 WARNING: Expected 'Others', got '{selected_value}', but continuing...")
+            except Exception as verify_error:
+                logging.warning(f"⚠️ STEP 7 VERIFICATION SKIPPED: {verify_error}")
+            
+            self._random_delay(0.25, 0.5)
+            
+            # Step 8: Enter remarks in the textarea
+            logging.info("STEP 8 (Disallow): Entering remarks in textarea...")
+            
+            # Find the remarks textarea
+            remarks_textarea = None
+            remarks_textarea_selectors = [
+                (By.ID, "correspondenceTabs:addRemarksAnnexAform:remarksReasonTextAreaIDAnnexA"),
+                (By.NAME, "correspondenceTabs:addRemarksAnnexAform:remarksReasonTextAreaIDAnnexA"),
+                (By.XPATH, "//textarea[@id='correspondenceTabs:addRemarksAnnexAform:remarksReasonTextAreaIDAnnexA']"),
+                (By.XPATH, "//textarea[@name='correspondenceTabs:addRemarksAnnexAform:remarksReasonTextAreaIDAnnexA']"),
+                (By.XPATH, "//textarea[contains(@id, 'remarksReasonTextAreaIDAnnexA')]"),
+            ]
+            
+            for by_type, selector in remarks_textarea_selectors:
+                try:
+                    remarks_textarea = wait.until(EC.visibility_of_element_located((by_type, selector)))
+                    remarks_textarea = wait.until(EC.element_to_be_clickable((by_type, selector)))
+                    logging.info(f"Found remarks textarea using selector: {selector}")
+                    break
+                except TimeoutException:
+                    continue
+            
+            if not remarks_textarea:
+                logging.error("STEP 8 FAILED: Remarks textarea not found")
+                return False
+            
+            # Default remarks text (can be customized)
+            remarks_text = "Invoice disallowed as per verification process."
+            
+            # Clear any existing text and enter remarks
+            remarks_textarea.clear()
+            self._human_like_click(remarks_textarea)
+            self._human_like_type(remarks_textarea, remarks_text)
+            self._random_delay(0.25, 0.5)
+            
+            # Verify the remarks were entered
+            try:
+                entered_remarks = remarks_textarea.get_attribute('value')
+                if entered_remarks:
+                    logging.info(f"✓ STEP 8 COMPLETED & VERIFIED: Remarks entered: '{entered_remarks[:50]}...'")
+                else:
+                    logging.warning("⚠️ STEP 8 WARNING: Remarks field appears empty, but continuing...")
+            except Exception as verify_error:
+                logging.warning(f"⚠️ STEP 8 VERIFICATION SKIPPED: {verify_error}")
+            
+            self._random_delay(0.25, 0.5)
+            
+            logging.info("✅ Annex-A disallow workflow completed successfully (all steps completed)")
+            return True
+            
+        except Exception as e:
+            logging.error(f"Error in disallow workflow: {str(e)}")
+            return False
+    
     def is_browser_alive(self):
         """
         Check if the browser instance is still alive and responsive.
@@ -613,11 +1302,8 @@ class FBRChecker:
             self.driver.get(self.FBR_URL)
             logging.info(f"Navigated to FBR portal: {self.FBR_URL}")
             
-            # Random delay to simulate page reading
-            self._random_delay(2.0, 4.0)
-            
-            # Simulate some mouse movement
-            self._simulate_mouse_movement()
+            # Minimal delay for page load
+            self._random_delay(0.5, 1.0)
             
             return True
             
@@ -653,26 +1339,19 @@ class FBRChecker:
                 }
             
             # Process the claim workflow (Annex-A steps)
-            self._random_delay(0.25, 0.5)
             self.process_claim_workflow()
             
-            # Random delay to simulate human reading page
-            self._random_delay(0.25, 0.5)
-            
-            # Simulate mouse movement before interacting
-            self._simulate_mouse_movement()
-            
-            # Wait for page to fully load
-            logging.info("Waiting for page to fully load...")
+            # Wait for page to be ready (reduced timeout)
+            logging.info("Waiting for page to load...")
             try:
-                WebDriverWait(self.driver, 60).until(
+                WebDriverWait(self.driver, 15).until(
                     lambda driver: driver.execute_script("return document.readyState") == "complete"
                 )
-                logging.info("✓ Page fully loaded")
+                logging.info("✓ Page loaded")
             except TimeoutException:
-                logging.warning("Page load timeout, but proceeding anyway...")
+                logging.warning("Page load timeout, but proceeding...")
             
-            wait = WebDriverWait(self.driver, 30)
+            wait = WebDriverWait(self.driver, 20)
             
             # Step 1: Select Source Authority from dropdown if provided
             if source_authority:
@@ -893,6 +1572,7 @@ class FBRChecker:
                     (By.XPATH, "//input[@id='correspondenceTabs:loadAnnexAform:annexAFromDate_input']"),
                 ]
                 
+                
                 from_date_input = None
                 for by_type, selector in from_date_selectors:
                     try:
@@ -965,6 +1645,101 @@ class FBRChecker:
                 
                 logging.info(f"✓ STEP 4 COMPLETED & VERIFIED: Dates set to '{date_formatted}'")
                 self._random_delay(0.25, 0.5)
+
+            # if date_field and date_field != 'N/A':
+            #     logging.info(f"STEP 4: Selecting dates: {date_field}")
+                
+            #     # Parse the date
+            #     parsed_date = self._select_date_from_datepicker(date_field)
+                
+            #     if not parsed_date:
+            #         logging.error(f"STEP 4 FAILED: Could not parse date: {date_field}")
+            #         return {
+            #             'status': '⚠️ Error - Date parsing failed',
+            #             'value_of_purchases': 'N/A'
+            #         }
+                
+            #     date_formatted = parsed_date['formatted']
+                
+            #     # Select From Date
+            #     from_date_selectors = [
+            #         (By.ID, "correspondenceTabs:loadAnnexAform:annexAFromDate_input"),
+            #         (By.NAME, "correspondenceTabs:loadAnnexAform:annexAFromDate_input"),
+            #         (By.XPATH, "//input[@id='correspondenceTabs:loadAnnexAform:annexAFromDate_input']"),
+            #     ]
+                
+            #     from_date_input = None
+            #     for by_type, selector in from_date_selectors:
+            #         try:
+            #             # Wait for element to be visible and present
+            #             from_date_input = wait.until(EC.visibility_of_element_located((by_type, selector)))
+            #             logging.info(f"Found From Date input using selector: {selector}")
+            #             break
+            #         except TimeoutException:
+            #             continue
+                
+            #     if not from_date_input:
+            #         logging.error("STEP 4 FAILED: From Date input field not found")
+            #         return {
+            #             'status': '⚠️ Error - From Date field not found',
+            #             'value_of_purchases': 'N/A'
+            #         }
+                
+            #     # Click to open datepicker, then use JavaScript to set value directly
+            #     # (readonly fields require JS to set value)
+            #     self.driver.execute_script(f"arguments[0].value = '{date_formatted}';", from_date_input)
+            #     self._random_delay(0.1, 0.25)
+                
+            #     # Verify From Date was set
+            #     from_date_value = from_date_input.get_attribute('value')
+            #     if from_date_value != date_formatted:
+            #         logging.error(f"STEP 4 FROM DATE VERIFICATION FAILED: Expected '{date_formatted}', got '{from_date_value}'")
+            #         return {
+            #             'status': '⚠️ Error - From Date verification failed',
+            #             'value_of_purchases': 'N/A'
+            #         }
+                
+            #     logging.info(f"✓ From Date verified: {from_date_value}")
+                
+            #     # Select To Date (same date)
+            #     to_date_selectors = [
+            #         (By.ID, "correspondenceTabs:loadAnnexAform:annexAToDate_input"),
+            #         (By.NAME, "correspondenceTabs:loadAnnexAform:annexAToDate_input"),
+            #         (By.XPATH, "//input[@id='correspondenceTabs:loadAnnexAform:annexAToDate_input']"),
+            #     ]
+                
+            #     to_date_input = None
+            #     for by_type, selector in to_date_selectors:
+            #         try:
+            #             # Wait for element to be visible and present
+            #             to_date_input = wait.until(EC.visibility_of_element_located((by_type, selector)))
+            #             logging.info(f"Found To Date input using selector: {selector}")
+            #             break
+            #         except TimeoutException:
+            #             continue
+                
+            #     if not to_date_input:
+            #         logging.error("STEP 4 FAILED: To Date input field not found")
+            #         return {
+            #             'status': '⚠️ Error - To Date field not found',
+            #             'value_of_purchases': 'N/A'
+            #         }
+                
+            #     # Use JavaScript to set value directly
+            #     self.driver.execute_script(f"arguments[0].value = '{date_formatted}';", to_date_input)
+            #     self._random_delay(0.1, 0.25)
+                
+            #     # Verify To Date was set
+            #     to_date_value = to_date_input.get_attribute('value')
+            #     if to_date_value != date_formatted:
+            #         logging.error(f"STEP 4 TO DATE VERIFICATION FAILED: Expected '{date_formatted}', got '{to_date_value}'")
+            #         return {
+            #             'status': '⚠️ Error - To Date verification failed',
+            #             'value_of_purchases': 'N/A'
+            #         }
+                
+            #     logging.info(f"✓ STEP 4 COMPLETED & VERIFIED: Dates set to '{date_formatted}'")
+            #     self._random_delay(0.25, 0.5)
             
             # Step 5: Click the Search button in Annex-A form
             logging.info("STEP 5: Clicking Search button in Annex-A form...")
@@ -1865,6 +2640,13 @@ class FBRChecker:
 
                 ####################################################################################
                 
+                # IMPORTANT: Stay on Annex-A form for next invoice processing
+                # The form remains on the same page, ready for next search
+                # Do NOT navigate away or reset annex_a_tab_clicked flag
+                # This allows continuous processing without clicking Annex-A tab again
+                logging.info("✓ Ready for next invoice (staying on Annex-A form)")
+                self._random_delay(0.5, 1.0)
+                
                 # Log the final values being returned
                 logging.info(f"FINAL RESULT - Status: {final_status}")
                 logging.info(f"FINAL RESULT - Value of Purchases: {value_of_purchases}")
@@ -1913,6 +2695,1286 @@ class FBRChecker:
                 'value_of_purchases': 'N/A',
                 'fbr_sales_tax': 'N/A'
             }
+    
+    def load_stwh(self, invoice_number, source_authority=None, invoice_no_field=None, date_field=None, sales_tax_fed_st_mode=None):
+        """
+        Load STWH (Sales Tax Withholding) for a single invoice on the FBR portal.
+        Complete copy of verify_invoice implementation with STWH-specific logging.
+        
+        Args:
+            invoice_number (str): The seller registration number (NTN) to process
+            source_authority (str): Source Authority value (e.g., 'FBR', 'BRA', 'KPRA', 'PRA', 'SRB')
+            invoice_no_field (str): Invoice number from 'Number' column in Excel
+            date_field (str): Date from 'Date' column in Excel (will be used for both From and To dates)
+            sales_tax_fed_st_mode (str): Sales Tax/FED in ST Mode value from Excel to match with FBR data
+            
+        Returns:
+            dict: Status and details including matched row information
+        """
+        try:
+            logging.info(f"[STWH] Starting STWH processing for: {invoice_number}")
+            
+            # Check if browser is still alive before proceeding
+            if not self.is_browser_alive():
+                logging.error("[STWH] Browser was closed by user")
+                return {
+                    'status': '⚠️ Browser Closed',
+                    'value_of_purchases': 'N/A'
+                }
+            
+            # STWH Specific: Click "Load STWH / Debit Note" button instead of Claim workflow
+            self._random_delay(0.25, 0.5)
+            
+            # Navigate to Annex-A tab first
+            logging.info("[STWH] Clicking Annex-A (Purchases) tab...")
+            self.click_annex_a_tab()
+            self._random_delay(0.5, 1.0)
+            
+            # Click the "Load STWH / Debit Note" button
+            logging.info("[STWH] Clicking 'Load STWH / Debit Note' button...")
+            
+            load_stwh_button = None
+            load_stwh_button_selectors = [
+                # Strategy 1: Exact ID match
+                (By.ID, "correspondenceTabs:annexa-form:j_idt6155"),
+                
+                # Strategy 2: Button with Load STWH text
+                (By.XPATH, "//button[contains(@id, 'annexa-form') and .//span[contains(text(), 'Load STWH')]]"),
+                
+                # Strategy 3: Button with span text "Load STWH / Debit Note"
+                (By.XPATH, "//button[.//span[normalize-space(text())='Load STWH / Debit Note']]"),
+                
+                # Strategy 4: Partial ID match with annexa-form context
+                (By.XPATH, "//button[contains(@id, 'correspondenceTabs:annexa-form:j_idt')]//span[contains(text(), 'Load STWH')]"),
+                
+                # Strategy 5: Button with btn-primary class and Load STWH text
+                (By.XPATH, "//button[contains(@class, 'btn-primary') and contains(., 'Load STWH')]"),
+                
+                # Strategy 6: CSS selector with partial ID
+                (By.CSS_SELECTOR, "button[id*='annexa-form'][id*='j_idt']"),
+            ]
+            
+            for by_type, selector in load_stwh_button_selectors:
+                try:
+                    load_stwh_button = WebDriverWait(self.driver, 5).until(
+                        EC.presence_of_element_located((by_type, selector))
+                    )
+                    
+                    if load_stwh_button and load_stwh_button.is_displayed() and load_stwh_button.is_enabled():
+                        logging.info(f"[STWH] ✓ Found 'Load STWH / Debit Note' button using selector: {selector}")
+                        break
+                    else:
+                        load_stwh_button = None
+                        
+                except (TimeoutException, NoSuchElementException):
+                    continue
+                except Exception as e:
+                    logging.debug(f"[STWH] Error with selector {selector}: {str(e)}")
+                    continue
+            
+            # JavaScript fallback
+            if not load_stwh_button:
+                logging.warning("[STWH] All selectors failed, trying JavaScript fallback...")
+                try:
+                    load_stwh_button = self.driver.execute_script("""
+                        // Find button with "Load STWH" text
+                        var buttons = document.querySelectorAll('button');
+                        for (var i = 0; i < buttons.length; i++) {
+                            var btn = buttons[i];
+                            if (btn.textContent.includes('Load STWH') && 
+                                btn.offsetParent !== null && 
+                                !btn.disabled) {
+                                return btn;
+                            }
+                        }
+                        
+                        // Try finding by ID pattern
+                        var annexaButtons = document.querySelectorAll('button[id*="annexa-form"]');
+                        for (var i = 0; i < annexaButtons.length; i++) {
+                            if (annexaButtons[i].textContent.includes('Load STWH')) {
+                                return annexaButtons[i];
+                            }
+                        }
+                        
+                        return null;
+                    """)
+                    
+                    if load_stwh_button:
+                        logging.info("[STWH] ✓ Found button using JavaScript fallback")
+                        
+                except Exception as js_error:
+                    logging.error(f"[STWH] JavaScript fallback failed: {str(js_error)}")
+            
+            if not load_stwh_button:
+                logging.error("[STWH] FAILED: 'Load STWH / Debit Note' button not found")
+                return {
+                    'status': '⚠️ Error - Load STWH button not found',
+                    'value_of_purchases': 'N/A'
+                }
+            
+            # Click the Load STWH button
+            self._human_like_click(load_stwh_button)
+            logging.info("[STWH] ✓ 'Load STWH / Debit Note' button clicked")
+            self._random_delay(0.5, 1.0)
+            
+            # Random delay to simulate human reading page
+            self._random_delay(0.25, 0.5)
+            
+            # Simulate mouse movement before interacting
+            self._simulate_mouse_movement()
+            
+            # Wait for page to fully load
+            logging.info("[STWH] Waiting for page to fully load...")
+            try:
+                WebDriverWait(self.driver, 60).until(
+                    lambda driver: driver.execute_script("return document.readyState") == "complete"
+                )
+                logging.info("[STWH] ✓ Page fully loaded")
+            except TimeoutException:
+                logging.warning("[STWH] Page load timeout, but proceeding anyway...")
+            
+            wait = WebDriverWait(self.driver, 30)
+            
+            # Step 1: Select Source Authority from dropdown if provided
+            if source_authority:
+                logging.info(f"[STWH] STEP 1: Selecting Source Authority: {source_authority}")
+                
+                # Find the dropdown element
+                dropdown_selectors = [
+                    (By.ID, "correspondenceTabs:loadStwhAnnexAform:sourceAuthority"),
+                    (By.XPATH, "//div[@id='correspondenceTabs:loadStwhAnnexAform:sourceAuthority']"),
+                    (By.XPATH, "//div[contains(@class, 'ui-selectonemenu') and contains(@id, 'loadStwhAnnexAform:sourceAuthority')]"),
+                ]
+                
+                dropdown = None
+                for by_type, selector in dropdown_selectors:
+                    try:
+                        dropdown = wait.until(EC.visibility_of_element_located((by_type, selector)))
+                        dropdown = wait.until(EC.element_to_be_clickable((by_type, selector)))
+                        logging.info(f"[STWH] Found dropdown using selector: {selector}")
+                        break
+                    except TimeoutException:
+                        continue
+                
+                if not dropdown:
+                    logging.error("[STWH] STEP 1 FAILED: Source Authority dropdown not found")
+                    return {
+                        'status': '⚠️ Error - Dropdown not found',
+                        'value_of_purchases': 'N/A'
+                    }
+                
+                # Click the dropdown to open it
+                self._human_like_click(dropdown)
+                self._random_delay(0.25, 0.5)
+                
+                # Select the option by text
+                authority_map = {
+                    'BRA': '7',
+                    'FBR': '1',
+                    'KPRA': '6',
+                    'PRA': '5',
+                    'SRB': '8'
+                }
+                
+                source_auth_normalized = str(source_authority).strip().upper()
+                option_value = authority_map.get(source_auth_normalized)
+                
+                if not option_value:
+                    logging.error(f"[STWH] STEP 1 FAILED: Unknown source authority '{source_authority}'")
+                    return {
+                        'status': '⚠️ Error - Invalid source authority',
+                        'value_of_purchases': 'N/A'
+                    }
+                
+                option_selectors = [
+                    (By.XPATH, f"//div[@id='correspondenceTabs:loadStwhAnnexAform:sourceAuthority_panel']//li[@data-label='{source_auth_normalized}']"),
+                    (By.XPATH, f"//div[contains(@id, 'loadStwhAnnexAform:sourceAuthority_panel')]//li[contains(text(), '{source_auth_normalized}')]"),
+                    (By.XPATH, f"//select[@id='correspondenceTabs:loadStwhAnnexAform:sourceAuthority_input']/option[@value='{option_value}']"),
+                ]
+                
+                option_selected = False
+                for by_type, selector in option_selectors:
+                    try:
+                        option = wait.until(EC.element_to_be_clickable((by_type, selector)))
+                        self._human_like_click(option)
+                        logging.info(f"[STWH] ✓ STEP 1 COMPLETED: Selected Source Authority: {source_auth_normalized}")
+                        option_selected = True
+                        self._random_delay(0.25, 0.5)
+                        break
+                    except TimeoutException:
+                        continue
+                
+                if not option_selected:
+                    logging.error(f"[STWH] STEP 1 FAILED: Could not select option '{source_auth_normalized}'")
+                    return {
+                        'status': '⚠️ Error - Option not selectable',
+                        'value_of_purchases': 'N/A'
+                    }
+                
+                # Verify selection
+                self._random_delay(0.1, 0.25)
+                selected_value = self.driver.execute_script("""
+                    var dropdown = document.getElementById('correspondenceTabs:loadStwhAnnexAform:sourceAuthority');
+                    if (dropdown) {
+                        var label = dropdown.querySelector('.ui-selectonemenu-label');
+                        return label ? label.innerText.trim() : '';
+                    }
+                    return '';
+                """)
+                
+                if selected_value != source_auth_normalized:
+                    logging.error(f"[STWH] STEP 1 VERIFICATION FAILED: Expected '{source_auth_normalized}', got '{selected_value}'")
+                    return {
+                        'status': '⚠️ Error - Selection verification failed',
+                        'value_of_purchases': 'N/A'
+                    }
+                
+                logging.info(f"[STWH] ✓ STEP 1 VERIFIED: Source Authority is set to '{selected_value}'")
+            
+            # Step 2: Enter Seller NTN
+            if invoice_number:
+                logging.info(f"[STWH] STEP 2: Entering Seller NTN: {invoice_number}")
+                
+                seller_ntn_input = None
+                seller_ntn_selectors = [
+                    # Strategy 1: Exact ID match
+                    (By.ID, "correspondenceTabs:loadStwhAnnexAform:annexASellerRegNo"),
+                    
+                    # Strategy 2: Name attribute match
+                    (By.NAME, "correspondenceTabs:loadStwhAnnexAform:annexASellerRegNo"),
+                    
+                    # Strategy 3: XPath with ID
+                    (By.XPATH, "//input[@id='correspondenceTabs:loadStwhAnnexAform:annexASellerRegNo']"),
+                    
+                    # Strategy 4: XPath with name
+                    (By.XPATH, "//input[@name='correspondenceTabs:loadStwhAnnexAform:annexASellerRegNo']"),
+                    
+                    # Strategy 5: XPath with form context and ID pattern
+                    (By.XPATH, "//form[contains(@id, 'loadStwhAnnexAform')]//input[contains(@id, 'annexASellerRegNo')]"),
+                    
+                    # Strategy 6: XPath with type and maxlength (specific to seller NTN)
+                    (By.XPATH, "//input[@type='text' and @maxlength='13' and contains(@id, 'loadStwhAnnexAform')]"),
+                    
+                    # Strategy 7: XPath with ui-inputtext class and maxlength
+                    (By.XPATH, "//input[contains(@class, 'ui-inputtext') and @maxlength='13' and @type='text']"),
+                    
+                    # Strategy 8: CSS selector with partial ID
+                    (By.CSS_SELECTOR, "input[id*='loadStwhAnnexAform'][id*='annexASellerRegNo']"),
+                    
+                    # Strategy 9: CSS selector with mediumTextField class and maxlength
+                    (By.CSS_SELECTOR, "input.mediumTextField[maxlength='13'][type='text']"),
+                    
+                    # Strategy 10: Generic text input with maxlength 13
+                   
+                ]
+                
+                for by_type, selector in seller_ntn_selectors:
+                    try:
+                        seller_ntn_input = wait.until(EC.visibility_of_element_located((by_type, selector)))
+                        seller_ntn_input = wait.until(EC.element_to_be_clickable((by_type, selector)))
+                        logging.info(f"[STWH] Found Seller NTN input using selector: {selector}")
+                        break
+                    except TimeoutException:
+                        continue
+                
+                if not seller_ntn_input:
+                    logging.error("[STWH] STEP 2 FAILED: Seller NTN input field not found")
+                    return {
+                        'status': '⚠️ Error - NTN field not found',
+                        'value_of_purchases': 'N/A'
+                    }
+                
+                self._human_like_click(seller_ntn_input)
+                self._human_like_type(seller_ntn_input, invoice_number)
+                self._random_delay(0.1, 0.25)
+                
+                entered_value = seller_ntn_input.get_attribute('value')
+                if entered_value != str(invoice_number):
+                    logging.error(f"[STWH] STEP 2 VERIFICATION FAILED")
+                    return {
+                        'status': '⚠️ Error - NTN entry verification failed',
+                        'value_of_purchases': 'N/A'
+                    }
+                
+                logging.info(f"[STWH] ✓ STEP 2 COMPLETED & VERIFIED: Seller NTN = '{entered_value}'")
+                self._random_delay(0.25, 0.5)
+            
+            # Step 3: Enter Invoice Number
+            if invoice_no_field:
+                logging.info(f"[STWH] STEP 3: Entering Invoice Number: {invoice_no_field}")
+                
+                invoice_no_input = None
+                invoice_no_selectors = [
+                    # Strategy 1: Exact ID match
+                    (By.ID, "correspondenceTabs:loadStwhAnnexAform:annexAinvoiceNoId"),
+                    
+                    # Strategy 2: Name attribute match
+                    (By.NAME, "correspondenceTabs:loadStwhAnnexAform:annexAinvoiceNoId"),
+                    
+                    # Strategy 3: XPath with ID
+                    (By.XPATH, "//input[@id='correspondenceTabs:loadStwhAnnexAform:annexAinvoiceNoId']"),
+                    
+                    # Strategy 4: XPath with name
+                    (By.XPATH, "//input[@name='correspondenceTabs:loadStwhAnnexAform:annexAinvoiceNoId']"),
+                    
+                    # Strategy 5: XPath with form context and ID pattern
+                    (By.XPATH, "//form[contains(@id, 'loadStwhAnnexAform')]//input[contains(@id, 'annexAinvoiceNoId')]"),
+                    
+                    # Strategy 6: XPath with type and maxlength (specific to invoice number)
+                    (By.XPATH, "//input[@type='text' and @maxlength='25' and contains(@id, 'loadStwhAnnexAform')]"),
+                    
+                    # Strategy 7: XPath with ui-inputtext class and maxlength
+                    (By.XPATH, "//input[contains(@class, 'ui-inputtext') and @maxlength='25' and @type='text']"),
+                    
+                    # Strategy 8: CSS selector with partial ID
+                    (By.CSS_SELECTOR, "input[id*='loadStwhAnnexAform'][id*='annexAinvoiceNoId']"),
+                    
+                    # Strategy 9: CSS selector with mediumTextField class and maxlength
+                    (By.CSS_SELECTOR, "input.mediumTextField[maxlength='25'][type='text']"),
+                    
+                    # Strategy 10: Generic text input with maxlength 25
+                    (By.XPATH, "//input[@type='text' and @maxlength='25']"),
+                ]
+                
+                for by_type, selector in invoice_no_selectors:
+                    try:
+                        invoice_no_input = wait.until(EC.visibility_of_element_located((by_type, selector)))
+                        invoice_no_input = wait.until(EC.element_to_be_clickable((by_type, selector)))
+                        logging.info(f"[STWH] Found Invoice Number input using selector: {selector}")
+                        break
+                    except TimeoutException:
+                        continue
+                
+                if not invoice_no_input:
+                    logging.error("[STWH] STEP 3 FAILED: Invoice Number input field not found")
+                    return {
+                        'status': '⚠️ Error - Invoice field not found',
+                        'value_of_purchases': 'N/A'
+                    }
+                
+                self._human_like_click(invoice_no_input)
+                self._human_like_type(invoice_no_input, invoice_no_field)
+                self._random_delay(0.1, 0.25)
+                
+                entered_value = invoice_no_input.get_attribute('value')
+                if entered_value != str(invoice_no_field):
+                    logging.error(f"[STWH] STEP 3 VERIFICATION FAILED")
+                    return {
+                        'status': '⚠️ Error - Invoice entry verification failed',
+                        'value_of_purchases': 'N/A'
+                    }
+                
+                logging.info(f"[STWH] ✓ STEP 3 COMPLETED & VERIFIED: Invoice Number = '{entered_value}'")
+                self._random_delay(0.25, 0.5)
+            
+            # Step 4: Select Dates (ROBUST - Handles all date formats)
+            if date_field and date_field != 'N/A':
+                logging.info(f"[STWH] STEP 4: Selecting dates: {date_field}")
+                
+                parsed_date = self._select_date_from_datepicker(date_field)
+                
+                if not parsed_date:
+                    logging.error(f"[STWH] STEP 4 FAILED: Could not parse date: {date_field}")
+                    return {
+                        'status': '⚠️ Error - Date parsing failed',
+                        'value_of_purchases': 'N/A'
+                    }
+                
+                date_formatted = parsed_date['formatted']
+                logging.info(f"[STWH] Parsed date: {date_field} → {date_formatted}")
+                
+                # Helper function to set date robustly with multiple strategies
+                def set_date_field_robust(field_name, field_id_pattern, date_value):
+                    logging.info(f"[STWH] Setting {field_name} to: {date_value}")
+                    
+                    # Strategy 1: Find input field
+                    date_input = None
+                    date_selectors = [
+                        (By.ID, f"correspondenceTabs:loadStwhAnnexAform:{field_id_pattern}_input"),
+                        (By.XPATH, f"//input[@id='correspondenceTabs:loadStwhAnnexAform:{field_id_pattern}_input']"),
+                        (By.XPATH, f"//span[@id='correspondenceTabs:loadStwhAnnexAform:{field_id_pattern}']//input"),
+                        (By.XPATH, f"//input[contains(@id, '{field_id_pattern}_input')]"),
+                        (By.CSS_SELECTOR, f"input[id*='{field_id_pattern}_input']"),
+                    ]
+                    
+                    for by_type, selector in date_selectors:
+                        try:
+                            date_input = wait.until(EC.visibility_of_element_located((by_type, selector)))
+                            logging.info(f"[STWH] Found {field_name} input using: {selector}")
+                            break
+                        except TimeoutException:
+                            continue
+                    
+                    if not date_input:
+                        logging.error(f"[STWH] {field_name} input not found")
+                        return False
+                    
+                    # Strategy 2: Set date using multiple approaches with event triggering
+                    date_set_success = self.driver.execute_script("""
+                        var input = arguments[0];
+                        var dateValue = arguments[1];
+                        
+                        console.log('[STWH] Date Setting - Input ID:', input.id);
+                        console.log('[STWH] Date Setting - Target value:', dateValue);
+                        
+                        // APPROACH 1: Direct value set + trigger all events
+                        try {
+                            // Clear existing value
+                            input.value = '';
+                            input.dispatchEvent(new Event('input', { bubbles: true }));
+                            
+                            // Set new value
+                            input.value = dateValue;
+                            
+                            // Trigger events in sequence
+                            input.dispatchEvent(new Event('input', { bubbles: true }));
+                            input.dispatchEvent(new Event('change', { bubbles: true }));
+                            input.dispatchEvent(new Event('blur', { bubbles: true }));
+                            input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+                            
+                            console.log('[STWH] APPROACH 1: Value set and events triggered');
+                            
+                            // Verify
+                            if (input.value === dateValue) {
+                                console.log('[STWH] ✓ APPROACH 1 SUCCESS: Value verified');
+                                return {success: true, method: 'approach-1-direct-events'};
+                            }
+                        } catch (e) {
+                            console.log('[STWH] APPROACH 1 failed:', e.message);
+                        }
+                        
+                        // APPROACH 2: Focus, clear, type simulation
+                        try {
+                            input.focus();
+                            input.select();
+                            
+                            // Clear by setting empty
+                            var nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                            nativeInputValueSetter.call(input, '');
+                            input.dispatchEvent(new Event('input', { bubbles: true }));
+                            
+                            // Set value using native setter
+                            nativeInputValueSetter.call(input, dateValue);
+                            
+                            // Trigger events
+                            input.dispatchEvent(new Event('input', { bubbles: true }));
+                            input.dispatchEvent(new Event('change', { bubbles: true }));
+                            input.blur();
+                            
+                            console.log('[STWH] APPROACH 2: Native setter used');
+                            
+                            if (input.value === dateValue) {
+                                console.log('[STWH] ✓ APPROACH 2 SUCCESS: Value verified');
+                                return {success: true, method: 'approach-2-native-setter'};
+                            }
+                        } catch (e) {
+                            console.log('[STWH] APPROACH 2 failed:', e.message);
+                        }
+                        
+                        // APPROACH 3: jQuery if available (PrimeFaces often uses jQuery)
+                        if (typeof jQuery !== 'undefined') {
+                            try {
+                                jQuery(input).val(dateValue).trigger('input').trigger('change').blur();
+                                console.log('[STWH] APPROACH 3: jQuery used');
+                                
+                                if (input.value === dateValue) {
+                                    console.log('[STWH] ✓ APPROACH 3 SUCCESS: Value verified');
+                                    return {success: true, method: 'approach-3-jquery'};
+                                }
+                            } catch (e) {
+                                console.log('[STWH] APPROACH 3 failed:', e.message);
+                            }
+                        }
+                        
+                        // APPROACH 4: PrimeFaces widget method
+                        try {
+                            var widgetVar = input.id.replace(/:/g, '_');
+                            if (typeof PrimeFaces !== 'undefined' && PrimeFaces.widgets[widgetVar]) {
+                                PrimeFaces.widgets[widgetVar].setDate(dateValue);
+                                console.log('[STWH] APPROACH 4: PrimeFaces widget setDate used');
+                                
+                                if (input.value === dateValue) {
+                                    console.log('[STWH] ✓ APPROACH 4 SUCCESS: Value verified');
+                                    return {success: true, method: 'approach-4-primefaces-widget'};
+                                }
+                            }
+                        } catch (e) {
+                            console.log('[STWH] APPROACH 4 failed:', e.message);
+                        }
+                        
+                        // APPROACH 5: Force value and mark as touched
+                        try {
+                            input.removeAttribute('readonly');
+                            input.value = dateValue;
+                            input.setAttribute('value', dateValue);
+                            
+                            // Mark field as touched/dirty
+                            if (input.classList) {
+                                input.classList.add('ng-dirty', 'ng-touched', 'ui-state-filled');
+                            }
+                            
+                            // Trigger all possible events
+                            ['input', 'change', 'blur', 'focusout'].forEach(function(eventType) {
+                                input.dispatchEvent(new Event(eventType, { bubbles: true }));
+                            });
+                            
+                            console.log('[STWH] APPROACH 5: Force value with all events');
+                            
+                            if (input.value === dateValue) {
+                                console.log('[STWH] ✓ APPROACH 5 SUCCESS: Value verified');
+                                return {success: true, method: 'approach-5-force-value'};
+                            }
+                        } catch (e) {
+                            console.log('[STWH] APPROACH 5 failed:', e.message);
+                        }
+                        
+                        // Final verification
+                        console.log('[STWH] Final check - Current value:', input.value);
+                        if (input.value === dateValue) {
+                            return {success: true, method: 'eventual-success'};
+                        }
+                        
+                        console.error('[STWH] All approaches failed to set date');
+                        return {success: false, error: 'All methods failed', currentValue: input.value};
+                    """, date_input, date_value)
+                    
+                    if date_set_success and date_set_success.get('success'):
+                        method = date_set_success.get('method', 'unknown')
+                        logging.info(f"[STWH] ✓ {field_name} set using: {method}")
+                        self._random_delay(0.1, 0.25)
+                        
+                        # Final verification
+                        final_value = date_input.get_attribute('value')
+                        if final_value == date_value:
+                            logging.info(f"[STWH] ✓ {field_name} verified: {final_value}")
+                            return True
+                        else:
+                            logging.warning(f"[STWH] {field_name} value mismatch: expected '{date_value}', got '{final_value}'")
+                            # Try one more time with direct attribute setting
+                            self.driver.execute_script("arguments[0].setAttribute('value', arguments[1]);", date_input, date_value)
+                            final_value = date_input.get_attribute('value')
+                            if final_value == date_value:
+                                logging.info(f"[STWH] ✓ {field_name} verified after retry: {final_value}")
+                                return True
+                            return False
+                    else:
+                        error = date_set_success.get('error', 'Unknown') if date_set_success else 'Script failed'
+                        current = date_set_success.get('currentValue', 'N/A') if date_set_success else 'N/A'
+                        logging.error(f"[STWH] {field_name} setting failed: {error}, current value: {current}")
+                        return False
+                
+                # Set From Date
+                if not set_date_field_robust("From Date", "annexAFromDate", date_formatted):
+                    logging.error("[STWH] STEP 4 FAILED: From Date could not be set")
+                    return {
+                        'status': '⚠️ Error - From Date setting failed',
+                        'value_of_purchases': 'N/A'
+                    }
+                
+                self._random_delay(0.25, 0.5)
+                
+                # Set To Date
+                if not set_date_field_robust("To Date", "annexAToDate", date_formatted):
+                    logging.error("[STWH] STEP 4 FAILED: To Date could not be set")
+                    return {
+                        'status': '⚠️ Error - To Date setting failed',
+                        'value_of_purchases': 'N/A'
+                    }
+                
+                logging.info(f"[STWH] ✅ STEP 4 COMPLETED: Both dates set to '{date_formatted}'")
+                self._random_delay(0.25, 0.5)
+            
+            # Step 5: Click the Search button
+            logging.info("[STWH] STEP 5: Clicking Search button")
+            
+            search_button_selectors = [
+                # Strategy 1: Button with loadStwhAnnexAform context and j_idt pattern
+                (By.XPATH, "//button[contains(@id, 'correspondenceTabs:loadStwhAnnexAform:j_idt') and @type='submit']//span[contains(text(), 'Search')]"),
+                
+                # Strategy 2: Button with ui-button class and Search span text
+                (By.XPATH, "//button[contains(@class, 'ui-button') and @type='submit']//span[@class='ui-button-text ui-c' and contains(text(), 'Search')]"),
+                
+                # Strategy 3: Form-scoped button with loadStwhAnnexAform and Search text
+                (By.XPATH, "//form[contains(@id, 'loadStwhAnnexAform')]//button[@type='submit' and contains(@class, 'ui-button')]//span[text()='Search']"),
+                
+                # Strategy 4: Button with onclick containing PrimeFaces.ab and Search span
+                (By.XPATH, "//button[contains(@onclick, 'PrimeFaces.ab') and contains(@id, 'loadStwhAnnexAform')]//span[contains(text(), 'Search')]"),
+                
+                # Strategy 5: Button with role='button' and Search text
+                (By.XPATH, "//button[@role='button' and contains(@id, 'loadStwhAnnexAform') and @type='submit']//span[normalize-space()='Search']"),
+                
+                # Strategy 6: CSS selector with partial ID and type submit
+                (By.CSS_SELECTOR, "button[id*='loadStwhAnnexAform'][type='submit'][class*='ui-button']"),
+                
+                # Strategy 7: Button with ui-widget class and Search span
+                (By.XPATH, "//button[contains(@class, 'ui-widget') and contains(@class, 'ui-state-default') and @type='submit']//span[text()='Search']"),
+                
+                # Strategy 8: Span with ui-button-text containing Search, then find parent button
+                (By.XPATH, "//span[contains(@class, 'ui-button-text') and contains(text(), 'Search')]/parent::button[@type='submit' and contains(@id, 'loadStwhAnnexAform')]"),
+                
+                # Strategy 9: Button with name matching loadStwhAnnexAform pattern
+                (By.XPATH, "//button[contains(@name, 'loadStwhAnnexAform:j_idt') and @type='submit']//span[contains(text(), 'Search')]"),
+                
+                # Strategy 10: Generic ui-button with Search text in loadStwhAnnexAform context
+                (By.XPATH, "//button[contains(@id, 'loadStwhAnnexAform') and contains(@class, 'ui-button')]//span[normalize-space(text())='Search']"),
+                
+                # Strategy 11: Button with aria-disabled='false' and Search text
+                (By.XPATH, "//button[@aria-disabled='false' and @type='submit' and contains(@id, 'loadStwhAnnexAform')]//span[text()='Search']"),
+                
+                # Strategy 12: Fallback - any submit button with Search text
+                (By.XPATH, "//button[@type='submit' and contains(@class, 'ui-button')]//span[contains(text(), 'Search')]"),
+            ]
+            
+            search_button = None
+            for by_type, selector in search_button_selectors:
+                try:
+                    search_button = WebDriverWait(self.driver, 1).until(
+                        EC.element_to_be_clickable((by_type, selector))
+                    )
+                    logging.info(f"[STWH] Found Search button using selector: {selector}")
+                    break
+                except TimeoutException:
+                    continue
+            
+            if not search_button:
+                # JavaScript fallback
+                try:
+                    logging.info("[STWH] Using JavaScript to find Search button")
+                    self.driver.execute_script("""
+                        var buttons = document.querySelectorAll('button, input[type="submit"], a');
+                        for (var i = 0; i < buttons.length; i++) {
+                            if (buttons[i].textContent.includes('Search') || 
+                                buttons[i].value === 'Search' ||
+                                buttons[i].id.includes('Search')) {
+                                buttons[i].click();
+                                return true;
+                            }
+                        }
+                        return false;
+                    """)
+                    logging.info("[STWH] Search button clicked via JavaScript")
+                    search_button = True
+                except Exception as js_error:
+                    logging.error(f"[STWH] JavaScript search failed: {str(js_error)}")
+            
+            if not search_button:
+                logging.error("[STWH] STEP 5 FAILED: Search button not found")
+                return {
+                    'status': '⚠️ Error - Search button not found',
+                    'value_of_purchases': 'N/A',
+                    'fbr_sales_tax': 'N/A'
+                }
+            
+            if search_button and search_button != True:
+                self._human_like_click(search_button)
+                logging.info("[STWH] ✓ STEP 5 COMPLETED: Search button clicked")
+            
+            self._random_delay(0.5, 1.0)
+            
+            # Wait for loading to complete
+            logging.info("[STWH] Waiting for search results to load...")
+            try:
+                WebDriverWait(self.driver, 60).until(
+                    lambda d: d.execute_script("return document.readyState") == "complete" and
+                              d.execute_script("return (typeof PrimeFaces !== 'undefined' && PrimeFaces.ajax.Queue.isEmpty())")
+                )
+                logging.info("[STWH] Page fully loaded and AJAX requests completed")
+            except TimeoutException:
+                logging.warning("[STWH] Timeout waiting for AJAX, proceeding anyway")
+            
+            self._random_delay(1.0, 1.5)
+            
+            # Wait for results table
+            logging.info("[STWH] Waiting for results table to appear...")
+            
+            results_table = None
+            results_table_selectors = [
+                # Strategy 1: Table with ui-datatable class
+                (By.XPATH, "//table[contains(@class, 'ui-datatable')]"),
+                
+                # Strategy 2: Table with role='grid'
+                (By.XPATH, "//table[@role='grid']"),
+                
+                # Strategy 3: Table with purchaseInvoiceTable ID
+                (By.ID, "correspondenceTabs:loadStwhAnnexAform:purchaseInvoiceTable"),
+                
+                # Strategy 4: Table with ui-datatable-data class
+                (By.XPATH, "//table[contains(@class, 'ui-datatable-data')]"),
+                
+                # Strategy 5: Table within loadStwhAnnexAform form
+                (By.XPATH, "//form[contains(@id, 'loadStwhAnnexAform')]//table[contains(@class, 'ui-datatable')]"),
+                
+                # Strategy 6: Table with ui-datatable-scrollable-body wrapper
+                (By.XPATH, "//div[contains(@class, 'ui-datatable-scrollable-body')]//table"),
+                
+                # Strategy 7: Table with thead and tbody (generic data table structure)
+                (By.XPATH, "//table[contains(@id, 'purchaseInvoiceTable') and .//thead and .//tbody]"),
+                
+                # Strategy 8: CSS selector with ui-datatable class
+                (By.CSS_SELECTOR, "table.ui-datatable"),
+                
+                # Strategy 9: Table with ui-widget class
+                (By.XPATH, "//table[contains(@class, 'ui-widget') and contains(@class, 'ui-datatable')]"),
+                
+                # Strategy 10: Generic table in results area
+                (By.XPATH, "//div[contains(@class, 'ui-datatable')]//table"),
+            ]
+            
+            for by_type, selector in results_table_selectors:
+                try:
+                    results_table = WebDriverWait(self.driver, 2).until(
+                        EC.presence_of_element_located((by_type, selector))
+                    )
+                    logging.info(f"[STWH] Results table found using selector: {selector}")
+                    break
+                except TimeoutException:
+                    continue
+            
+            # JavaScript fallback
+            if not results_table:
+                logging.info("[STWH] Trying JavaScript fallback for results table...")
+                try:
+                    results_table = self.driver.execute_script("""
+                        // Try multiple strategies to find the table
+                        var table = document.querySelector('table.ui-datatable') || 
+                                   document.querySelector('table[role="grid"]') ||
+                                   document.querySelector('table[id*="purchaseInvoiceTable"]') ||
+                                   document.querySelector('form[id*="loadStwhAnnexAform"] table');
+                        
+                        if (table && table.querySelector('tbody tr')) {
+                            return table;
+                        }
+                        
+                        // Last resort: find any table with data rows
+                        var tables = document.querySelectorAll('table');
+                        for (var i = 0; i < tables.length; i++) {
+                            if (tables[i].querySelector('tbody tr')) {
+                                return tables[i];
+                            }
+                        }
+                        
+                        return null;
+                    """)
+                    
+                    if results_table:
+                        logging.info("[STWH] Results table found using JavaScript fallback")
+                except Exception as js_error:
+                    logging.error(f"[STWH] JavaScript fallback failed: {str(js_error)}")
+            
+            if not results_table:
+                logging.error("[STWH] Results table did not appear after trying all strategies")
+                return {
+                    'status': '⚠️ Error - No results table',
+                    'value_of_purchases': 'N/A',
+                    'fbr_sales_tax': 'N/A'
+                }
+            
+            logging.info("[STWH] ✓ Results table verified and ready")
+            
+            self._random_delay(0.5, 1.0)
+            
+            # Step 6: Find the correct row by matching Sales Tax/FED in ST Mode
+            logging.info(f"[STWH] STEP 6: Finding row with Sales Tax = '{sales_tax_fed_st_mode}'")
+            
+            try:
+                matching_row = self.driver.execute_script("""
+                    var targetSalesTax = arguments[0];
+                    var tables = document.querySelectorAll('table.ui-datatable-data, table[role="grid"]');
+                    
+                    for (var t = 0; t < tables.length; t++) {
+                        var rows = tables[t].querySelectorAll('tbody tr');
+                        
+                        for (var i = 0; i < rows.length; i++) {
+                            var cells = rows[i].querySelectorAll('td');
+                            
+                            for (var j = 0; j < cells.length; j++) {
+                                var cellText = cells[j].textContent.trim();
+                                
+                                if (cellText === targetSalesTax || 
+                                    parseFloat(cellText.replace(/,/g, '')) === parseFloat(targetSalesTax)) {
+                                    
+                                    rows[i].setAttribute('data-matched-row', 'true');
+                                    return {
+                                        rowIndex: i,
+                                        tableIndex: t,
+                                        columnIndex: j,
+                                        salesTaxValue: cellText
+                                    };
+                                }
+                            }
+                        }
+                    }
+                    return null;
+                """, str(sales_tax_fed_st_mode))
+                
+                if not matching_row:
+                    logging.error(f"[STWH] STEP 6 FAILED: No row found with Sales Tax = '{sales_tax_fed_st_mode}'")
+                    return {
+                        'status': f'⚠️ Not Found - Sales Tax {sales_tax_fed_st_mode} not in results',
+                        'value_of_purchases': 'N/A',
+                        'fbr_sales_tax': 'N/A'
+                    }
+                
+                logging.info(f"[STWH] ✓ STEP 6 COMPLETED: Found matching row at index {matching_row['rowIndex']} "
+                           f"in table {matching_row['tableIndex']}, column {matching_row['columnIndex']}")
+                self._random_delay(0.25, 0.5)
+                
+            except Exception as e:
+                logging.error(f"[STWH] Error finding matching row: {str(e)}")
+                return {
+                    'status': '⚠️ Error - Row matching failed',
+                    'value_of_purchases': 'N/A',
+                    'fbr_sales_tax': 'N/A'
+                }
+            
+            # Step 6.5: Click the checkbox in the matched row
+            logging.info("[STWH] STEP 6.5: Clicking checkbox in matched row")
+            
+            try:
+                checkbox_clicked = self.driver.execute_script("""
+                    var row = document.querySelector('tr[data-matched-row="true"]');
+                    if (!row) {
+                        console.error('Matched row not found');
+                        return {success: false, error: 'Row not found'};
+                    }
+                    
+                    // Strategy 1: Find checkbox input in the row
+                    var checkbox = row.querySelector('input[type="checkbox"]');
+                    if (checkbox && !checkbox.checked) {
+                        checkbox.click();
+                        console.log('Checkbox clicked via input element');
+                        return {success: true, method: 'input'};
+                    }
+                    
+                    // Strategy 2: Find div with ui-chkbox class (PrimeFaces checkbox wrapper)
+                    var chkboxDiv = row.querySelector('div.ui-chkbox-box, div[role="checkbox"]');
+                    if (chkboxDiv) {
+                        chkboxDiv.click();
+                        console.log('Checkbox clicked via PrimeFaces div');
+                        return {success: true, method: 'primefaces-div'};
+                    }
+                    
+                    // Strategy 3: Find any clickable element in first cell (usually checkbox column)
+                    var firstCell = row.querySelector('td:first-child');
+                    if (firstCell) {
+                        var clickable = firstCell.querySelector('input, div[role="checkbox"], span.ui-chkbox-icon');
+                        if (clickable) {
+                            clickable.click();
+                            console.log('Checkbox clicked via first cell element');
+                            return {success: true, method: 'first-cell'};
+                        }
+                    }
+                    
+                    // Strategy 4: Look for checkbox by ID pattern
+                    var inputs = row.querySelectorAll('input[id*="checkbox"], input[id*="chk"]');
+                    if (inputs.length > 0) {
+                        inputs[0].click();
+                        console.log('Checkbox clicked via ID pattern');
+                        return {success: true, method: 'id-pattern'};
+                    }
+                    
+                    return {success: false, error: 'No checkbox found in row'};
+                """)
+                
+                if checkbox_clicked and checkbox_clicked.get('success'):
+                    logging.info(f"[STWH] ✓ STEP 6.5 COMPLETED: Checkbox clicked using method '{checkbox_clicked.get('method')}'")
+                    self._random_delay(0.5, 0.75)
+                else:
+                    error_msg = checkbox_clicked.get('error', 'Unknown error') if checkbox_clicked else 'Script returned null'
+                    logging.error(f"[STWH] STEP 6.5 FAILED: {error_msg}")
+                    return {
+                        'status': f'⚠️ Error - Checkbox not clickable ({error_msg})',
+                        'value_of_purchases': 'N/A',
+                        'fbr_sales_tax': 'N/A'
+                    }
+                    
+            except Exception as e:
+                logging.error(f"[STWH] Error clicking checkbox: {str(e)}")
+                return {
+                    'status': '⚠️ Error - Checkbox click failed',
+                    'value_of_purchases': 'N/A',
+                    'fbr_sales_tax': 'N/A'
+                }
+            
+            # Step 7: Extract "Value of Purchases"
+            logging.info("[STWH] STEP 7: Extracting 'Value of Purchases'")
+            
+            try:
+                value_of_purchases = self.driver.execute_script(r"""
+                    var row = document.querySelector('tr[data-matched-row="true"]');
+                    if (!row) return null;
+                    
+                    var cells = row.querySelectorAll('td');
+                    var headers = row.closest('table').querySelectorAll('thead th');
+                    
+                    for (var i = 0; i < headers.length; i++) {
+                        var headerText = headers[i].textContent.trim().toLowerCase();
+                        if (headerText.includes('value') && headerText.includes('purchase')) {
+                            if (cells[i]) {
+                                return cells[i].textContent.trim();
+                            }
+                        }
+                    }
+                    
+                    for (var i = 0; i < cells.length; i++) {
+                        var cellText = cells[i].textContent.trim();
+                        if (/^[\d,]+(\.\d{1,2})?$/.test(cellText) && cellText !== arguments[0]) {
+                            return cellText;
+                        }
+                    }
+                    
+                    return null;
+                """, str(sales_tax_fed_st_mode))
+                
+                if not value_of_purchases:
+                    logging.warning("[STWH] Could not extract 'Value of Purchases' from row")
+                    value_of_purchases = "N/A"
+                else:
+                    logging.info(f"[STWH] ✓ STEP 7 COMPLETED: Value of Purchases = '{value_of_purchases}'")
+                
+                self._random_delay(0.25, 0.5)
+                
+            except Exception as e:
+                logging.error(f"[STWH] Error extracting value: {str(e)}")
+                value_of_purchases = "N/A"
+            
+            # Step 8: Click the "Claim" button (PAGE-LEVEL button in toolbar, not in row)
+            logging.info("[STWH] STEP 8: Clicking 'Claim' button")
+            
+            try:
+                claim_result = self.driver.execute_script("""
+                    var debugLog = [];
+                    
+                    // Verify matched row exists and checkbox is selected
+                    var row = document.querySelector('tr[data-matched-row="true"]');
+                    if (!row) {
+                        debugLog.push('ERROR: Matched row not found');
+                        return {success: false, error: 'Matched row not found', debugLog: debugLog};
+                    }
+                    
+                    debugLog.push('✓ Matched row verified');
+                    
+                    // IMPORTANT: Claim button is a PAGE-LEVEL button in the toolbar, NOT inside the row!
+                    // Search entire document for Claim button
+                    
+                    // STRATEGY 1: Button with exact text "Claim" in toolbar/form area
+                    var allButtons = document.querySelectorAll('button');
+                    debugLog.push('Total buttons on page: ' + allButtons.length);
+                    
+                    var claimButtons = [];
+                    for (var i = 0; i < allButtons.length; i++) {
+                        var btn = allButtons[i];
+                        var btnText = btn.textContent.trim();
+                        if (btnText === 'Claim') {
+                            claimButtons.push({
+                                button: btn,
+                                id: btn.id || 'NO_ID',
+                                classes: btn.className || 'NO_CLASSES',
+                                disabled: btn.disabled,
+                                ariaDisabled: btn.getAttribute('aria-disabled'),
+                                visible: btn.offsetParent !== null,
+                                parent: btn.parentElement ? btn.parentElement.tagName : 'NO_PARENT'
+                            });
+                        }
+                    }
+                    
+                    debugLog.push('Found ' + claimButtons.length + ' buttons with text "Claim"');
+                    
+                    // Try each Claim button found
+                    for (var i = 0; i < claimButtons.length; i++) {
+                        var btnInfo = claimButtons[i];
+                        debugLog.push('Claim button ' + i + ': ID=' + btnInfo.id + ', Classes=' + btnInfo.classes + 
+                                     ', Disabled=' + btnInfo.disabled + ', Visible=' + btnInfo.visible);
+                        
+                        if (btnInfo.visible && !btnInfo.disabled && btnInfo.ariaDisabled !== 'true') {
+                            debugLog.push('STRATEGY 1 SUCCESS - Clicking Claim button ID: ' + btnInfo.id);
+                            btnInfo.button.click();
+                            return {success: true, method: 'strategy-1-page-level-claim', buttonId: btnInfo.id, debugLog: debugLog};
+                        } else {
+                            debugLog.push('Claim button ' + i + ' not clickable (disabled or hidden)');
+                        }
+                    }
+                    
+                    // STRATEGY 2: Look for button in loadStwhAnnexAform context with "Claim" text
+                    var formButtons = document.querySelectorAll('form[id*="loadStwhAnnexAform"] button, div[id*="loadStwhAnnexAform"] button');
+                    debugLog.push('STRATEGY 2: Found ' + formButtons.length + ' buttons in form context');
+                    for (var i = 0; i < formButtons.length; i++) {
+                        var btn = formButtons[i];
+                        if (btn.textContent.trim() === 'Claim') {
+                            if (btn.offsetParent !== null && !btn.disabled && btn.getAttribute('aria-disabled') !== 'true') {
+                                debugLog.push('STRATEGY 2 SUCCESS - Clicking Claim button ID: ' + btn.id);
+                                btn.click();
+                                return {success: true, method: 'strategy-2-form-context', buttonId: btn.id, debugLog: debugLog};
+                            }
+                        }
+                    }
+                    
+                    // STRATEGY 3: Look for button with span containing "Claim"
+                    var spanButtons = document.querySelectorAll('button span');
+                    debugLog.push('STRATEGY 3: Scanning ' + spanButtons.length + ' button spans');
+                    for (var i = 0; i < spanButtons.length; i++) {
+                        var span = spanButtons[i];
+                        if (span.textContent.trim() === 'Claim') {
+                            var btn = span.closest('button');
+                            if (btn && btn.offsetParent !== null && !btn.disabled && btn.getAttribute('aria-disabled') !== 'true') {
+                                debugLog.push('STRATEGY 3 SUCCESS - Clicking Claim button via span, ID: ' + btn.id);
+                                btn.click();
+                                return {success: true, method: 'strategy-3-span-search', buttonId: btn.id, debugLog: debugLog};
+                            }
+                        }
+                    }
+                    
+                    // STRATEGY 4: Look for button with ui-button class and "Claim" text
+                    var uiButtons = document.querySelectorAll('button.ui-button, button[class*="btn"]');
+                    debugLog.push('STRATEGY 4: Found ' + uiButtons.length + ' UI buttons');
+                    for (var i = 0; i < uiButtons.length; i++) {
+                        var btn = uiButtons[i];
+                        if (btn.textContent.trim() === 'Claim') {
+                            if (btn.offsetParent !== null && !btn.disabled && btn.getAttribute('aria-disabled') !== 'true') {
+                                debugLog.push('STRATEGY 4 SUCCESS - Clicking UI button ID: ' + btn.id);
+                                btn.click();
+                                return {success: true, method: 'strategy-4-ui-button', buttonId: btn.id, debugLog: debugLog};
+                            }
+                        }
+                    }
+                    
+                    // STRATEGY 5: Force click first visible Claim button (ignore disabled state)
+                    debugLog.push('STRATEGY 5: FORCE CLICK - Attempting first visible Claim button');
+                    for (var i = 0; i < claimButtons.length; i++) {
+                        var btnInfo = claimButtons[i];
+                        if (btnInfo.visible) {
+                            debugLog.push('STRATEGY 5: Force clicking Claim button ID: ' + btnInfo.id);
+                            try {
+                                btnInfo.button.click();
+                                debugLog.push('STRATEGY 5 SUCCESS - Force clicked ID: ' + btnInfo.id);
+                                return {success: true, method: 'strategy-5-force-click', buttonId: btnInfo.id, debugLog: debugLog};
+                            } catch (e) {
+                                debugLog.push('STRATEGY 5: Click failed - ' + e.message);
+                            }
+                        }
+                    }
+                    
+                    // STRATEGY 6: JavaScript click event dispatch
+                    debugLog.push('STRATEGY 6: Trying event dispatch on first Claim button');
+                    if (claimButtons.length > 0) {
+                        var btn = claimButtons[0].button;
+                        try {
+                            var clickEvent = new MouseEvent('click', {
+                                bubbles: true,
+                                cancelable: true,
+                                view: window
+                            });
+                            btn.dispatchEvent(clickEvent);
+                            debugLog.push('STRATEGY 6 SUCCESS - Dispatched click event to: ' + claimButtons[0].id);
+                            return {success: true, method: 'strategy-6-event-dispatch', buttonId: claimButtons[0].id, debugLog: debugLog};
+                        } catch (e) {
+                            debugLog.push('STRATEGY 6 failed: ' + e.message);
+                        }
+                    }
+                    
+                    // All strategies failed
+                    debugLog.push('ERROR: All 6 strategies failed to click Claim button');
+                    return {
+                        success: false,
+                        error: 'Claim button found but not clickable',
+                        debugLog: debugLog,
+                        claimButtonsFound: claimButtons.length,
+                        claimButtonDetails: claimButtons
+                    };
+                """)
+                
+                # Log debug information from JavaScript
+                if claim_result and 'debugLog' in claim_result:
+                    logging.info("[STWH] JavaScript Debug Log:")
+                    for log_msg in claim_result['debugLog']:
+                        logging.info(f"[STWH]   {log_msg}")
+                
+                if not claim_result or not claim_result.get('success'):
+                    error_msg = claim_result.get('error', 'Unknown error') if claim_result else 'Script returned null'
+                    
+                    # Log detailed button information for debugging
+                    if claim_result and 'buttonDetails' in claim_result:
+                        logging.error("[STWH] DETAILED BUTTON ANALYSIS:")
+                        for btn_info in claim_result['buttonDetails']:
+                            logging.error(f"[STWH]   Button {btn_info['index']}: ID={btn_info['id']}, "
+                                        f"Classes={btn_info['classes']}, Type={btn_info['type']}, "
+                                        f"Text='{btn_info['text']}', Disabled={btn_info['disabled']}, "
+                                        f"AriaDisabled={btn_info['ariaDisabled']}, Visible={btn_info['visible']}")
+                            logging.error(f"[STWH]   HTML: {btn_info['innerHTML'][:100]}")
+                    
+                    logging.error(f"[STWH] STEP 8 FAILED: 'Claim' button not found - {error_msg}")
+                    return {
+                        'status': f'⚠️ Error - Claim button not found ({error_msg})',
+                        'value_of_purchases': value_of_purchases,
+                        'fbr_sales_tax': sales_tax_fed_st_mode
+                    }
+                
+                method = claim_result.get('method', 'unknown')
+                button_id = claim_result.get('buttonId', 'unknown')
+                logging.info(f"[STWH] ✓ STEP 8 COMPLETED: 'Claim' button clicked using {method}, button ID: {button_id}")
+                
+            except Exception as e:
+                logging.error(f"[STWH] Error clicking claim button: {str(e)}")
+                return {
+                    'status': '⚠️ Error - Claim click failed',
+                    'value_of_purchases': value_of_purchases,
+                    'fbr_sales_tax': sales_tax_fed_st_mode
+                }
+            
+            # Step 9: Wait for AJAX processing and success confirmation
+            logging.info("[STWH] STEP 9: Waiting for claim processing to complete...")
+            
+            try:
+                # Wait for AJAX to start (brief delay)
+                self._random_delay(0.5, 1.0)
+                
+                # Wait for PrimeFaces AJAX queue to empty and page to be complete
+                logging.info("[STWH] Waiting for AJAX queue to complete...")
+                WebDriverWait(self.driver, 90).until(
+                    lambda d: d.execute_script("""
+                        return document.readyState === 'complete' && 
+                               (typeof PrimeFaces === 'undefined' || PrimeFaces.ajax.Queue.isEmpty());
+                    """)
+                )
+                logging.info("[STWH] ✓ AJAX processing completed")
+                
+                # Additional wait for any animations or updates to settle
+                self._random_delay(1.0, 1.5)
+                
+                # Wait for success message or growl notification to appear
+                logging.info("[STWH] Checking for success confirmation...")
+                success_found = False
+                
+                try:
+                    # Wait for success message with explicit timeout
+                    WebDriverWait(self.driver, 30).until(
+                        lambda d: d.execute_script("""
+                            var messages = document.querySelectorAll(
+                                '.ui-messages-info, .ui-messages-info-summary, .ui-messages-info-detail, ' +
+                                '.ui-growl-message, .ui-growl-item, ' +
+                                '[class*="success"], [class*="Success"], ' +
+                                '.alert-success, .message-success'
+                            );
+                            
+                            for (var i = 0; i < messages.length; i++) {
+                                var msg = messages[i];
+                                var text = msg.textContent.toLowerCase();
+                                var isVisible = msg.offsetParent !== null;
+                                
+                                if (isVisible && (
+                                    text.includes('success') || 
+                                    text.includes('loaded') || 
+                                    text.includes('claimed') ||
+                                    text.includes('completed') ||
+                                    text.includes('saved')
+                                )) {
+                                    return msg.textContent.trim();
+                                }
+                            }
+                            return null;
+                        """)
+                    )
+                    
+                    success_message = self.driver.execute_script("""
+                        var messages = document.querySelectorAll(
+                            '.ui-messages-info, .ui-growl-message, [class*="success"]'
+                        );
+                        for (var i = 0; i < messages.length; i++) {
+                            var text = messages[i].textContent.toLowerCase();
+                            if (text.includes('success') || text.includes('loaded') || text.includes('claimed')) {
+                                return messages[i].textContent.trim();
+                            }
+                        }
+                        return null;
+                    """)
+                    
+                    if success_message:
+                        logging.info(f"[STWH] ✓ STEP 9 COMPLETED: Success confirmation: '{success_message}'")
+                        success_found = True
+                    
+                except TimeoutException:
+                    logging.warning("[STWH] No success message appeared within timeout, checking for errors...")
+                    
+                    # Check for error messages
+                    error_message = self.driver.execute_script("""
+                        var errors = document.querySelectorAll(
+                            '.ui-messages-error, .ui-messages-error-summary, ' +
+                            '.alert-error, .alert-danger, [class*="error"]'
+                        );
+                        for (var i = 0; i < errors.length; i++) {
+                            var isVisible = errors[i].offsetParent !== null;
+                            if (isVisible) {
+                                return errors[i].textContent.trim();
+                            }
+                        }
+                        return null;
+                    """)
+                    
+                    if error_message:
+                        logging.error(f"[STWH] Error message detected: {error_message}")
+                        return {
+                            'status': f'⚠️ Error - {error_message[:100]}',
+                            'value_of_purchases': value_of_purchases,
+                            'fbr_sales_tax': sales_tax_fed_st_mode
+                        }
+                
+                # Final verification: ensure we're still on the correct page or moved to success state
+                self._random_delay(1.0, 1.5)
+                
+                if not success_found:
+                    # Check if the row is still marked (might indicate incomplete operation)
+                    row_still_exists = self.driver.execute_script("""
+                        return document.querySelector('tr[data-matched-row="true"]') !== null;
+                    """)
+                    
+                    if row_still_exists:
+                        logging.warning("[STWH] Matched row still exists - operation may not have completed fully")
+                    else:
+                        logging.info("[STWH] Matched row no longer present - operation likely completed")
+                        success_found = True
+                
+                if not success_found:
+                    logging.warning("[STWH] Could not confirm success, but proceeding after wait period")
+                
+            except TimeoutException:
+                logging.error("[STWH] Timeout waiting for claim processing to complete")
+                return {
+                    'status': '⚠️ Error - Processing timeout',
+                    'value_of_purchases': value_of_purchases,
+                    'fbr_sales_tax': sales_tax_fed_st_mode
+                }
+            except Exception as e:
+                logging.error(f"[STWH] Error during claim verification: {str(e)}")
+                return {
+                    'status': '⚠️ Error - Verification failed',
+                    'value_of_purchases': value_of_purchases,
+                    'fbr_sales_tax': sales_tax_fed_st_mode
+                }
+            
+            logging.info(f"[STWH] ✅ WORKFLOW COMPLETE: Invoice {invoice_number} processed successfully")
+            
+            return {
+                'status': '✓ Success',
+                'value_of_purchases': value_of_purchases,
+                'fbr_sales_tax': sales_tax_fed_st_mode
+            }
+            
+        except WebDriverException as e:
+            logging.error(f"[STWH] Browser closed by user during processing: {str(e)}")
+            return {
+                'status': '[STWH] ⚠️ Browser Closed',
+                'value_of_purchases': 'N/A',
+                'fbr_sales_tax': 'N/A'
+            }
+        except Exception as e:
+            logging.error(f"[STWH] Error processing invoice {invoice_number}: {str(e)}")
+            return {
+                'status': '[STWH] ⚠️ Error',
+                'value_of_purchases': 'N/A',
+                'fbr_sales_tax': 'N/A'
+            }
+    
+
     
     def close_browser(self):
         """

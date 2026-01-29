@@ -8,6 +8,7 @@ playwright==1.40.0
 
 # Excel Operations
 openpyxl==3.1.2
+xlrd==2.0.1
 
 # Image Processing (for logo display in GUI)
 Pillow>=9.0.0

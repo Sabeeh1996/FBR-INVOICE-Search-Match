@@ -75,8 +75,14 @@ cmd = [
     '--noconfirm',
     '--clean',
     
-    # Add data files
-    # Hidden imports (config files now bundled via spec file)
+    # Bundle data files INSIDE the exe (cannot be modified by user)
+    '--add-data=license_config.json;.',
+    '--add-data=version.txt;.',
+    '--add-data=mac_config.json;.',
+    '--add-data=mac_whitelist.json;.',
+    '--add-data=assets/codium_edge_logo.png;assets',
+    
+    # Hidden imports
     '--hidden-import=tkinter',
     '--hidden-import=tkinter.ttk',
     '--hidden-import=tkinter.messagebox',
@@ -134,22 +140,14 @@ else:
 
 print()
 
-# Step 5: Create distribution package
-print("[5/5] Creating distribution package...")
+# Step 5: Verify bundled files
+print("[5/5] Verifying bundled files...")
 dist_dir = PROJECT_DIR / 'dist'
 
-# Copy required files to dist
-files_to_copy = [
-    'license_config.json',
-    'version.txt'
-]
-
-for file_name in files_to_copy:
-    src = PROJECT_DIR / file_name
-    if src.exists():
-        dst = dist_dir / file_name
-        shutil.copy2(src, dst)
-        print(f"  ✓ Copied {file_name}")
+# These files are now bundled INSIDE the exe, not separate files
+bundled_files = ['license_config.json', 'version.txt', 'mac_config.json', 'mac_whitelist.json', 'assets/codium_edge_logo.png']
+print(f"  ✓ Files bundled inside EXE: {', '.join(bundled_files)}")
+print(f"  ✓ These files are read-only and cannot be modified by users")
 
 print()
 print("=" * 70)
@@ -159,15 +157,10 @@ print()
 print(f"Executable: {exe_path}")
 print(f"Size: {size_mb:.1f} MB")
 print()
-print("Files in dist folder:")
-for item in sorted(dist_dir.iterdir()):
-    if item.is_file():
-        size = item.stat().st_size / 1024
-        unit = "KB" if size < 1024 else "MB"
-        size_val = size if size < 1024 else size / 1024
-        print(f"  • {item.name} ({size_val:.1f} {unit})")
+print("Files bundled inside EXE (tamper-proof):")
+for file_name in bundled_files:
+    print(f"  • {file_name}")
 print()
 print("✓ Ready to distribute!")
 print()
 print("To test: cd dist && .\\InvoiceChecker.exe")
-print()

@@ -37,6 +37,17 @@ def build_exe():
         '--hidden-import=playwright',
         '--hidden-import=undetected_chromedriver',
         '--collect-all=openpyxl',  # Ensure all openpyxl data files are included
+        '--exclude-module=PyQt5',  # Exclude PyQt5 to avoid conflicts with PyQt6
+        '--exclude-module=PySide2',  # Exclude PySide2
+        '--exclude-module=PySide6',  # Exclude PySide6
+        '--exclude-module=matplotlib',  # Exclude matplotlib if not needed
+        '--exclude-module=torch',  # Exclude torch - not needed
+        '--exclude-module=scipy',  # Exclude scipy - not needed
+        '--exclude-module=IPython',  # Exclude IPython - not needed
+        '--exclude-module=sphinx',  # Exclude sphinx - not needed
+        '--exclude-module=pytest',  # Exclude pytest - not needed
+        '--exclude-module=pandas',  # Exclude pandas - not needed
+        '--exclude-module=numpy',  # Exclude numpy - not needed
     ]
     
     print("🔨 Building InvoiceChecker executable...")
