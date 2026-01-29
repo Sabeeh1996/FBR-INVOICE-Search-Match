@@ -837,6 +837,444 @@ class FBRChecker:
             logging.error(f"Error in claim workflow: {str(e)}")
             return False
     
+    def process_disallow_workflow(self, ntn_cnic=None, invoice_no=None, source_authority=None):
+        """
+        Execute the complete Annex-A disallow workflow:
+        1. Click Annex-A (Purchases) tab
+        2. Enter NTN/CNIC in the form
+        3. Enter Invoice Number in the form
+        4. Select Source Authority from dropdown
+        
+        Args:
+            ntn_cnic (str): NTN/CNIC value from Excel sheet
+            invoice_no (str): Invoice number from Excel sheet
+            source_authority (str): Source authority from Excel sheet (FBR, BRA, KPRA, PRA, SRB)
+        
+        Returns:
+            bool: True if all steps completed successfully, False otherwise
+        """
+        try:
+            logging.info("Starting Annex-A disallow workflow...")
+            
+            # Wait for page to fully load before processing
+            logging.info("Waiting for page to fully load...")
+            try:
+                WebDriverWait(self.driver, 5).until(
+                    lambda driver: driver.execute_script("return document.readyState") == "complete"
+                )
+                logging.info("✓ Page fully loaded")
+            except TimeoutException:
+                logging.warning("Page load timeout, but proceeding anyway...")
+            
+            # Step 1: Click Annex-A tab (RUN ONLY ONCE)
+            if not self.annex_a_tab_clicked:
+                if not self.click_annex_a_tab():
+                    logging.warning("Annex-A tab workflow skipped (tab not found)")
+                    return False
+                self.annex_a_tab_clicked = True
+                logging.info("✅ Annex-A tab clicked and will not be clicked again for this session")
+            else:
+                logging.info("ℹ️ Annex-A tab already clicked in this session, skipping...")
+            
+            # Wait for form to load after clicking Annex-A tab
+            self._random_delay(0.5, 1.0)
+            wait = WebDriverWait(self.driver, 20)
+            
+            # Step 2: Enter NTN/CNIC in the sellerRegisterationNo field
+            if ntn_cnic:
+                logging.info(f"STEP 2 (Disallow): Entering NTN/CNIC: {ntn_cnic}")
+                
+                # Find the NTN/CNIC input field in annexa-form (disallow form)
+                ntn_cnic_input = None
+                ntn_cnic_selectors = [
+                    (By.ID, "correspondenceTabs:annexa-form:sellerRegisterationNo"),
+                    (By.NAME, "correspondenceTabs:annexa-form:sellerRegisterationNo"),
+                    (By.XPATH, "//input[@id='correspondenceTabs:annexa-form:sellerRegisterationNo']"),
+                    (By.XPATH, "//input[@name='correspondenceTabs:annexa-form:sellerRegisterationNo']"),
+                    (By.XPATH, "//input[@type='text' and @maxlength='13' and contains(@id, 'annexa-form')]"),
+                ]
+                
+                for by_type, selector in ntn_cnic_selectors:
+                    try:
+                        ntn_cnic_input = wait.until(EC.visibility_of_element_located((by_type, selector)))
+                        ntn_cnic_input = wait.until(EC.element_to_be_clickable((by_type, selector)))
+                        logging.info(f"Found NTN/CNIC input using selector: {selector}")
+                        break
+                    except TimeoutException:
+                        continue
+                
+                if not ntn_cnic_input:
+                    logging.error("STEP 2 FAILED: NTN/CNIC input field not found")
+                    return False
+                
+                # Clear any existing value and enter new value
+                ntn_cnic_input.clear()
+                self._human_like_click(ntn_cnic_input)
+                self._human_like_type(ntn_cnic_input, ntn_cnic)
+                self._random_delay(0.1, 0.25)
+                
+                # Verify the value was entered
+                entered_value = ntn_cnic_input.get_attribute('value')
+                if entered_value != str(ntn_cnic):
+                    logging.error(f"STEP 2 VERIFICATION FAILED: Expected '{ntn_cnic}', got '{entered_value}'")
+                    return False
+                
+                logging.info(f"✓ STEP 2 COMPLETED & VERIFIED: NTN/CNIC = '{entered_value}'")
+                self._random_delay(0.25, 0.5)
+            
+            # Step 3: Enter Invoice Number in the invoiceNo field
+            if invoice_no:
+                logging.info(f"STEP 3 (Disallow): Entering Invoice Number: {invoice_no}")
+                
+                # Find the Invoice Number input field in annexa-form (disallow form)
+                invoice_no_input = None
+                invoice_no_selectors = [
+                    (By.ID, "correspondenceTabs:annexa-form:invoiceNo"),
+                    (By.NAME, "correspondenceTabs:annexa-form:invoiceNo"),
+                    (By.XPATH, "//input[@id='correspondenceTabs:annexa-form:invoiceNo']"),
+                    (By.XPATH, "//input[@name='correspondenceTabs:annexa-form:invoiceNo']"),
+                    (By.XPATH, "//input[@type='text' and @maxlength='50' and contains(@id, 'annexa-form')]"),
+                ]
+                
+                for by_type, selector in invoice_no_selectors:
+                    try:
+                        invoice_no_input = wait.until(EC.visibility_of_element_located((by_type, selector)))
+                        invoice_no_input = wait.until(EC.element_to_be_clickable((by_type, selector)))
+                        logging.info(f"Found Invoice Number input using selector: {selector}")
+                        break
+                    except TimeoutException:
+                        continue
+                
+                if not invoice_no_input:
+                    logging.error("STEP 3 FAILED: Invoice Number input field not found")
+                    return False
+                
+                # Clear any existing value and enter new value
+                invoice_no_input.clear()
+                self._human_like_click(invoice_no_input)
+                self._human_like_type(invoice_no_input, invoice_no)
+                self._random_delay(0.1, 0.25)
+                
+                # Verify the value was entered
+                entered_value = invoice_no_input.get_attribute('value')
+                if entered_value != str(invoice_no):
+                    logging.error(f"STEP 3 VERIFICATION FAILED: Expected '{invoice_no}', got '{entered_value}'")
+                    return False
+                
+                logging.info(f"✓ STEP 3 COMPLETED & VERIFIED: Invoice Number = '{entered_value}'")
+                self._random_delay(0.25, 0.5)
+            
+            # Step 4: Select Source Authority from dropdown if provided
+            if source_authority:
+                logging.info(f"STEP 4 (Disallow): Selecting Source Authority: {source_authority}")
+                
+                # Find the dropdown element in annexa-form (disallow form)
+                dropdown_selectors = [
+                    (By.ID, "correspondenceTabs:annexa-form:sourceAuthority"),
+                    (By.XPATH, "//div[@id='correspondenceTabs:annexa-form:sourceAuthority']"),
+                    (By.XPATH, "//div[contains(@class, 'ui-selectonemenu') and contains(@id, 'annexa-form:sourceAuthority')]"),
+                ]
+                
+                dropdown = None
+                for by_type, selector in dropdown_selectors:
+                    try:
+                        dropdown = wait.until(EC.visibility_of_element_located((by_type, selector)))
+                        dropdown = wait.until(EC.element_to_be_clickable((by_type, selector)))
+                        logging.info(f"Found dropdown using selector: {selector}")
+                        break
+                    except TimeoutException:
+                        continue
+                
+                if not dropdown:
+                    logging.error("STEP 4 FAILED: Source Authority dropdown not found")
+                    return False
+                
+                # Click the dropdown to open it
+                self._human_like_click(dropdown)
+                self._random_delay(0.25, 0.5)
+                
+                # Map option values: 7=BRA, 1=FBR, 6=KPRA, 5=PRA, 8=SRB
+                authority_map = {
+                    'BRA': '7',
+                    'FBR': '1',
+                    'KPRA': '6',
+                    'PRA': '5',
+                    'SRB': '8'
+                }
+                
+                # Normalize source_authority
+                source_auth_normalized = str(source_authority).strip().upper()
+                option_value = authority_map.get(source_auth_normalized)
+                
+                if not option_value:
+                    logging.error(f"STEP 4 FAILED: Unknown source authority '{source_authority}', valid values: {list(authority_map.keys())}")
+                    return False
+                
+                # Find and click the option in the dropdown (annexa-form for disallow)
+                option_selectors = [
+                    (By.XPATH, f"//div[@id='correspondenceTabs:annexa-form:sourceAuthority_panel']//li[@data-label='{source_auth_normalized}']"),
+                    (By.XPATH, f"//div[contains(@id, 'annexa-form:sourceAuthority_panel')]//li[contains(text(), '{source_auth_normalized}')]"),
+                    (By.XPATH, f"//select[@id='correspondenceTabs:annexa-form:sourceAuthority_input']/option[@value='{option_value}']"),
+                ]
+                
+                option_selected = False
+                for by_type, selector in option_selectors:
+                    try:
+                        option = wait.until(EC.element_to_be_clickable((by_type, selector)))
+                        self._human_like_click(option)
+                        logging.info(f"✓ STEP 4 COMPLETED: Selected Source Authority: {source_auth_normalized}")
+                        option_selected = True
+                        self._random_delay(0.25, 0.5)
+                        break
+                    except TimeoutException:
+                        continue
+                
+                if not option_selected:
+                    logging.error(f"STEP 4 FAILED: Could not select option '{source_auth_normalized}' from dropdown")
+                    return False
+                
+                # Verify selection was applied (disallow form: annexa-form)
+                self._random_delay(0.1, 0.25)
+                selected_value = self.driver.execute_script("""
+                    var dropdown = document.getElementById('correspondenceTabs:annexa-form:sourceAuthority');
+                    if (dropdown) {
+                        var label = dropdown.querySelector('.ui-selectonemenu-label');
+                        return label ? label.innerText.trim() : '';
+                    }
+                    return '';
+                """)
+                
+                if selected_value != source_auth_normalized:
+                    logging.error(f"STEP 4 VERIFICATION FAILED: Expected '{source_auth_normalized}', got '{selected_value}'")
+                    return False
+                
+                logging.info(f"✓ STEP 4 VERIFIED: Source Authority is set to '{selected_value}'")
+            
+            # Step 5: Click the Search button to search for invoices
+            logging.info("STEP 5 (Disallow): Clicking Search button...")
+            
+            # Find the Search button in annexa-form
+            search_button = None
+            search_button_selectors = [
+                (By.ID, "correspondenceTabs:annexa-form:j_idt6030"),
+                (By.NAME, "correspondenceTabs:annexa-form:j_idt6030"),
+                (By.XPATH, "//button[@id='correspondenceTabs:annexa-form:j_idt6030']"),
+                (By.XPATH, "//button[@name='correspondenceTabs:annexa-form:j_idt6030']"),
+                (By.XPATH, "//button[contains(@id, 'annexa-form:j_idt') and contains(@class, 'ui-button')]//span[contains(text(), 'Search')]"),
+                (By.XPATH, "//button[@type='submit' and contains(@id, 'annexa-form')]//span[text()='Search']"),
+            ]
+            
+            for by_type, selector in search_button_selectors:
+                try:
+                    search_button = wait.until(EC.visibility_of_element_located((by_type, selector)))
+                    search_button = wait.until(EC.element_to_be_clickable((by_type, selector)))
+                    logging.info(f"Found Search button using selector: {selector}")
+                    break
+                except TimeoutException:
+                    continue
+            
+            if not search_button:
+                logging.error("STEP 5 FAILED: Search button not found")
+                return False
+            
+            # Click the Search button
+            self._human_like_click(search_button)
+            self._random_delay(0.5, 1.0)
+            
+            # Wait for search results to load
+            logging.info("⏳ Waiting for search results to load...")
+            self._random_delay(1.0, 2.0)
+            
+            logging.info("✓ STEP 5 COMPLETED: Search button clicked, results loading...")
+            
+            # Step 6: Click the "Non Creditable Input" checkbox in the first row
+            logging.info("STEP 6 (Disallow): Clicking Non Creditable Input checkbox...")
+            
+            # Find the checkbox in the first row of search results (row index 0)
+            checkbox = None
+            checkbox_selectors = [
+                # Strategy 1: Direct ID of the checkbox div (first row)
+                (By.ID, "correspondenceTabs:annexa-form:annexADT:0:inadmissiblcheckBox"),
+                
+                # Strategy 2: Input element inside the checkbox
+                (By.ID, "correspondenceTabs:annexa-form:annexADT:0:inadmissiblcheckBox_input"),
+                
+                # Strategy 3: XPath to the clickable div box
+                (By.XPATH, "//div[@id='correspondenceTabs:annexa-form:annexADT:0:inadmissiblcheckBox']//div[contains(@class, 'ui-chkbox-box')]"),
+                
+                # Strategy 4: Generic - find any checkbox in annexADT row 0
+                (By.XPATH, "//div[contains(@id, 'annexa-form:annexADT:0:inadmissiblcheckBox')]"),
+                
+                # Strategy 5: Find by class pattern
+                (By.XPATH, "//div[@class='ui-chkbox ui-widget ' and contains(@id, 'inadmissiblcheckBox')]"),
+            ]
+            
+            for by_type, selector in checkbox_selectors:
+                try:
+                    checkbox = wait.until(EC.presence_of_element_located((by_type, selector)))
+                    logging.info(f"Found Non Creditable Input checkbox using selector: {selector}")
+                    break
+                except TimeoutException:
+                    continue
+            
+            if not checkbox:
+                logging.error("STEP 6 FAILED: Non Creditable Input checkbox not found")
+                return False
+            
+            # Click the checkbox to mark as non-creditable
+            self._human_like_click(checkbox)
+            self._random_delay(0.5, 1.0)
+            
+            # Verify checkbox was checked
+            try:
+                checkbox_state = self.driver.execute_script("""
+                    var checkbox = document.getElementById('correspondenceTabs:annexa-form:annexADT:0:inadmissiblcheckBox_input');
+                    if (checkbox) {
+                        return checkbox.checked;
+                    }
+                    return false;
+                """)
+                
+                if checkbox_state:
+                    logging.info("✓ STEP 6 COMPLETED & VERIFIED: Non Creditable Input checkbox is checked")
+                else:
+                    logging.warning("⚠️ STEP 6 WARNING: Checkbox may not be checked, but continuing...")
+            except Exception as verify_error:
+                logging.warning(f"⚠️ STEP 6 VERIFICATION SKIPPED: {verify_error}")
+            
+            self._random_delay(0.25, 0.5)
+            
+            # Step 7: Select "Others" from the reason dropdown in the new form
+            logging.info("STEP 7 (Disallow): Waiting for new form to open and selecting 'Others' from dropdown...")
+            
+            # Wait for the new form dialog to appear
+            self._random_delay(1.0, 2.0)
+            
+            # Find the reason dropdown (reasonNonCredFBR)
+            reason_dropdown = None
+            reason_dropdown_selectors = [
+                (By.ID, "correspondenceTabs:addRemarksAnnexAform:reasonNonCredFBR"),
+                (By.XPATH, "//div[@id='correspondenceTabs:addRemarksAnnexAform:reasonNonCredFBR']"),
+                (By.XPATH, "//label[@id='correspondenceTabs:addRemarksAnnexAform:reasonNonCredFBR_label']/parent::div"),
+                (By.XPATH, "//div[contains(@id, 'reasonNonCredFBR') and contains(@class, 'ui-selectonemenu')]"),
+            ]
+            
+            for by_type, selector in reason_dropdown_selectors:
+                try:
+                    reason_dropdown = wait.until(EC.visibility_of_element_located((by_type, selector)))
+                    reason_dropdown = wait.until(EC.element_to_be_clickable((by_type, selector)))
+                    logging.info(f"Found reason dropdown using selector: {selector}")
+                    break
+                except TimeoutException:
+                    continue
+            
+            if not reason_dropdown:
+                logging.error("STEP 7 FAILED: Reason dropdown not found")
+                return False
+            
+            # Click the dropdown to open it
+            self._human_like_click(reason_dropdown)
+            self._random_delay(0.5, 1.0)
+            
+            # Find and click "Others" option from the dropdown
+            others_option = None
+            others_option_selectors = [
+                (By.XPATH, "//div[@id='correspondenceTabs:addRemarksAnnexAform:reasonNonCredFBR_panel']//li[contains(text(), 'Others')]"),
+                (By.XPATH, "//div[contains(@id, 'reasonNonCredFBR_panel')]//li[contains(text(), 'Others')]"),
+                (By.XPATH, "//li[@data-label='Others' and contains(@id, 'reasonNonCredFBR')]"),
+                (By.XPATH, "//div[@id='correspondenceTabs:addRemarksAnnexAform:reasonNonCredFBR_panel']//li[@data-label='Others']"),
+            ]
+            
+            for by_type, selector in others_option_selectors:
+                try:
+                    others_option = wait.until(EC.element_to_be_clickable((by_type, selector)))
+                    logging.info(f"Found 'Others' option using selector: {selector}")
+                    break
+                except TimeoutException:
+                    continue
+            
+            if not others_option:
+                logging.error("STEP 7 FAILED: 'Others' option not found in dropdown")
+                return False
+            
+            # Click the "Others" option
+            self._human_like_click(others_option)
+            self._random_delay(0.5, 1.0)
+            
+            # Verify selection was applied
+            try:
+                selected_value = self.driver.execute_script("""
+                    var dropdown = document.getElementById('correspondenceTabs:addRemarksAnnexAform:reasonNonCredFBR');
+                    if (dropdown) {
+                        var label = dropdown.querySelector('.ui-selectonemenu-label');
+                        return label ? label.innerText.trim() : '';
+                    }
+                    return '';
+                """)
+                
+                if selected_value == 'Others':
+                    logging.info("✓ STEP 7 COMPLETED & VERIFIED: 'Others' selected from reason dropdown")
+                else:
+                    logging.warning(f"⚠️ STEP 7 WARNING: Expected 'Others', got '{selected_value}', but continuing...")
+            except Exception as verify_error:
+                logging.warning(f"⚠️ STEP 7 VERIFICATION SKIPPED: {verify_error}")
+            
+            self._random_delay(0.25, 0.5)
+            
+            # Step 8: Enter remarks in the textarea
+            logging.info("STEP 8 (Disallow): Entering remarks in textarea...")
+            
+            # Find the remarks textarea
+            remarks_textarea = None
+            remarks_textarea_selectors = [
+                (By.ID, "correspondenceTabs:addRemarksAnnexAform:remarksReasonTextAreaIDAnnexA"),
+                (By.NAME, "correspondenceTabs:addRemarksAnnexAform:remarksReasonTextAreaIDAnnexA"),
+                (By.XPATH, "//textarea[@id='correspondenceTabs:addRemarksAnnexAform:remarksReasonTextAreaIDAnnexA']"),
+                (By.XPATH, "//textarea[@name='correspondenceTabs:addRemarksAnnexAform:remarksReasonTextAreaIDAnnexA']"),
+                (By.XPATH, "//textarea[contains(@id, 'remarksReasonTextAreaIDAnnexA')]"),
+            ]
+            
+            for by_type, selector in remarks_textarea_selectors:
+                try:
+                    remarks_textarea = wait.until(EC.visibility_of_element_located((by_type, selector)))
+                    remarks_textarea = wait.until(EC.element_to_be_clickable((by_type, selector)))
+                    logging.info(f"Found remarks textarea using selector: {selector}")
+                    break
+                except TimeoutException:
+                    continue
+            
+            if not remarks_textarea:
+                logging.error("STEP 8 FAILED: Remarks textarea not found")
+                return False
+            
+            # Default remarks text (can be customized)
+            remarks_text = "Invoice disallowed as per verification process."
+            
+            # Clear any existing text and enter remarks
+            remarks_textarea.clear()
+            self._human_like_click(remarks_textarea)
+            self._human_like_type(remarks_textarea, remarks_text)
+            self._random_delay(0.25, 0.5)
+            
+            # Verify the remarks were entered
+            try:
+                entered_remarks = remarks_textarea.get_attribute('value')
+                if entered_remarks:
+                    logging.info(f"✓ STEP 8 COMPLETED & VERIFIED: Remarks entered: '{entered_remarks[:50]}...'")
+                else:
+                    logging.warning("⚠️ STEP 8 WARNING: Remarks field appears empty, but continuing...")
+            except Exception as verify_error:
+                logging.warning(f"⚠️ STEP 8 VERIFICATION SKIPPED: {verify_error}")
+            
+            self._random_delay(0.25, 0.5)
+            
+            logging.info("✅ Annex-A disallow workflow completed successfully (all steps completed)")
+            return True
+            
+        except Exception as e:
+            logging.error(f"Error in disallow workflow: {str(e)}")
+            return False
+    
     def is_browser_alive(self):
         """
         Check if the browser instance is still alive and responsive.

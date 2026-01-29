@@ -170,7 +170,7 @@ class FBRInvoiceCheckerGUI:
         # Pause/Resume tracking
         self.pause_requested = False
         self.last_processed_row = None
-        self.current_mode = None  # 'verify' or 'stwh'
+        self.current_mode = None  # 'verify', 'disallow', or 'stwh'
         
         # Workflow indicator state
         self.workflow_indicator = None
@@ -431,6 +431,16 @@ class FBRInvoiceCheckerGUI:
         )
         self.verify_btn.grid(row=0, column=1, padx=8, pady=5)
         
+        self.disallow_btn = ttk.Button(
+            inner_button_frame, 
+            text="🚫 Disallow Invoice", 
+            command=self.start_disallow_workflow,
+            width=18,
+            state='disabled',
+            style='Start.TButton'
+        )
+        self.disallow_btn.grid(row=0, column=2, padx=8, pady=5)
+        
         self.load_stwh_btn = ttk.Button(
             inner_button_frame, 
             text="📥 LOAD STWH/Debit Note", 
@@ -439,7 +449,7 @@ class FBRInvoiceCheckerGUI:
             state='disabled',
             style='Start.TButton'
         )
-        self.load_stwh_btn.grid(row=0, column=2, padx=8, pady=5)
+        self.load_stwh_btn.grid(row=0, column=3, padx=8, pady=5)
         
         self.pause_btn = ttk.Button(
             inner_button_frame, 
@@ -449,7 +459,7 @@ class FBRInvoiceCheckerGUI:
             state='disabled',
             style='Start.TButton'
         )
-        self.pause_btn.grid(row=0, column=3, padx=4, pady=5)
+        self.pause_btn.grid(row=0, column=4, padx=4, pady=5)
         self.pause_btn.grid_remove()  # Hide initially
         
         self.resume_btn = ttk.Button(
@@ -460,7 +470,7 @@ class FBRInvoiceCheckerGUI:
             state='normal',
             style='Start.TButton'
         )
-        self.resume_btn.grid(row=0, column=4, padx=4, pady=5)
+        self.resume_btn.grid(row=0, column=5, padx=4, pady=5)
         self.resume_btn.grid_remove()  # Hide initially
         
         self.stop_btn = ttk.Button(
@@ -471,11 +481,11 @@ class FBRInvoiceCheckerGUI:
             state='disabled',
             style='Exit.TButton'
         )
-        self.stop_btn.grid(row=0, column=5, padx=4, pady=5)
+        self.stop_btn.grid(row=0, column=6, padx=4, pady=5)
         self.stop_btn.grid_remove()  # Hide initially
         
         # Separator space before Exit button
-        ttk.Frame(inner_button_frame, width=30).grid(row=0, column=6)
+        ttk.Frame(inner_button_frame, width=30).grid(row=0, column=7)
         
         self.exit_btn = ttk.Button(
             inner_button_frame, 
@@ -484,7 +494,7 @@ class FBRInvoiceCheckerGUI:
             width=12,
             style='Exit.TButton'
         )
-        self.exit_btn.grid(row=0, column=7, padx=8, pady=5)
+        self.exit_btn.grid(row=0, column=8, padx=8, pady=5)
 
         # Hover effects for start and exit
         self.start_btn.bind('<Enter>', lambda e: _on_enter(self.start_btn, 'StartHover.TButton'))
@@ -778,8 +788,9 @@ Note: Selenium should automatically download the required driver."""
             self.log_message("✅ FBR portal opened successfully!")
             self.log_message("📝 Please select an Excel file and click 'Claim Invoice FBR' or 'LOAD STWH/Debit Note' to start")
             
-            # Enable verify and load stwh buttons after successful browser initialization
+            # Enable verify, disallow and load stwh buttons after successful browser initialization
             self.root.after(0, lambda: self.verify_btn.config(state='normal'))
+            self.root.after(0, lambda: self.disallow_btn.config(state='normal'))
             self.root.after(0, lambda: self.load_stwh_btn.config(state='normal'))
             
         except Exception as e:
@@ -837,6 +848,56 @@ Note: Selenium should automatically download the required driver."""
         self.worker_thread.start()
         
         self.log_message("🚀 Starting invoice verification...")
+    
+    def start_disallow_workflow(self):
+        """
+        Start the disallow invoice workflow process.
+        """
+        # Validate file selection
+        if not self.excel_file_path.get():
+            messagebox.showerror("Error", "Please select an Excel file first!")
+            return
+        
+        # Check if browser is initialized
+        if not self.fbr_checker:
+            messagebox.showerror("Error", "Please open FBR portal first!")
+            return
+        
+        # Disable disallow button, enable pause/stop buttons
+        self.disallow_btn.config(state='disabled')
+        self.pause_btn.grid()  # Show pause button
+        self.pause_btn.config(state='normal')
+        self.stop_btn.grid()  # Show stop button
+        self.stop_btn.config(state='normal')
+        
+        self.is_running = True
+        self.pause_requested = False
+        self.current_mode = 'disallow'
+        
+        # Update workflow indicator
+        self.root.after(0, lambda: self.workflow_indicator.config(text="🚫 Disallow Invoice", fg="#E74C3C"))
+        
+        # Reset statistics
+        self.processed_count = 0
+        self.verified_count = 0
+        self.already_verified_count = 0
+        self.failed_count = 0
+        self.claimed_count = 0
+        self.not_claimed_count = 0
+        self.error_count = 0
+        
+        # Record start time
+        self.start_time = time.time()
+        self.end_time = None
+        start_time_str = time.strftime('%I:%M %p', time.localtime(self.start_time))
+        self.root.after(0, lambda: self.start_time_label.config(text=start_time_str))
+        self.root.after(0, lambda: self.end_time_label.config(text="--:-- --"))
+        
+        # Start worker thread for disallow workflow
+        self.worker_thread = threading.Thread(target=self.disallow_invoices, daemon=True)
+        self.worker_thread.start()
+        
+        self.log_message("🚀 Starting disallow invoice workflow...")
     
     def start_load_stwh(self):
         """
@@ -914,6 +975,9 @@ Note: Selenium should automatically download the required driver."""
         if self.current_mode == 'verify':
             self.worker_thread = threading.Thread(target=self.verify_invoices, daemon=True)
             self.log_message("▶️ Resuming invoice verification...")
+        elif self.current_mode == 'disallow':
+            self.worker_thread = threading.Thread(target=self.disallow_invoices, daemon=True)
+            self.log_message("▶️ Resuming disallow invoice workflow...")
         elif self.current_mode == 'stwh':
             self.worker_thread = threading.Thread(target=self.load_stwh_process, daemon=True)
             self.log_message("▶️ Resuming LOAD STWH/Debit Note process...")
@@ -950,6 +1014,7 @@ Note: Selenium should automatically download the required driver."""
         self.resume_btn.grid()
         self.resume_btn.config(state='normal')
         self.verify_btn.config(state='normal')
+        self.disallow_btn.config(state='normal')
         self.load_stwh_btn.config(state='normal')
     
     def _reset_ui_after_stop(self):
@@ -959,8 +1024,13 @@ Note: Selenium should automatically download the required driver."""
         self.pause_btn.grid_remove()
         self.stop_btn.grid_remove()
         self.resume_btn.grid_remove()
+        
+        # Enable all workflow buttons
+        self.start_btn.config(state='normal')
         self.verify_btn.config(state='normal')
+        self.disallow_btn.config(state='normal')
         self.load_stwh_btn.config(state='normal')
+        self.exit_btn.config(state='normal')
         
         # Reset workflow indicator
         if self.workflow_indicator:
@@ -1201,6 +1271,203 @@ Note: Selenium should automatically download the required driver."""
                     logging.error(f"Error closing Excel in finally block: {str(close_error)}")
             
             # Reset UI (keep browser open)
+            self.is_running = False
+            self.root.after(0, self._reset_ui_after_stop)
+    
+    def disallow_invoices(self):
+        """
+        Main worker function for disallow invoice workflow.
+        Runs in a separate thread. Browser should already be initialized.
+        """
+        import time
+        start_time = time.time()  # Track overall start time
+        
+        try:
+            # Initialize Excel handler
+            self.log_message("📊 Loading Excel file for Disallow workflow...")
+            self.excel_handler = ExcelHandler(self.excel_file_path.get())
+            
+            if not self.excel_handler.load_excel():
+                self.log_message("❌ Error: Failed to load Excel file")
+                messagebox.showerror("Error", "Failed to load Excel file. Check if required columns exist.")
+                return
+            
+            # Get invoice list
+            invoices = self.excel_handler.get_invoice_numbers()
+            
+            if not invoices:
+                self.log_message("❌ Error: No invoice data found in Excel")
+                messagebox.showerror("Error", "No invoice data found in the Excel file.")
+                return
+            
+            self.total_invoices = len(invoices)
+            self.update_statistics()
+            self.log_message(f"📋 Found {self.total_invoices} invoices for disallow workflow")
+            
+            # Determine starting point
+            start_index = 0
+            if self.last_processed_row is not None:
+                for idx, inv in enumerate(invoices):
+                    if inv['row'] > self.last_processed_row:
+                        start_index = idx
+                        break
+                self.log_message(f"▶️ Resuming from row {self.last_processed_row + 1}")
+                self.last_processed_row = None
+            
+            # Show column headers
+            self.log_message("=" * 80)
+            self.log_message("DISALLOW WORKFLOW - EXCEL COLUMNS: NTN/CNIC | Invoice No | Source Authority")
+            self.log_message("=" * 80)
+            self.log_message(f"📊 PROCESSING PLAN:")
+            self.log_message(f"   Total invoices in Excel: {self.total_invoices}")
+            self.log_message(f"   Starting from row: {invoices[start_index]['row'] if start_index < len(invoices) else 'N/A'}")
+            self.log_message(f"   Invoices to process: {len(invoices[start_index:])}")
+            self.log_message("=" * 80)
+            
+            # Process each invoice
+            processed_count = 0
+            for invoice_data in invoices[start_index:]:
+                invoice_start_time = time.time()
+                processed_count += 1
+                
+                # Check if stopped
+                if not self.is_running:
+                    self.log_message("⏹ Processing stopped by user")
+                    break
+                
+                # Extract data
+                row_number = invoice_data['row']
+                ntn_cnic = invoice_data['seller_registration_no']  # NTN/CNIC
+                invoice_no = invoice_data.get('number', 'N/A')  # Invoice number from 'Number' column
+                source_authority = invoice_data.get('source_authority', 'N/A')
+                
+                # Update progress
+                self.processed_count = processed_count
+                self.root.after(0, self.update_statistics)
+                
+                # Log current invoice details
+                self.log_message(f"\n{'=' * 80}")
+                self.log_message(f"🚫 Processing Invoice {processed_count}/{len(invoices[start_index:])} (Row {row_number})")
+                self.log_message(f"   NTN/CNIC: {ntn_cnic}")
+                self.log_message(f"   Invoice No: {invoice_no}")
+                self.log_message(f"   Source Authority: {source_authority}")
+                self.log_message(f"{'=' * 80}")
+                
+                try:
+                    # Execute disallow workflow
+                    self.log_message(f"🔄 Executing disallow workflow for NTN/CNIC: {ntn_cnic}")
+                    
+                    success = self.fbr_checker.process_disallow_workflow(
+                        ntn_cnic=ntn_cnic,
+                        invoice_no=invoice_no,
+                        source_authority=source_authority
+                    )
+                    
+                    if success:
+                        self.log_message(f"✅ Disallow workflow completed successfully for row {row_number}")
+                        self.verified_count += 1
+                        
+                        # Update Excel with status
+                        self.excel_handler.update_status(
+                            row=row_number,
+                            status='✅ Disallow Form Filled',
+                            value_of_purchases='N/A'
+                        )
+                    else:
+                        self.log_message(f"⚠️ Disallow workflow failed for row {row_number}")
+                        self.failed_count += 1
+                        
+                        # Update Excel with error status
+                        self.excel_handler.update_status(
+                            row=row_number,
+                            status='❌ Disallow Failed',
+                            value_of_purchases='N/A'
+                        )
+                    
+                    # Log timing
+                    invoice_elapsed = time.time() - invoice_start_time
+                    self.log_message(f"⏱️ Invoice processing time: {invoice_elapsed:.2f}s")
+                    
+                except Exception as e:
+                    self.log_message(f"❌ Error processing invoice {ntn_cnic}: {str(e)}")
+                    logging.error(f"Error in disallow workflow for row {row_number}: {str(e)}")
+                    self.error_count += 1
+                    
+                    # Update Excel with error
+                    try:
+                        self.excel_handler.update_status(
+                            row=row_number,
+                            status=f'❌ Error: {str(e)[:50]}',
+                            value_of_purchases='N/A'
+                        )
+                    except Exception as update_error:
+                        logging.error(f"Failed to update Excel after error: {str(update_error)}")
+                
+                # Update UI statistics
+                self.root.after(0, self.update_statistics)
+                
+                # Check for pause request
+                if self.pause_requested:
+                    self.log_message("⏸️ Pausing after current invoice...")
+                    self.last_processed_row = row_number
+                    
+                    # Save Excel state
+                    if self.excel_handler:
+                        try:
+                            self.excel_handler.close()
+                        except Exception as e:
+                            logging.error(f"Error closing Excel on pause: {str(e)}")
+                    
+                    # Show resume UI
+                    self.root.after(0, self._show_resume_ui)
+                    return
+                
+                # Check if stopped
+                if not self.is_running:
+                    self.log_message("⏹️ Processing stopped by user")
+                    break
+                
+                # Delay before next invoice
+                delay = random.uniform(0.25, 0.5)
+                self.log_message(f"⏱️ Waiting {delay:.1f}s before next invoice...")
+                time.sleep(delay)
+            
+            # Log completion
+            self.log_message("=" * 80)
+            self.log_message(f"📊 DISALLOW WORKFLOW COMPLETED:")
+            self.log_message(f"   Total invoices in Excel: {self.total_invoices}")
+            self.log_message(f"   Invoices processed: {processed_count}")
+            self.log_message(f"   Successfully processed: {self.verified_count}")
+            self.log_message(f"   Failed: {self.failed_count}")
+            self.log_message(f"   Errors: {self.error_count}")
+            self.log_message("=" * 80)
+            
+            # Close Excel
+            if self.excel_handler:
+                try:
+                    self.excel_handler.close()
+                    self.log_message("📊 Excel file saved and closed")
+                except Exception as e:
+                    logging.error(f"Error closing Excel: {str(e)}")
+            
+            # Show completion
+            if self.is_running:
+                self.show_completion_summary()
+        
+        except Exception as e:
+            self.log_message(f"❌ Critical Error: {str(e)}")
+            logging.error(f"Critical error in disallow_invoices: {str(e)}")
+            messagebox.showerror("Critical Error", f"An unexpected error occurred:\n\n{str(e)}")
+        
+        finally:
+            # Cleanup
+            if self.excel_handler:
+                try:
+                    self.excel_handler.close()
+                except Exception as e:
+                    logging.error(f"Error closing Excel in finally: {str(e)}")
+            
+            # Reset UI
             self.is_running = False
             self.root.after(0, self._reset_ui_after_stop)
     
