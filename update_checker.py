@@ -28,18 +28,27 @@ class UpdateChecker:
     version of the application is available.
     """
     
-    def __init__(self, repo_owner: str, repo_name: str):
+    def __init__(self, repo_owner: str, repo_name: str, github_token: str = None):
         """
         Initialize the UpdateChecker.
         
         Args:
             repo_owner (str): The GitHub username or organization (e.g., "Sabeeh1996")
             repo_name (str): The repository name (e.g., "FBR-INVOICE-Search-Match")
+            github_token (str): GitHub Personal Access Token for private repos (optional)
         """
         self.repo_owner = repo_owner
         self.repo_name = repo_name
+        self.github_token = github_token
         self.api_url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/releases/latest"
-        logger.info(f"UpdateChecker initialized for {repo_owner}/{repo_name}")
+        
+        # Setup headers with authentication if token provided
+        self.headers = {}
+        if github_token:
+            self.headers['Authorization'] = f'token {github_token}'
+            logger.info(f"UpdateChecker initialized for {repo_owner}/{repo_name} (authenticated)")
+        else:
+            logger.info(f"UpdateChecker initialized for {repo_owner}/{repo_name}")
     
     def get_latest_release(self) -> Optional[Dict[str, Any]]:
         """
@@ -62,7 +71,7 @@ class UpdateChecker:
             logger.info("Checking for latest release on GitHub...")
             
             # Set a reasonable timeout to avoid hanging
-            response = requests.get(self.api_url, timeout=10)
+            response = requests.get(self.api_url, headers=self.headers, timeout=10)
             
             # Check if request was successful
             if response.status_code == 200:
@@ -70,7 +79,7 @@ class UpdateChecker:
                 logger.info(f"Latest release found: {release_data.get('tag_name', 'Unknown')}")
                 return release_data
             elif response.status_code == 404:
-                logger.warning("No releases found in the repository")
+                logger.warning("No releases found in the repository (or repository is private without token)")
                 return None
             else:
                 logger.error(f"GitHub API returned status code: {response.status_code}")

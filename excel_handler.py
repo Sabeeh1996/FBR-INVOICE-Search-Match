@@ -98,7 +98,15 @@ class ExcelHandler:
             
             # Find all available columns (case-insensitive)
             headers = [cell.value for cell in self.worksheet[1]]
-            headers_lower = [h.lower() if h else None for h in headers]
+            headers_lower = [h.lower().strip() if h else None for h in headers]
+            headers_normalized = {}
+            for idx, header in enumerate(headers):
+                if not header:
+                    continue
+                normalized = str(header).lower().strip()
+                normalized = ' '.join(normalized.split())
+                normalized = normalized.replace(' /', '/').replace('/ ', '/')
+                headers_normalized[normalized] = idx
             
             # Expected columns mapping
             column_names = [
@@ -117,8 +125,10 @@ class ExcelHandler:
             
             # Find columns in the header (case-insensitive)
             for col_name in column_names:
-                if col_name in headers_lower:
-                    idx = headers_lower.index(col_name)
+                normalized_col_name = ' '.join(col_name.lower().strip().split())
+                normalized_col_name = normalized_col_name.replace(' /', '/').replace('/ ', '/')
+                if normalized_col_name in headers_normalized:
+                    idx = headers_normalized[normalized_col_name]
                     self.column_indices[col_name] = idx + 1  # 1-indexed
                     logging.info(f"Found column '{headers[idx]}' at column {idx + 1}")
             

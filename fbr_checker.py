@@ -5,10 +5,15 @@ Handles web automation for checking invoice status on FBR website using Selenium
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support.ui import Select, WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
-from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException
+from selenium.common.exceptions import (
+    TimeoutException,
+    NoSuchElementException,
+    WebDriverException,
+    StaleElementReferenceException,
+)
 import undetected_chromedriver as uc
 import logging
 import time
@@ -405,7 +410,7 @@ class FBRChecker:
                 try:
                     self.driver.execute_script("arguments[0].click();", element)
                     logging.debug("Performed JS click on element (fallback for not-interactable element)")
-                    return
+                    return True
                 except Exception as js_e:
                     logging.warning(f"JS click fallback failed: {js_e}")
 
@@ -415,7 +420,7 @@ class FBRChecker:
                 self._random_delay(0.05, 0.15)  # Reduced from 0.10-0.25 for faster execution
                 self.actions.click(element).perform()
                 logging.debug("Performed human-like click via ActionChains")
-                return
+                return True
             except Exception as ac_e:
                 logging.warning(f"ActionChains click failed, trying direct click fallback: {ac_e}")
 
@@ -423,12 +428,143 @@ class FBRChecker:
             try:
                 element.click()
                 logging.debug("Performed direct element.click() fallback")
-                return
+                return True
             except Exception as final_e:
                 logging.error(f"Final click fallback failed: {final_e}")
 
         except Exception as e:
             logging.error(f"Error in _human_like_click: {e}")
+
+        return False
+
+    def _wait_for_primefaces_ajax(self, timeout=15):
+        """Wait until the document and any PrimeFaces/jQuery AJAX work are idle."""
+        try:
+            WebDriverWait(self.driver, timeout).until(lambda driver: driver.execute_script("""
+                if (document.readyState !== 'complete') return false;
+                if (window.jQuery && window.jQuery.active > 0) return false;
+                if (window.PrimeFaces && PrimeFaces.ajax && PrimeFaces.ajax.Queue &&
+                    typeof PrimeFaces.ajax.Queue.isEmpty === 'function') {
+                    return PrimeFaces.ajax.Queue.isEmpty();
+                }
+                return true;
+            """))
+            return True
+        except (TimeoutException, WebDriverException) as error:
+            logging.warning(f"PrimeFaces AJAX wait failed: {error}")
+            return False
+
+    def _select_source_authority(self, dropdown_id, source_authority, log_prefix=""):
+        """Select and verify a PrimeFaces Source Authority dropdown value."""
+        authority_map = {
+            'BRA': '7',
+            'FBR': '1',
+            'KPRA': '6',
+            'PRA': '5',
+            'SRB': '8',
+        }
+        authority = str(source_authority).strip().upper()
+        option_value = authority_map.get(authority)
+        if not option_value:
+            logging.error(
+                f"{log_prefix}Unknown source authority '{source_authority}', "
+                f"valid values: {list(authority_map.keys())}"
+            )
+            return False, "invalid"
+
+        panel_id = f"{dropdown_id}_panel"
+        option_locator = (
+            By.XPATH,
+            f"//div[@id='{panel_id}']//li[@data-label='{authority}' "
+            f"or normalize-space(.)='{authority}']",
+        )
+
+        for attempt in range(1, 4):
+            try:
+                self._wait_for_primefaces_ajax(timeout=12)
+
+                # PrimeFaces replaces this element during AJAX updates, so locate it
+                # again immediately before every click attempt.
+                dropdown = WebDriverWait(self.driver, 8).until(
+                    EC.element_to_be_clickable((By.ID, dropdown_id))
+                )
+                if not self._human_like_click(dropdown):
+                    raise StaleElementReferenceException("dropdown click did not complete")
+
+                WebDriverWait(self.driver, 5).until(
+                    EC.visibility_of_element_located((By.ID, panel_id))
+                )
+                option = WebDriverWait(self.driver, 5).until(
+                    EC.element_to_be_clickable(option_locator)
+                )
+                if not self._human_like_click(option):
+                    raise StaleElementReferenceException("option click did not complete")
+
+                self._wait_for_primefaces_ajax(timeout=12)
+                selected_value = WebDriverWait(self.driver, 5).until(
+                    lambda driver: driver.execute_script("""
+                        var dropdown = document.getElementById(arguments[0]);
+                        if (!dropdown) return '';
+                        var label = dropdown.querySelector('.ui-selectonemenu-label');
+                        return label ? label.innerText.trim() : '';
+                    """, dropdown_id)
+                )
+                if selected_value == authority:
+                    logging.info(
+                        f"{log_prefix}Source Authority selected and verified: {authority}"
+                    )
+                    return True, None
+
+                logging.warning(
+                    f"{log_prefix}Authority attempt {attempt} verification failed: "
+                    f"expected '{authority}', got '{selected_value}'"
+                )
+            except (TimeoutException, WebDriverException) as error:
+                logging.warning(
+                    f"{log_prefix}Authority attempt {attempt}/3 failed; "
+                    f"re-finding refreshed elements: {error}"
+                )
+
+        # Final atomic DOM fallback: open the current widget and click its visible
+        # PrimeFaces option without carrying WebElement references between actions.
+        try:
+            self._wait_for_primefaces_ajax(timeout=8)
+            clicked = self.driver.execute_script("""
+                var dropdown = document.getElementById(arguments[0]);
+                if (!dropdown) return false;
+                var trigger = dropdown.querySelector('.ui-selectonemenu-trigger');
+                if (trigger) trigger.click(); else dropdown.click();
+                var panel = document.getElementById(arguments[0] + '_panel');
+                if (!panel) return false;
+                var expected = arguments[1];
+                var options = panel.querySelectorAll('li');
+                for (var i = 0; i < options.length; i++) {
+                    var label = (options[i].getAttribute('data-label') ||
+                                 options[i].textContent || '').trim().toUpperCase();
+                    if (label === expected && options[i].offsetParent !== null) {
+                        options[i].click();
+                        return true;
+                    }
+                }
+                return false;
+            """, dropdown_id, authority)
+            if clicked:
+                self._wait_for_primefaces_ajax(timeout=12)
+                selected_value = self.driver.execute_script("""
+                    var dropdown = document.getElementById(arguments[0]);
+                    var label = dropdown && dropdown.querySelector('.ui-selectonemenu-label');
+                    return label ? label.innerText.trim() : '';
+                """, dropdown_id)
+                if selected_value == authority:
+                    logging.info(
+                        f"{log_prefix}Source Authority selected by DOM fallback: {authority}"
+                    )
+                    return True, None
+        except WebDriverException as error:
+            logging.warning(f"{log_prefix}Authority DOM fallback failed: {error}")
+
+        logging.error(f"{log_prefix}Could not select Source Authority '{authority}'")
+        return False, "not_selectable"
     
     def _simulate_mouse_movement(self):
         """
@@ -524,6 +660,68 @@ class FBRChecker:
             import traceback
             logging.error(traceback.format_exc())
             return None
+
+    def _choose_date_from_calendar(self, input_element, parsed_date, field_name):
+        """Choose a parsed date through the visible jQuery datepicker controls."""
+        try:
+            calendar_button = input_element.find_element(
+                By.XPATH,
+                "./ancestor::span[contains(@class, 'ui-calendar')][1]"
+                "//button[contains(@class, 'ui-datepicker-trigger') "
+                "and @aria-label='Show Calendar']",
+            )
+            if not self._human_like_click(calendar_button):
+                raise WebDriverException(f"Could not open the {field_name} datepicker")
+
+            calendar_locator = (By.ID, "ui-datepicker-div")
+            calendar = WebDriverWait(self.driver, 10).until(
+                EC.visibility_of_element_located(calendar_locator)
+            )
+
+            year_value = str(parsed_date['year'])
+            month_value = str(parsed_date['month'] - 1)
+            day_value = str(parsed_date['day'])
+
+            year_select = WebDriverWait(self.driver, 5).until(
+                lambda driver: calendar.find_element(By.CSS_SELECTOR, "select.ui-datepicker-year")
+            )
+            Select(year_select).select_by_value(year_value)
+            self._random_delay(0.1, 0.25)
+
+            # Selecting a year can redraw the calendar, so locate its controls again.
+            calendar = WebDriverWait(self.driver, 5).until(
+                EC.visibility_of_element_located(calendar_locator)
+            )
+            month_select = calendar.find_element(
+                By.CSS_SELECTOR, "select.ui-datepicker-month"
+            )
+            Select(month_select).select_by_value(month_value)
+            self._random_delay(0.1, 0.25)
+
+            day_locator = (
+                By.XPATH,
+                "//div[@id='ui-datepicker-div' and not(contains(@style, 'display: none'))]"
+                f"//td[@data-handler='selectDay' and @data-month='{month_value}' "
+                f"and @data-year='{year_value}']/a[normalize-space()='{day_value}']",
+            )
+            day_link = WebDriverWait(self.driver, 10).until(
+                EC.element_to_be_clickable(day_locator)
+            )
+            if not self._human_like_click(day_link):
+                raise WebDriverException(f"Could not click {field_name} day {day_value}")
+
+            WebDriverWait(self.driver, 10).until(
+                lambda driver: input_element.get_attribute('value')
+                == parsed_date['formatted']
+            )
+            logging.info(
+                f"Selected and verified {field_name} from datepicker: "
+                f"'{parsed_date['formatted']}'"
+            )
+            return True
+        except (TimeoutException, NoSuchElementException, WebDriverException) as error:
+            logging.error(f"Could not select {field_name} from datepicker: {error}")
+            return False
     
     def click_annex_a_tab(self):
         """
@@ -560,7 +758,9 @@ class FBRChecker:
                 return False
             
             # Click the tab
-            self._human_like_click(annex_a_tab)
+            if not self._human_like_click(annex_a_tab):
+                logging.error("Failed to click Annex-A (Purchases) tab")
+                return False
             self._random_delay(0.25, 0.5)
             logging.info("✅ Clicked Annex-A (Purchases) tab")
             return True
@@ -735,7 +935,9 @@ class FBRChecker:
                 logging.warning("Could not verify button text before clicking")
             
             # Click the button
-            self._human_like_click(claim_button)
+            if not self._human_like_click(claim_button):
+                logging.error("Failed to click 'Claim Invoices' button")
+                return False
             self._random_delay(0.05, 0.1)  # Reduced from 0.15-0.25 to 0.05-0.1 for faster execution
             logging.info("✅ Clicked 'Claim Invoices' button")
             return True
@@ -778,7 +980,9 @@ class FBRChecker:
                 return False
             
             # Click the menu item
-            self._human_like_click(claim_fbr_item)
+            if not self._human_like_click(claim_fbr_item):
+                logging.error("Failed to click 'Claim in FBR' menu item")
+                return False
             self._random_delay(0.1, 0.25)
             logging.info("✅ Clicked 'Claim in FBR' menu item")
             return True
@@ -967,88 +1171,13 @@ class FBRChecker:
             # Step 4: Select Source Authority from dropdown if provided
             if source_authority:
                 logging.info(f"STEP 4 (Disallow): Selecting Source Authority: {source_authority}")
-                
-                # Find the dropdown element in annexa-form (disallow form)
-                dropdown_selectors = [
-                    (By.ID, "correspondenceTabs:annexa-form:sourceAuthority"),
-                    (By.XPATH, "//div[@id='correspondenceTabs:annexa-form:sourceAuthority']"),
-                    (By.XPATH, "//div[contains(@class, 'ui-selectonemenu') and contains(@id, 'annexa-form:sourceAuthority')]"),
-                ]
-                
-                dropdown = None
-                for by_type, selector in dropdown_selectors:
-                    try:
-                        dropdown = wait.until(EC.visibility_of_element_located((by_type, selector)))
-                        dropdown = wait.until(EC.element_to_be_clickable((by_type, selector)))
-                        logging.info(f"Found dropdown using selector: {selector}")
-                        break
-                    except TimeoutException:
-                        continue
-                
-                if not dropdown:
-                    logging.error("STEP 4 FAILED: Source Authority dropdown not found")
+                selected, _ = self._select_source_authority(
+                    "correspondenceTabs:annexa-form:sourceAuthority",
+                    source_authority,
+                    log_prefix="STEP 4 (Disallow): ",
+                )
+                if not selected:
                     return False
-                
-                # Click the dropdown to open it
-                self._human_like_click(dropdown)
-                self._random_delay(0.25, 0.5)
-                
-                # Map option values: 7=BRA, 1=FBR, 6=KPRA, 5=PRA, 8=SRB
-                authority_map = {
-                    'BRA': '7',
-                    'FBR': '1',
-                    'KPRA': '6',
-                    'PRA': '5',
-                    'SRB': '8'
-                }
-                
-                # Normalize source_authority
-                source_auth_normalized = str(source_authority).strip().upper()
-                option_value = authority_map.get(source_auth_normalized)
-                
-                if not option_value:
-                    logging.error(f"STEP 4 FAILED: Unknown source authority '{source_authority}', valid values: {list(authority_map.keys())}")
-                    return False
-                
-                # Find and click the option in the dropdown (annexa-form for disallow)
-                option_selectors = [
-                    (By.XPATH, f"//div[@id='correspondenceTabs:annexa-form:sourceAuthority_panel']//li[@data-label='{source_auth_normalized}']"),
-                    (By.XPATH, f"//div[contains(@id, 'annexa-form:sourceAuthority_panel')]//li[contains(text(), '{source_auth_normalized}')]"),
-                    (By.XPATH, f"//select[@id='correspondenceTabs:annexa-form:sourceAuthority_input']/option[@value='{option_value}']"),
-                ]
-                
-                option_selected = False
-                for by_type, selector in option_selectors:
-                    try:
-                        option = wait.until(EC.element_to_be_clickable((by_type, selector)))
-                        self._human_like_click(option)
-                        logging.info(f"✓ STEP 4 COMPLETED: Selected Source Authority: {source_auth_normalized}")
-                        option_selected = True
-                        self._random_delay(0.25, 0.5)
-                        break
-                    except TimeoutException:
-                        continue
-                
-                if not option_selected:
-                    logging.error(f"STEP 4 FAILED: Could not select option '{source_auth_normalized}' from dropdown")
-                    return False
-                
-                # Verify selection was applied (disallow form: annexa-form)
-                self._random_delay(0.1, 0.25)
-                selected_value = self.driver.execute_script("""
-                    var dropdown = document.getElementById('correspondenceTabs:annexa-form:sourceAuthority');
-                    if (dropdown) {
-                        var label = dropdown.querySelector('.ui-selectonemenu-label');
-                        return label ? label.innerText.trim() : '';
-                    }
-                    return '';
-                """)
-                
-                if selected_value != source_auth_normalized:
-                    logging.error(f"STEP 4 VERIFICATION FAILED: Expected '{source_auth_normalized}', got '{selected_value}'")
-                    return False
-                
-                logging.info(f"✓ STEP 4 VERIFIED: Source Authority is set to '{selected_value}'")
             
             # Step 5: Click the Search button to search for invoices
             logging.info("STEP 5 (Disallow): Clicking Search button...")
@@ -1315,6 +1444,439 @@ class FBRChecker:
             return False
         
     
+    def _find_claim_row(self, invoice_no, sales_tax_value):
+        """Return the checkbox and values for the row matching invoice then tax."""
+        return self.driver.execute_script(r"""
+            var wantedInvoice = arguments[0];
+            var wantedTax = arguments[1];
+            var table = document.getElementById(
+                'correspondenceTabs:loadAnnexAform:purchaseInvoiceTable'
+            );
+
+            var response = {
+                checkbox: null,
+                row: null,
+                fbr_sales_tax: 'N/A',
+                reason: 'table_not_found'
+            };
+            if (!table) return response;
+
+            function text(value) {
+                return String(value == null ? '' : value)
+                    .replace(/\u00a0/g, ' ')
+                    .replace(/\s+/g, ' ')
+                    .trim();
+            }
+            function invoiceKey(value) {
+                return text(value).toUpperCase();
+            }
+            function numberValue(value) {
+                var raw = text(value).replace(/,/g, '').replace(/[^0-9.()\-]/g, '');
+                if (!raw) return null;
+                if (/^\(.*\)$/.test(raw)) raw = '-' + raw.slice(1, -1);
+                var parsed = Number(raw);
+                return Number.isFinite(parsed) ? parsed : null;
+            }
+
+            var headers = Array.from(table.querySelectorAll('thead th'));
+            var invoiceIndex = -1;
+            var taxIndex = -1;
+            headers.forEach(function(header, index) {
+                var label = text(header.innerText || header.textContent).toLowerCase();
+                // Do not confuse Number with Sr. No. or registration-number columns.
+                if (label === 'number' || label === 'invoice number' ||
+                    label === 'invoice no' || label === 'invoice no.') {
+                    invoiceIndex = index;
+                }
+                if (label.includes('sales tax') && label.includes('st mode')) {
+                    taxIndex = index;
+                }
+            });
+
+            if (invoiceIndex < 0) {
+                response.reason = 'invoice_column_not_found';
+                return response;
+            }
+            if (taxIndex < 0) {
+                response.reason = 'sales_tax_column_not_found';
+                return response;
+            }
+
+            var expectedInvoice = invoiceKey(wantedInvoice);
+            var expectedTaxText = text(wantedTax).replace(/,/g, '');
+            var expectedTaxNumber = numberValue(wantedTax);
+            var rows = Array.from(table.querySelectorAll('tbody tr'));
+            var invoiceWasFound = false;
+
+            for (var i = 0; i < rows.length; i++) {
+                var cells = rows[i].querySelectorAll('td');
+                if (cells.length <= Math.max(invoiceIndex, taxIndex)) continue;
+                if (invoiceKey(cells[invoiceIndex].innerText) !== expectedInvoice) continue;
+
+                invoiceWasFound = true;
+                var actualTax = text(cells[taxIndex].innerText);
+                var actualTaxNumber = numberValue(actualTax);
+                var taxMatches = actualTax.replace(/,/g, '') === expectedTaxText;
+                if (actualTaxNumber !== null && expectedTaxNumber !== null) {
+                    taxMatches = Math.abs(actualTaxNumber - expectedTaxNumber) <= 1.0;
+                }
+                if (!taxMatches) continue;
+
+                var checkbox = rows[i].querySelector(
+                    '.ui-chkbox-box, input[type="checkbox"]'
+                );
+                if (!checkbox) {
+                    response.reason = 'checkbox_not_found';
+                    return response;
+                }
+                response.checkbox = checkbox;
+                response.row = rows[i];
+                response.fbr_sales_tax = actualTax;
+                response.reason = 'matched';
+                return response;
+            }
+
+            response.reason = invoiceWasFound ? 'sales_tax_not_matched' : 'invoice_not_matched';
+            return response;
+        """, str(invoice_no or ''), str(sales_tax_value or ''))
+
+    def _set_annex_a_page_size_for_large_results(self):
+        """Show 100 rows when an Annex-A search returns more than 10 records."""
+        dropdown_locator = (
+            By.CSS_SELECTOR,
+            "select[name$='loadAnnexAform:purchaseInvoiceTable_rppDD']",
+        )
+
+        try:
+            dropdown = WebDriverWait(self.driver, 8).until(
+                EC.presence_of_element_located(dropdown_locator)
+            )
+            paginator_text = self.driver.execute_script("""
+                var dropdown = arguments[0];
+                var paginator = dropdown.closest('.ui-paginator');
+                return paginator ? (paginator.innerText || paginator.textContent || '') : '';
+            """, dropdown)
+            count_match = re.search(
+                r"([\d,]+)\s+record\(s\)\s+found",
+                paginator_text or "",
+                re.IGNORECASE,
+            )
+            if not count_match:
+                logging.warning(
+                    "Could not read the Annex-A result count; leaving the page size unchanged"
+                )
+                return True
+
+            record_count = int(count_match.group(1).replace(',', ''))
+            current_size = dropdown.get_attribute('value')
+            logging.info(
+                f"Annex-A search returned {record_count} record(s); "
+                f"current page size is {current_size}"
+            )
+            if record_count <= 10 or current_size == '100':
+                return True
+
+            old_table = self.driver.find_element(
+                By.ID, "correspondenceTabs:loadAnnexAform:purchaseInvoiceTable"
+            )
+            Select(dropdown).select_by_value('100')
+            logging.info("Setting Annex-A results to 100 records per page...")
+
+            # Changing this select starts a PrimeFaces AJAX table refresh.
+            try:
+                WebDriverWait(self.driver, 15).until(EC.staleness_of(old_table))
+            except TimeoutException:
+                # Some portal versions update the existing table node in place.
+                pass
+            self._wait_for_primefaces_ajax(timeout=30)
+
+            WebDriverWait(self.driver, 15).until(
+                lambda driver: driver.find_element(*dropdown_locator).get_attribute('value')
+                == '100'
+            )
+            expected_rows = min(record_count, 100)
+            WebDriverWait(self.driver, 30).until(
+                lambda driver: driver.execute_script("""
+                    var table = document.getElementById(
+                        'correspondenceTabs:loadAnnexAform:purchaseInvoiceTable'
+                    );
+                    return table ? table.querySelectorAll('tbody tr').length : 0;
+                """) >= expected_rows
+            )
+            logging.info(
+                f"✓ Annex-A page size set to 100; {expected_rows} row(s) are visible"
+            )
+            return True
+        except (TimeoutException, NoSuchElementException, StaleElementReferenceException,
+                WebDriverException, ValueError) as error:
+            logging.error(f"Could not set Annex-A page size to 100: {error}")
+            return False
+
+    def _verify_claimed_status_in_annex_a(
+        self, seller_registration_no, invoice_no, date_field
+    ):
+        """Close an empty claim dialog and read the invoice's Annex-A status."""
+        try:
+            logging.info(
+                "Claim popup returned no records; checking the underlying Annex-A table"
+            )
+
+            close_button = WebDriverWait(self.driver, 10).until(
+                EC.element_to_be_clickable((
+                    By.XPATH,
+                    "//div[contains(@class, 'ui-dialog') and "
+                    ".//*[normalize-space()='Claim Invoices']]"
+                    "//*[contains(@class, 'ui-dialog-titlebar-close')]",
+                ))
+            )
+            if not self._human_like_click(close_button):
+                raise WebDriverException("Claim Invoices dialog close click failed")
+
+            seller_locator = (
+                By.ID, "correspondenceTabs:annexa-form:sellerRegisterationNo"
+            )
+            WebDriverWait(self.driver, 15).until(
+                EC.element_to_be_clickable(seller_locator)
+            )
+
+            # Clear every filter left by the previous Annex-A search before
+            # entering the current invoice. This also resets filters that this
+            # workflow does not populate explicitly.
+            clear_button = WebDriverWait(self.driver, 15).until(
+                EC.element_to_be_clickable((
+                    By.XPATH,
+                    "//button[contains(@id, 'correspondenceTabs:annexa-form:') "
+                    "and .//span[normalize-space()='Clear']]",
+                ))
+            )
+            if not self._human_like_click(clear_button):
+                raise WebDriverException("Annex-A verification Clear click failed")
+            self._wait_for_primefaces_ajax(timeout=20)
+
+            WebDriverWait(self.driver, 15).until(
+                lambda driver: driver.execute_script("""
+                    var seller = document.getElementById(
+                        'correspondenceTabs:annexa-form:sellerRegisterationNo'
+                    );
+                    var invoice = document.getElementById(
+                        'correspondenceTabs:annexa-form:invoiceNo'
+                    );
+                    var dates = Array.from(document.querySelectorAll(
+                        "input[id^='correspondenceTabs:annexa-form:']"
+                        + "[id$='_input'].hasDatepicker"
+                    )).filter(function(input) { return input.offsetParent !== null; });
+                    return seller && invoice && dates.length >= 2 &&
+                        !seller.value && !invoice.value &&
+                        !dates[0].value && !dates[1].value;
+                """)
+            )
+            logging.info("Underlying Annex-A search filters cleared and verified")
+
+            parsed_date = self._select_date_from_datepicker(date_field)
+            if not parsed_date:
+                return {
+                    'status': (
+                        'Error - Could not check whether invoice is already claimed; '
+                        'the invoice date is invalid'
+                    ),
+                    'value_of_purchases': 'N/A',
+                    'fbr_sales_tax': 'N/A',
+                }
+            formatted_date = parsed_date['formatted']
+
+            # Enter all text exactly as a user would: focus each input, clear it,
+            # and send individual keystrokes with the normal typing delay.
+            wait = WebDriverWait(self.driver, 15)
+            seller_input = wait.until(EC.element_to_be_clickable(seller_locator))
+            invoice_input = wait.until(EC.element_to_be_clickable((
+                By.ID, "correspondenceTabs:annexa-form:invoiceNo"
+            )))
+            def find_claimed_verification_dates(driver):
+                # Current FBR IDs supplied for the claimed-invoice form.
+                try:
+                    from_date = driver.find_element(
+                        By.ID, "correspondenceTabs:annexa-form:j_idt7163_input"
+                    )
+                    to_date = driver.find_element(
+                        By.ID, "correspondenceTabs:annexa-form:j_idt7167_input"
+                    )
+                    if (
+                        from_date.is_displayed() and from_date.is_enabled()
+                        and to_date.is_displayed() and to_date.is_enabled()
+                    ):
+                        return [from_date, to_date]
+                except NoSuchElementException:
+                    pass
+
+                # Generated j_idt numbers can change after an FBR deployment.
+                # Preserve the semantic From-then-To order as a safe fallback.
+                visible_dates = [
+                    element for element in driver.find_elements(
+                        By.CSS_SELECTOR,
+                        "input[id^='correspondenceTabs:annexa-form:']"
+                        "[id$='_input'].hasDatepicker",
+                    )
+                    if element.is_displayed() and element.is_enabled()
+                ]
+                return visible_dates if len(visible_dates) >= 2 else False
+
+            date_inputs = wait.until(find_claimed_verification_dates)
+
+            fields_to_type = (
+                (seller_input, str(seller_registration_no), "Seller Registration No."),
+                (invoice_input, str(invoice_no), "Invoice No."),
+            )
+            for field, value, field_name in fields_to_type:
+                if not self._human_like_click(field):
+                    raise WebDriverException(f"Could not focus {field_name}")
+                self._human_like_type(field, value)
+                if field.get_attribute('value') != value:
+                    raise WebDriverException(
+                        f"{field_name} typing verification failed: "
+                        f"expected '{value}', got '{field.get_attribute('value')}'"
+                    )
+                logging.info(f"Human-typed and verified {field_name}: '{value}'")
+
+            if not self._choose_date_from_calendar(
+                date_inputs[0], parsed_date, "From Date"
+            ):
+                raise WebDriverException("From Date datepicker selection failed")
+            if not self._choose_date_from_calendar(
+                date_inputs[1], parsed_date, "To Date"
+            ):
+                raise WebDriverException("To Date datepicker selection failed")
+
+            # This workflow opens "Claim in FBR", so select FBR through the
+            # visible PrimeFaces dropdown rather than assigning its DOM value.
+            authority_selected, _ = self._select_source_authority(
+                "correspondenceTabs:annexa-form:claimedAuthority",
+                "FBR",
+                log_prefix="Claimed verification: ",
+            )
+            if not authority_selected:
+                raise WebDriverException("Could not select Claimed Authority FBR")
+
+            self._wait_for_primefaces_ajax(timeout=20)
+            search_button = WebDriverWait(self.driver, 15).until(
+                EC.element_to_be_clickable((
+                    By.XPATH,
+                    "//button[contains(@id, 'correspondenceTabs:annexa-form:') "
+                    "and .//span[normalize-space()='Search']]",
+                ))
+            )
+            if not self._human_like_click(search_button):
+                raise WebDriverException("Annex-A verification Search click failed")
+            self._wait_for_primefaces_ajax(timeout=30)
+
+            def read_matching_status(driver):
+                return driver.execute_script(r"""
+                    var table = document.getElementById(
+                        'correspondenceTabs:annexa-form:annexADT'
+                    );
+                    if (!table) return {state: 'waiting'};
+
+                    function text(value) {
+                        return String(value == null ? '' : value)
+                            .replace(/\u00a0/g, ' ')
+                            .replace(/\s+/g, ' ')
+                            .trim();
+                    }
+                    function key(value) {
+                        return text(value).replace(/\s+/g, '').toUpperCase();
+                    }
+
+                    var headers = Array.from(table.querySelectorAll('thead th'));
+                    var statusIndex = -1;
+                    var invoiceIndex = -1;
+                    var sellerIndex = -1;
+                    headers.forEach(function(header, index) {
+                        var label = text(header.innerText || header.textContent).toLowerCase();
+                        if (label === 'status') statusIndex = index;
+                        if (label === 'number' || label === 'invoice number' ||
+                            label === 'invoice no' || label === 'invoice no.') {
+                            invoiceIndex = index;
+                        }
+                        if (label.includes('seller registration')) sellerIndex = index;
+                    });
+                    if (statusIndex < 0 || invoiceIndex < 0) {
+                        return {state: 'waiting'};
+                    }
+
+                    var rows = Array.from(table.querySelectorAll('tbody tr'));
+                    if (!rows.length) return {state: 'not_found'};
+                    var expectedInvoice = key(arguments[0]);
+                    var expectedSeller = key(arguments[1]);
+                    for (var i = 0; i < rows.length; i++) {
+                        var rowText = text(rows[i].innerText || rows[i].textContent);
+                        if (/no records found/i.test(rowText)) {
+                            return {state: 'not_found'};
+                        }
+                        var cells = rows[i].querySelectorAll('td');
+                        if (cells.length <= Math.max(statusIndex, invoiceIndex)) continue;
+                        if (key(cells[invoiceIndex].innerText) !== expectedInvoice) continue;
+                        if (sellerIndex >= 0 && cells.length > sellerIndex &&
+                            key(cells[sellerIndex].innerText) !== expectedSeller) continue;
+                        return {
+                            state: 'found',
+                            status: text(cells[statusIndex].innerText || cells[statusIndex].textContent)
+                        };
+                    }
+                    return {state: 'not_found'};
+                """, str(invoice_no), str(seller_registration_no))
+
+            verification = WebDriverWait(self.driver, 30).until(
+                lambda driver: (
+                    lambda result: result if result.get('state') != 'waiting' else False
+                )(read_matching_status(driver))
+            )
+            if verification.get('state') == 'found':
+                portal_status = verification.get('status', '').strip()
+                if portal_status.lower() == 'claimed':
+                    status = (
+                        'Already Claimed - Invoice was not available for claiming and '
+                        'was found with Claimed status in Annex-A'
+                    )
+                elif portal_status:
+                    status = (
+                        f'{portal_status} - Invoice was found in the Annex-A '
+                        'claimed-status verification table'
+                    )
+                else:
+                    status = (
+                        'Invoice Found - Annex-A returned the invoice but its status '
+                        'was empty'
+                    )
+                logging.info(
+                    f"Underlying Annex-A status for invoice '{invoice_no}': {status}"
+                )
+                return {
+                    'status': status,
+                    'value_of_purchases': 'N/A',
+                    'fbr_sales_tax': 'N/A',
+                }
+
+            logging.info(
+                f"Invoice '{invoice_no}' was not found in the underlying Annex-A table"
+            )
+            return {
+                'status': (
+                    'Invoice Not Found - No matching invoice was found in either '
+                    'Claim Invoices or the Annex-A claimed-status table'
+                ),
+                'value_of_purchases': 'N/A',
+                'fbr_sales_tax': 'N/A',
+            }
+        except (TimeoutException, NoSuchElementException, WebDriverException) as error:
+            logging.error(f"Claimed-status verification failed: {error}")
+            return {
+                'status': (
+                    'Error - Invoice was unavailable for claiming, but its existing '
+                    'claim status could not be verified in Annex-A'
+                ),
+                'value_of_purchases': 'N/A',
+                'fbr_sales_tax': 'N/A',
+            }
+
     def verify_invoice(self, invoice_number, source_authority=None, invoice_no_field=None, date_field=None, sales_tax_fed_st_mode=None):
         """
         Verify a single invoice number on the FBR portal.
@@ -1339,7 +1901,11 @@ class FBRChecker:
                 }
             
             # Process the claim workflow (Annex-A steps)
-            self.process_claim_workflow()
+            if not self.process_claim_workflow():
+                return {
+                    'status': '⚠️ Error - Claim form not opened',
+                    'value_of_purchases': 'N/A'
+                }
             
             # Wait for page to be ready (reduced timeout)
             logging.info("Waiting for page to load...")
@@ -1356,102 +1922,21 @@ class FBRChecker:
             # Step 1: Select Source Authority from dropdown if provided
             if source_authority:
                 logging.info(f"STEP 1: Selecting Source Authority: {source_authority}")
-                
-                # Find the dropdown element
-                dropdown_selectors = [
-                    (By.ID, "correspondenceTabs:loadAnnexAform:sourceAuthorityFilter"),
-                    (By.XPATH, "//div[@id='correspondenceTabs:loadAnnexAform:sourceAuthorityFilter']"),
-                    (By.XPATH, "//div[contains(@class, 'ui-selectonemenu') and contains(@id, 'sourceAuthorityFilter')]"),
-                ]
-                
-                dropdown = None
-                for by_type, selector in dropdown_selectors:
-                    try:
-                        # Wait for element to be visible AND clickable
-                        dropdown = wait.until(EC.visibility_of_element_located((by_type, selector)))
-                        dropdown = wait.until(EC.element_to_be_clickable((by_type, selector)))
-                        logging.info(f"Found dropdown using selector: {selector}")
-                        break
-                    except TimeoutException:
-                        continue
-                
-                if not dropdown:
-                    logging.error("STEP 1 FAILED: Source Authority dropdown not found")
+                selected, error_code = self._select_source_authority(
+                    "correspondenceTabs:loadAnnexAform:sourceAuthorityFilter",
+                    source_authority,
+                    log_prefix="STEP 1: ",
+                )
+                if not selected:
+                    status = (
+                        '⚠️ Error - Invalid source authority'
+                        if error_code == "invalid"
+                        else '⚠️ Error - Option not selectable'
+                    )
                     return {
-                        'status': '⚠️ Error - Dropdown not found',
+                        'status': status,
                         'value_of_purchases': 'N/A'
                     }
-                
-                # Click the dropdown to open it
-                self._human_like_click(dropdown)
-                self._random_delay(0.25, 0.5)
-                
-                # Select the option by text (source_authority value from Excel)
-                # Map option values: 7=BRA, 1=FBR, 6=KPRA, 5=PRA, 8=SRB
-                authority_map = {
-                    'BRA': '7',
-                    'FBR': '1',
-                    'KPRA': '6',
-                    'PRA': '5',
-                    'SRB': '8'
-                }
-                
-                # Normalize source_authority
-                source_auth_normalized = str(source_authority).strip().upper()
-                option_value = authority_map.get(source_auth_normalized)
-                
-                if not option_value:
-                    logging.error(f"STEP 1 FAILED: Unknown source authority '{source_authority}', valid values: {list(authority_map.keys())}")
-                    return {
-                        'status': '⚠️ Error - Invalid source authority',
-                        'value_of_purchases': 'N/A'
-                    }
-                
-                # Find and click the option in the dropdown
-                option_selectors = [
-                    (By.XPATH, f"//div[@id='correspondenceTabs:loadAnnexAform:sourceAuthorityFilter_panel']//li[@data-label='{source_auth_normalized}']"),
-                    (By.XPATH, f"//div[contains(@id, 'sourceAuthorityFilter_panel')]//li[contains(text(), '{source_auth_normalized}')]"),
-                    (By.XPATH, f"//select[@id='correspondenceTabs:loadAnnexAform:sourceAuthorityFilter_input']/option[@value='{option_value}']"),
-                ]
-                
-                option_selected = False
-                for by_type, selector in option_selectors:
-                    try:
-                        option = wait.until(EC.element_to_be_clickable((by_type, selector)))
-                        self._human_like_click(option)
-                        logging.info(f"✓ STEP 1 COMPLETED: Selected Source Authority: {source_auth_normalized}")
-                        option_selected = True
-                        self._random_delay(0.25,0.5)
-                        break
-                    except TimeoutException:
-                        continue
-                
-                if not option_selected:
-                    logging.error(f"STEP 1 FAILED: Could not select option '{source_auth_normalized}' from dropdown")
-                    return {
-                        'status': '⚠️ Error - Option not selectable',
-                        'value_of_purchases': 'N/A'
-                    }
-                
-                # Verify selection was applied
-                self._random_delay(0.1, 0.25)
-                selected_value = self.driver.execute_script("""
-                    var dropdown = document.getElementById('correspondenceTabs:loadAnnexAform:sourceAuthorityFilter');
-                    if (dropdown) {
-                        var label = dropdown.querySelector('.ui-selectonemenu-label');
-                        return label ? label.innerText.trim() : '';
-                    }
-                    return '';
-                """)
-                
-                if selected_value != source_auth_normalized:
-                    logging.error(f"STEP 1 VERIFICATION FAILED: Expected '{source_auth_normalized}', got '{selected_value}'")
-                    return {
-                        'status': '⚠️ Error - Selection verification failed',
-                        'value_of_purchases': 'N/A'
-                    }
-                
-                logging.info(f"✓ STEP 1 VERIFIED: Source Authority is set to '{selected_value}'")
             
             # Step 2: Enter Seller NTN in the annexASellerRegNo field
             if invoice_number:
@@ -1501,8 +1986,13 @@ class FBRChecker:
                 logging.info(f"✓ STEP 2 COMPLETED & VERIFIED: Seller NTN = '{entered_value}'")
                 self._random_delay(0.25, 0.5)
             
-            # Step 3: Enter Invoice Number in the annexAinvoiceNoId field
-            if invoice_no_field:
+            # Step 3: Leave the invoice input blank. The invoice number is matched
+            # against the Number column in the results table after searching.
+            logging.info(
+                f"STEP 3: Invoice Number '{invoice_no_field}' will be matched "
+                "in the results table (invoice input left blank)"
+            )
+            if False and invoice_no_field:  # Legacy form-entry code intentionally disabled.
                 logging.info(f"STEP 3: Entering Invoice Number: {invoice_no_field}")
                 
                 # Find the Invoice Number input field in Annex-A form
@@ -1512,7 +2002,12 @@ class FBRChecker:
                     (By.NAME, "correspondenceTabs:loadAnnexAform:annexAinvoiceNoId"),
                     (By.XPATH, "//input[@id='correspondenceTabs:loadAnnexAform:annexAinvoiceNoId']"),
                     (By.XPATH, "//input[@name='correspondenceTabs:loadAnnexAform:annexAinvoiceNoId']"),
-                    (By.XPATH, "//input[@type='text' and @maxlength='25']"),
+                    (
+                        By.XPATH,
+                        "//form[contains(@id, 'loadAnnexAform')]"
+                        "//input[@type='text' and "
+                        "(contains(@id, 'invoiceNo') or contains(@name, 'invoiceNo'))]",
+                    ),
                 ]
                 
                 for by_type, selector in invoice_no_selectors:
@@ -1903,10 +2398,9 @@ class FBRChecker:
                         )
                         if no_records_msg and no_records_msg.is_displayed():
                             logging.info("✓ STEP 5 COMPLETED: No records found message displayed")
-                            return {
-                                'status': '⚠️ No results',
-                                'value_of_purchases': 'N/A'
-                            }
+                            return self._verify_claimed_status_in_annex_a(
+                                invoice_number, invoice_no_field, date_field
+                            )
                     except TimeoutException:
                         pass
             except Exception as e:
@@ -1918,7 +2412,32 @@ class FBRChecker:
                     'status': '⚠️ Error - Search results not loaded',
                     'value_of_purchases': 'N/A'
                 }
+
+            # PrimeFaces renders an empty-message row inside the visible table,
+            # so a visible results table can still represent zero claim records.
+            claim_result_is_empty = self.driver.execute_script("""
+                var table = document.getElementById(
+                    'correspondenceTabs:loadAnnexAform:purchaseInvoiceTable'
+                );
+                if (!table) return false;
+                var body = table.querySelector('tbody');
+                return body && /no records found/i.test(
+                    body.innerText || body.textContent || ''
+                );
+            """)
+            if claim_result_is_empty:
+                return self._verify_claimed_status_in_annex_a(
+                    invoice_number, invoice_no_field, date_field
+                )
             
+            # The result grid defaults to 10 rows. Expand it before matching so
+            # invoices beyond the first page are included in the search.
+            if not self._set_annex_a_page_size_for_large_results():
+                return {
+                    'status': 'Error - Could not show 100 search results',
+                    'value_of_purchases': 'N/A'
+                }
+
             # Small delay for human-like behavior
             self._random_delay(0.25, 0.5)
             
@@ -1946,7 +2465,70 @@ class FBRChecker:
                 # Step 6.1: If sales_tax_fed_st_mode is provided, find matching row
                 matching_checkbox = None
                 
-                if sales_tax_fed_st_mode:
+                has_sales_tax_value = (
+                    sales_tax_fed_st_mode is not None and
+                    str(sales_tax_fed_st_mode).strip().upper() not in ('', 'N/A', 'NA', 'NONE')
+                )
+
+                has_invoice_value = (
+                    invoice_no_field is not None and
+                    str(invoice_no_field).strip().upper() not in ('', 'N/A', 'NA', 'NONE')
+                )
+                if not has_invoice_value:
+                    logging.error("STEP 6 FAILED: No invoice number was provided for table matching")
+                    return {
+                        'status': 'Invoice number missing - no row selected',
+                        'value_of_purchases': 'N/A',
+                        'fbr_sales_tax': 'N/A'
+                    }
+                if not has_sales_tax_value:
+                    logging.error("STEP 6 FAILED: No sales-tax value was provided for table matching")
+                    return {
+                        'status': 'Sales Tax/FED missing - no row selected',
+                        'value_of_purchases': 'N/A',
+                        'fbr_sales_tax': 'N/A'
+                    }
+
+                logging.info(
+                    f"STEP 6.1: Matching table Invoice Number '{invoice_no_field}', "
+                    f"then Sales Tax/FED '{sales_tax_fed_st_mode}'"
+                )
+                result = self._find_claim_row(invoice_no_field, sales_tax_fed_st_mode)
+                if result and result.get('checkbox'):
+                    matching_checkbox = result['checkbox']
+                    matched_row_sales_tax = result.get('fbr_sales_tax', 'N/A')
+                    logging.info(
+                        f"Found exact invoice and sales-tax row: invoice='{invoice_no_field}', "
+                        f"FBR sales tax='{matched_row_sales_tax}'"
+                    )
+                else:
+                    reason = result.get('reason', 'unknown') if result else 'unknown'
+                    if reason == 'invoice_not_matched':
+                        logging.info(
+                            f"Invoice number '{invoice_no_field}' was not found in the "
+                            "claim results; checking its status in underlying Annex-A"
+                        )
+                        return self._verify_claimed_status_in_annex_a(
+                            invoice_number, invoice_no_field, date_field
+                        )
+                    status_messages = {
+                        'invoice_not_matched': 'Invoice number not found in results table',
+                        'sales_tax_not_matched': 'Invoice found but Sales Tax/FED did not match',
+                        'invoice_column_not_found': 'Number column not found in results table',
+                        'sales_tax_column_not_found': 'Sales Tax/FED column not found in results table',
+                        'checkbox_not_found': 'Matching row found but checkbox was not found',
+                    }
+                    message = status_messages.get(reason, 'Matching record not found')
+                    logging.error(f"STEP 6 FAILED: {message} (reason={reason})")
+                    return {
+                        'status': f'{message} - no row selected',
+                        'value_of_purchases': 'N/A',
+                        'fbr_sales_tax': 'N/A'
+                    }
+
+                # Retained only as reference for older portal layouts. Selection is
+                # now performed by _find_claim_row above using invoice + sales tax.
+                if False and has_sales_tax_value:
                     logging.info(f"STEP 6.1: Searching for row with Sales Tax/FED in ST Mode = '{sales_tax_fed_st_mode}'...")
                     
                     # Use JavaScript to find all rows and match the Sales Tax/FED in ST Mode column
@@ -2049,7 +2631,7 @@ class FBRChecker:
                     else:
                         logging.warning(f"No row found matching Sales Tax/FED in ST Mode = '{sales_tax_fed_st_mode}', checking for default row...")
                         matching_checkbox = None
-                else:
+                elif False:
                     logging.info("STEP 6.1: No Sales Tax/FED value provided, using first row...")
                     # Extract Sales Tax/FED in ST Mode value from first row (this is what we write to Excel)
                     matched_row_sales_tax = self.driver.execute_script("""
@@ -2141,17 +2723,37 @@ class FBRChecker:
                         matched_row_sales_tax = 'N/A'
                 
                 # Human-like click on the matching checkbox
-                self._human_like_click(matching_checkbox)
+                if not self._human_like_click(matching_checkbox):
+                    logging.error("STEP 6 FAILED: Could not click the matching row checkbox")
+                    return {
+                        'status': 'Matching row checkbox could not be selected',
+                        'value_of_purchases': 'N/A',
+                        'fbr_sales_tax': matched_row_sales_tax
+                    }
                 self._random_delay(0.25, 0.5)
                 
-                # Verify checkbox was clicked by checking its state
+                # Verify the checkbox in the matched row (PrimeFaces IDs are
+                # dynamic, so a hard-coded first-row checkbox is not reliable).
                 checkbox_checked = self.driver.execute_script("""
-                    var checkbox = document.querySelector('#correspondenceTabs\\\\:loadAnnexAform\\\\:purchaseInvoiceTable\\\\:j_idt5893_input');
-                    return checkbox ? checkbox.checked : false;
-                """)
+                    var clicked = arguments[0];
+                    var row = clicked && clicked.closest('tr');
+                    if (!row) return false;
+                    var input = row.querySelector('input[type="checkbox"]');
+                    var box = row.querySelector('.ui-chkbox-box');
+                    return Boolean(
+                        (input && input.checked) ||
+                        (box && box.classList.contains('ui-state-active')) ||
+                        (box && box.getAttribute('aria-checked') === 'true')
+                    );
+                """, matching_checkbox)
                 
                 if not checkbox_checked:
-                    logging.warning("STEP 6: Checkbox state not confirmed as checked, but proceeding...")
+                    logging.error("STEP 6 FAILED: Matching row checkbox is not checked")
+                    return {
+                        'status': 'Matching row checkbox was not checked',
+                        'value_of_purchases': 'N/A',
+                        'fbr_sales_tax': matched_row_sales_tax
+                    }
                 
                 if sales_tax_fed_st_mode:
                     logging.info(f"✓ STEP 6 COMPLETED: Checkbox clicked for matching row (Sales Tax/FED = '{sales_tax_fed_st_mode}')")
@@ -2360,19 +2962,21 @@ class FBRChecker:
                                 value_of_purchases = self.driver.execute_script("""
                                     var table = document.getElementById('correspondenceTabs:loadAnnexAform:purchaseInvoiceTable');
                                     if (!table) return 'N/A - Table not found';
-                                    
+
                                     var columnIndex = arguments[0] - 1; // Convert to 0-indexed
-                                    
+                                    var selectedCheckbox = arguments[1];
+                                    var selectedRow = selectedCheckbox ? selectedCheckbox.closest('tr') : null;
+
                                     // Try method 1: tbody.rows
-                                    if (table.tBodies && table.tBodies.length > 0) {
-                                        var tbody = table.tBodies[0];
-                                        if (tbody.rows && tbody.rows.length > 0) {
-                                            var firstRow = tbody.rows[0];
-                                            if (firstRow.cells && firstRow.cells[columnIndex]) {
-                                                return firstRow.cells[columnIndex].innerText.trim();
-                                            }
-                                        }
-                                    }
+                                     if (table.tBodies && table.tBodies.length > 0) {
+                                         var tbody = table.tBodies[0];
+                                         if (tbody.rows && tbody.rows.length > 0) {
+                                             var targetRow = selectedRow || tbody.rows[0];
+                                             if (targetRow.cells && targetRow.cells[columnIndex]) {
+                                                 return targetRow.cells[columnIndex].innerText.trim();
+                                             }
+                                         }
+                                     }
                                     
                                     // Try method 2: table.rows (skip header rows)
                                     if (table.rows && table.rows.length > 1) {
@@ -2399,7 +3003,7 @@ class FBRChecker:
                                     }
                                     
                                     return 'N/A - No data rows found';
-                                """, column_index)
+                                 """, column_index, matching_checkbox)
                                 
                                 logging.info(f"✓ STEP 7 COMPLETED: Extracted Value of Purchases: {value_of_purchases}")
                             else:
@@ -2630,12 +3234,18 @@ class FBRChecker:
                 
                 #Determine final status
                 if success_message_found:
-                    final_status = '✓ Claimed - After Success Message'
+                    final_status = (
+                        'Claimed Successfully - Invoice was matched and the portal '
+                        'confirmed the claim'
+                    )
                     logging.info("=" * 60)
                     logging.info("SUCCESS: Invoice claimed successfully!")
                     logging.info("=" * 60)
                 else:
-                    final_status = '⚠️ Claim attempted (verification pending)'
+                    final_status = (
+                        'Claim Submitted - Claim button was clicked, but the portal '
+                        'confirmation message was not received; manual verification required'
+                    )
                     logging.warning("Claim button clicked but success message not confirmed")
 
                 ####################################################################################
@@ -2838,98 +3448,21 @@ class FBRChecker:
             # Step 1: Select Source Authority from dropdown if provided
             if source_authority:
                 logging.info(f"[STWH] STEP 1: Selecting Source Authority: {source_authority}")
-                
-                # Find the dropdown element
-                dropdown_selectors = [
-                    (By.ID, "correspondenceTabs:loadStwhAnnexAform:sourceAuthority"),
-                    (By.XPATH, "//div[@id='correspondenceTabs:loadStwhAnnexAform:sourceAuthority']"),
-                    (By.XPATH, "//div[contains(@class, 'ui-selectonemenu') and contains(@id, 'loadStwhAnnexAform:sourceAuthority')]"),
-                ]
-                
-                dropdown = None
-                for by_type, selector in dropdown_selectors:
-                    try:
-                        dropdown = wait.until(EC.visibility_of_element_located((by_type, selector)))
-                        dropdown = wait.until(EC.element_to_be_clickable((by_type, selector)))
-                        logging.info(f"[STWH] Found dropdown using selector: {selector}")
-                        break
-                    except TimeoutException:
-                        continue
-                
-                if not dropdown:
-                    logging.error("[STWH] STEP 1 FAILED: Source Authority dropdown not found")
+                selected, error_code = self._select_source_authority(
+                    "correspondenceTabs:loadStwhAnnexAform:sourceAuthority",
+                    source_authority,
+                    log_prefix="[STWH] STEP 1: ",
+                )
+                if not selected:
+                    status = (
+                        '⚠️ Error - Invalid source authority'
+                        if error_code == "invalid"
+                        else '⚠️ Error - Option not selectable'
+                    )
                     return {
-                        'status': '⚠️ Error - Dropdown not found',
+                        'status': status,
                         'value_of_purchases': 'N/A'
                     }
-                
-                # Click the dropdown to open it
-                self._human_like_click(dropdown)
-                self._random_delay(0.25, 0.5)
-                
-                # Select the option by text
-                authority_map = {
-                    'BRA': '7',
-                    'FBR': '1',
-                    'KPRA': '6',
-                    'PRA': '5',
-                    'SRB': '8'
-                }
-                
-                source_auth_normalized = str(source_authority).strip().upper()
-                option_value = authority_map.get(source_auth_normalized)
-                
-                if not option_value:
-                    logging.error(f"[STWH] STEP 1 FAILED: Unknown source authority '{source_authority}'")
-                    return {
-                        'status': '⚠️ Error - Invalid source authority',
-                        'value_of_purchases': 'N/A'
-                    }
-                
-                option_selectors = [
-                    (By.XPATH, f"//div[@id='correspondenceTabs:loadStwhAnnexAform:sourceAuthority_panel']//li[@data-label='{source_auth_normalized}']"),
-                    (By.XPATH, f"//div[contains(@id, 'loadStwhAnnexAform:sourceAuthority_panel')]//li[contains(text(), '{source_auth_normalized}')]"),
-                    (By.XPATH, f"//select[@id='correspondenceTabs:loadStwhAnnexAform:sourceAuthority_input']/option[@value='{option_value}']"),
-                ]
-                
-                option_selected = False
-                for by_type, selector in option_selectors:
-                    try:
-                        option = wait.until(EC.element_to_be_clickable((by_type, selector)))
-                        self._human_like_click(option)
-                        logging.info(f"[STWH] ✓ STEP 1 COMPLETED: Selected Source Authority: {source_auth_normalized}")
-                        option_selected = True
-                        self._random_delay(0.25, 0.5)
-                        break
-                    except TimeoutException:
-                        continue
-                
-                if not option_selected:
-                    logging.error(f"[STWH] STEP 1 FAILED: Could not select option '{source_auth_normalized}'")
-                    return {
-                        'status': '⚠️ Error - Option not selectable',
-                        'value_of_purchases': 'N/A'
-                    }
-                
-                # Verify selection
-                self._random_delay(0.1, 0.25)
-                selected_value = self.driver.execute_script("""
-                    var dropdown = document.getElementById('correspondenceTabs:loadStwhAnnexAform:sourceAuthority');
-                    if (dropdown) {
-                        var label = dropdown.querySelector('.ui-selectonemenu-label');
-                        return label ? label.innerText.trim() : '';
-                    }
-                    return '';
-                """)
-                
-                if selected_value != source_auth_normalized:
-                    logging.error(f"[STWH] STEP 1 VERIFICATION FAILED: Expected '{source_auth_normalized}', got '{selected_value}'")
-                    return {
-                        'status': '⚠️ Error - Selection verification failed',
-                        'value_of_purchases': 'N/A'
-                    }
-                
-                logging.info(f"[STWH] ✓ STEP 1 VERIFIED: Source Authority is set to '{selected_value}'")
             
             # Step 2: Enter Seller NTN
             if invoice_number:
