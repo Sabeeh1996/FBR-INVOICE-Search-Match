@@ -4,10 +4,11 @@ FBR Invoice Checker Bot - Automated invoice verification with GUI
 """
 
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, ttk
 import logging
 import os
 import sys
+import threading
 import multiprocessing
 from datetime import datetime
 from gui import FBRInvoiceCheckerGUI
@@ -16,6 +17,7 @@ from version_manager import read_version, is_version_tampered, get_version_info
 from single_instance import SingleInstance
 from mac_auth import MACAuthenticator
 from first_run_notifier import FirstRunNotifier
+from updater import Updater
 
 
 def setup_logging():
@@ -85,6 +87,76 @@ def check_version_integrity():
         return False
     
     return True
+
+
+def check_for_app_update_async(root):
+    """
+    Check GitHub Releases for a newer version in the background so it
+    never delays application startup. If one is found, prompt the user.
+    """
+    def worker():
+        try:
+            updater = Updater()
+            available, release_data = updater.check_for_updates()
+            if available:
+                latest_version = release_data.get('tag_name', 'unknown')
+                root.after(0, lambda: prompt_update(root, updater, latest_version))
+        except Exception as e:
+            logging.warning(f"Update check failed: {e}")
+
+    threading.Thread(target=worker, daemon=True).start()
+
+
+def prompt_update(root, updater, latest_version):
+    """Ask the user whether to install the newly detected update."""
+    current_version = updater.get_current_version()
+    answer = messagebox.askyesno(
+        "Update Available",
+        f"A new version is available.\n\n"
+        f"Current version: {current_version}\n"
+        f"Latest version: {latest_version}\n\n"
+        "Update now? The application will close and reopen automatically."
+    )
+    if not answer:
+        return
+
+    progress_win = tk.Toplevel(root)
+    progress_win.title("Updating...")
+    progress_win.geometry("350x110")
+    progress_win.resizable(False, False)
+    progress_win.transient(root)
+    progress_win.attributes('-topmost', True)
+
+    tk.Label(progress_win, text=f"Downloading update {latest_version}...").pack(pady=(15, 5))
+    progress_bar = ttk.Progressbar(progress_win, length=300, mode='determinate')
+    progress_bar.pack(pady=5)
+
+    def progress_cb(downloaded, total):
+        if total > 0:
+            percent = (downloaded / total) * 100
+            progress_win.after(0, lambda: progress_bar.config(value=percent))
+
+    def do_update():
+        success, message = updater.check_and_apply_updates(
+            progress_callback=progress_cb, force_update=True
+        )
+        root.after(0, lambda: finish_update(root, progress_win, success, message))
+
+    threading.Thread(target=do_update, daemon=True).start()
+
+
+def finish_update(root, progress_win, success, message):
+    """Handle the outcome of a download/launch-installer attempt."""
+    progress_win.destroy()
+    if success and "restart" in message.lower():
+        messagebox.showinfo(
+            "Update Ready",
+            "The update has been downloaded. The application will now close and restart."
+        )
+        root.destroy()
+        sys.exit(0)
+    else:
+        messagebox.showerror("Update Failed", message)
 
 
 def main():
@@ -262,7 +334,10 @@ def main():
     
     # Create and run GUI
     app = FBRInvoiceCheckerGUI(root, license_manager)
-    
+
+    # Check for updates in the background - never blocks startup
+    check_for_app_update_async(root)
+
     # Start the Tkinter event loop
     try:
         root.mainloop()

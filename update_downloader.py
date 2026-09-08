@@ -180,19 +180,19 @@ class UpdateDownloader:
                 logger.error("No assets found in release")
                 return None
             
-            # Get the first asset (usually the ZIP file)
+            # Get the first asset (usually the installer or ZIP file)
             first_asset = assets[0]
             download_url = first_asset.get('browser_download_url')
             asset_name = first_asset.get('name', 'update.zip')
-            
+
             if not download_url:
                 logger.error("No download URL found in asset")
                 return None
-            
+
             logger.info(f"Downloading asset: {asset_name}")
-            
-            # Download with default filename "update.zip"
-            return self.download_file(download_url, filename="update.zip")
+
+            # Download using the asset's actual filename
+            return self.download_file(download_url, filename=asset_name)
             
         except KeyError as e:
             logger.error(f"Missing required field in release data: {str(e)}")

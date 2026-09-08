@@ -1,7 +1,10 @@
 # -*- mode: python ; coding: utf-8 -*-
+import os
 from PyInstaller.utils.hooks import collect_all
 
 datas = [('license_config.json', '.'), ('version.txt', '.'), ('mac_config.json', '.'), ('mac_whitelist.json', '.'), ('assets/codium_edge_logo.png', 'assets')]
+if os.path.exists('github_update_config.json'):
+    datas.append(('github_update_config.json', '.'))
 binaries = []
 hiddenimports = ['tkinter', 'tkinter.ttk', 'tkinter.messagebox', 'tkinter.filedialog', 'openpyxl', 'openpyxl.cell', 'openpyxl.styles', 'selenium', 'selenium.webdriver', 'requests', 'PIL', 'PIL.Image', 'PIL.ImageTk']
 tmp_ret = collect_all('openpyxl')

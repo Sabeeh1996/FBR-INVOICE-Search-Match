@@ -2,7 +2,10 @@
 ; Compile with: ISCC.exe installer.iss
 
 #define MyAppName "FBR Invoice Checker"
-#define MyAppVersion "2.1"
+; Override at compile time with: ISCC installer.iss /DMyAppVersion=X.Y
+#ifndef MyAppVersion
+  #define MyAppVersion "2.1"
+#endif
 #define MyAppPublisher "Codium Edge"
 #define MyAppExeName "InvoiceChecker.exe"
 
@@ -39,7 +42,8 @@ Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
+; No "skipifsilent" so an auto-update's /VERYSILENT install also relaunches the app.
+Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{localappdata}\FBR Invoice Checker"
