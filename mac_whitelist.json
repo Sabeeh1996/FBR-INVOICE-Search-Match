@@ -401,8 +401,40 @@
       "isp": "Unknown",
       "asn": "Unknown",
       "timezone": "Unknown"
+    },
+    {
+      "device_id": 13,
+      "device_name": "DESKTOP-46BDVA7-sabeeh bhai 1995",
+      "mac_address": "00:93:37:25:26:88",
+      "mac_hash": "c55dabd2d42453c0db7e0a78de35e0a01e102bff1d509f8e828956ebed6f15cc",
+      "status": "active",
+      "authorized_date": "2026-09-08T22:02:32.840879",
+      "last_updated": "2026-09-08T22:02:32.840879",
+      "notes": "Auto-authorized device #13",
+      "username": "sabeeh bhai 1995",
+      "computer_name": "DESKTOP-46BDVA7",
+      "os": "Windows",
+      "os_version": "10.0.26200",
+      "local_ip": "192.168.18.12",
+      "dns_servers": "1%20",
+      "network_adapters": [
+        "Unknown adapter Tailscale",
+        "Wireless LAN adapter Local Area Connection* 1",
+        "Description . . . . . . . . . . ."
+      ],
+      "fqdn": "DESKTOP-46BDVA7",
+      "public_ip": "154.192.130.181",
+      "latitude": -29.0,
+      "longitude": 24.0,
+      "city": null,
+      "country": "South Africa",
+      "postal_code": null,
+      "region": null,
+      "isp": "Unknown",
+      "asn": "Unknown",
+      "timezone": "Unknown"
     }
   ],
-  "last_updated": "2026-08-15T22:41:37.325742",
+  "last_updated": "2026-09-08T22:02:32.840879",
   "updated_by": "auto-authorize"
 }

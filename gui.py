@@ -163,6 +163,8 @@ class FBRInvoiceCheckerGUI:
         # Variables
         self.excel_file_path = tk.StringVar()
         self.selected_browser = tk.StringVar()
+        self.claim_grouped_invoices_var = tk.BooleanVar(value=False)
+        self.claim_grouped_invoices = False
         self.is_running = False
         self.is_paused = False
         self.worker_thread = None
@@ -430,6 +432,15 @@ class FBRInvoiceCheckerGUI:
             style='Start.TButton'
         )
         self.verify_btn.grid(row=0, column=1, padx=8, pady=5)
+
+        self.claim_grouped_invoices_check = ttk.Checkbutton(
+            inner_button_frame,
+            text="Group suffixed invoices (e.g. 123-1, 123-2)",
+            variable=self.claim_grouped_invoices_var
+        )
+        self.claim_grouped_invoices_check.grid(
+            row=1, column=1, columnspan=3, padx=8, pady=(0, 5), sticky=tk.W
+        )
         
         self.disallow_btn = ttk.Button(
             inner_button_frame, 
@@ -823,6 +834,9 @@ Note: Selenium should automatically download the required driver."""
         self.is_running = True
         self.pause_requested = False
         self.current_mode = 'verify'
+        # Snapshot the option before the background worker starts and retain it
+        # if processing is paused and resumed.
+        self.claim_grouped_invoices = bool(self.claim_grouped_invoices_var.get())
         
         # Update workflow indicator
         self.root.after(0, lambda: self.workflow_indicator.config(text="▶ Claim Invoice FBR", fg="#27AE60"))
@@ -1068,6 +1082,11 @@ Note: Selenium should automatically download the required driver."""
             self.total_invoices = len(invoices)
             self.update_statistics()
             self.log_message(f"📋 Found {self.total_invoices} invoices to verify")
+            if self.claim_grouped_invoices:
+                self.log_message(
+                    "Grouped claim enabled: all base-number-N rows will be "
+                    "selected when their combined sales tax matches Excel"
+                )
             
             # Determine starting point (resume from last processed row if available)
             start_index = 0
@@ -1124,7 +1143,14 @@ Note: Selenium should automatically download the required driver."""
                 # Verify invoice with source authority, invoice number, date, and sales tax from Excel
                 self.log_message(f"🔍 Verifying on FBR portal...")
                 try:
-                    result = self.fbr_checker.verify_invoice(registration_no, source_authority=source_auth, invoice_no_field=number, date_field=date, sales_tax_fed_st_mode=sales_tax_fed_st_mode)
+                    result = self.fbr_checker.verify_invoice(
+                        registration_no,
+                        source_authority=source_auth,
+                        invoice_no_field=number,
+                        date_field=date,
+                        sales_tax_fed_st_mode=sales_tax_fed_st_mode,
+                        group_suffixed_invoices=self.claim_grouped_invoices,
+                    )
                     
                     # Handle both dict and string return types for backwards compatibility
                     if isinstance(result, dict):

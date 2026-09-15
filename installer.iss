@@ -4,7 +4,7 @@
 #define MyAppName "FBR Invoice Checker"
 ; Override at compile time with: ISCC installer.iss /DMyAppVersion=X.Y
 #ifndef MyAppVersion
-  #define MyAppVersion "2.1"
+  #define MyAppVersion "2.2"
 #endif
 #define MyAppPublisher "Codium Edge"
 #define MyAppExeName "InvoiceChecker.exe"

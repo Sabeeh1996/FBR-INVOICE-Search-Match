@@ -1540,6 +1540,86 @@ class FBRChecker:
             return response;
         """, str(invoice_no or ''), str(sales_tax_value or ''))
 
+    def _find_grouped_claim_rows(self, invoice_no, sales_tax_value):
+        """Match base-number-N rows whose combined sales tax is within one rupee."""
+        return self.driver.execute_script(r"""
+            var wantedInvoice = String(arguments[0] || '').trim();
+            var wantedTax = arguments[1];
+            var table = document.getElementById(
+                'correspondenceTabs:loadAnnexAform:purchaseInvoiceTable'
+            );
+            var response = {
+                checkboxes: [], rows: [], fbr_sales_tax: 'N/A',
+                base_invoice: '', reason: 'table_not_found'
+            };
+            if (!table) return response;
+
+            function text(value) {
+                return String(value == null ? '' : value)
+                    .replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+            }
+            function numberValue(value) {
+                var raw = text(value).replace(/,/g, '').replace(/[^0-9.()\-]/g, '');
+                if (!raw) return null;
+                if (/^\(.*\)$/.test(raw)) raw = '-' + raw.slice(1, -1);
+                var parsed = Number(raw);
+                return Number.isFinite(parsed) ? parsed : null;
+            }
+            function escapeRegExp(value) {
+                return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            }
+
+            // Treat only a final "-digits" portion as the sequence suffix.
+            var base = wantedInvoice.replace(/-\d+\s*$/, '').trim();
+            response.base_invoice = base;
+            var invoicePattern = new RegExp('^' + escapeRegExp(base) + '-\\d+$', 'i');
+            var headers = Array.from(table.querySelectorAll('thead th'));
+            var invoiceIndex = -1;
+            var taxIndex = -1;
+            headers.forEach(function(header, index) {
+                var label = text(header.innerText || header.textContent).toLowerCase();
+                if (label === 'number' || label === 'invoice number' ||
+                    label === 'invoice no' || label === 'invoice no.') invoiceIndex = index;
+                if (label.includes('sales tax') && label.includes('st mode')) taxIndex = index;
+            });
+            if (invoiceIndex < 0) {
+                response.reason = 'invoice_column_not_found'; return response;
+            }
+            if (taxIndex < 0) {
+                response.reason = 'sales_tax_column_not_found'; return response;
+            }
+
+            var sum = 0;
+            var rows = Array.from(table.querySelectorAll('tbody tr'));
+            for (var i = 0; i < rows.length; i++) {
+                var cells = rows[i].querySelectorAll('td');
+                if (cells.length <= Math.max(invoiceIndex, taxIndex)) continue;
+                if (!invoicePattern.test(text(cells[invoiceIndex].innerText))) continue;
+                var tax = numberValue(cells[taxIndex].innerText);
+                if (tax === null) {
+                    response.reason = 'invalid_sales_tax'; return response;
+                }
+                var checkbox = rows[i].querySelector('.ui-chkbox-box, input[type="checkbox"]');
+                if (!checkbox) {
+                    response.reason = 'checkbox_not_found'; return response;
+                }
+                sum += tax;
+                response.rows.push(rows[i]);
+                response.checkboxes.push(checkbox);
+            }
+            if (!response.rows.length) {
+                response.reason = 'invoice_not_matched'; return response;
+            }
+            response.fbr_sales_tax = String(sum);
+            var expected = numberValue(wantedTax);
+            if (expected === null || Math.abs(sum - expected) > 1.0) {
+                response.checkboxes = [];
+                response.reason = 'sales_tax_not_matched'; return response;
+            }
+            response.reason = 'matched';
+            return response;
+        """, str(invoice_no or ''), str(sales_tax_value or ''))
+
     def _set_annex_a_page_size_for_large_results(self):
         """Show 100 rows when an Annex-A search returns more than 10 records."""
         dropdown_locator = (
@@ -1613,7 +1693,8 @@ class FBRChecker:
             return False
 
     def _verify_claimed_status_in_annex_a(
-        self, seller_registration_no, invoice_no, date_field
+        self, seller_registration_no, invoice_no, date_field,
+        group_suffixed_invoices=False, sales_tax_value=None
     ):
         """Close an empty claim dialog and read the invoice's Annex-A status."""
         try:
@@ -1722,9 +1803,13 @@ class FBRChecker:
 
             date_inputs = wait.until(find_claimed_verification_dates)
 
+            invoice_search_value = (
+                re.sub(r'-\d+\s*$', '', str(invoice_no or '')).strip()
+                if group_suffixed_invoices else str(invoice_no)
+            )
             fields_to_type = (
                 (seller_input, str(seller_registration_no), "Seller Registration No."),
-                (invoice_input, str(invoice_no), "Invoice No."),
+                (invoice_input, invoice_search_value, "Invoice No."),
             )
             for field, value, field_name in fields_to_type:
                 if not self._human_like_click(field):
@@ -1789,6 +1874,7 @@ class FBRChecker:
                     var statusIndex = -1;
                     var invoiceIndex = -1;
                     var sellerIndex = -1;
+                    var taxIndex = -1;
                     headers.forEach(function(header, index) {
                         var label = text(header.innerText || header.textContent).toLowerCase();
                         if (label === 'status') statusIndex = index;
@@ -1797,6 +1883,8 @@ class FBRChecker:
                             invoiceIndex = index;
                         }
                         if (label.includes('seller registration')) sellerIndex = index;
+                        if ((label.includes('sales tax') || label.includes('fed')) &&
+                            (taxIndex < 0 || label.includes('st mode'))) taxIndex = index;
                     });
                     if (statusIndex < 0 || invoiceIndex < 0) {
                         return {state: 'waiting'};
@@ -1806,6 +1894,22 @@ class FBRChecker:
                     if (!rows.length) return {state: 'not_found'};
                     var expectedInvoice = key(arguments[0]);
                     var expectedSeller = key(arguments[1]);
+                    var grouped = Boolean(arguments[2]);
+                    var expectedTax = arguments[3];
+                    var base = text(arguments[0]).replace(/-\d+\s*$/, '').trim();
+                    var escapedBase = base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    var groupedPattern = new RegExp('^' + escapedBase + '-\\d+$', 'i');
+                    var foundStatuses = [];
+                    var foundInvoices = [];
+                    var taxSum = 0;
+                    function numberValue(value) {
+                        var raw = text(value).replace(/,/g, '')
+                            .replace(/[^0-9.()\-]/g, '');
+                        if (!raw) return null;
+                        if (/^\(.*\)$/.test(raw)) raw = '-' + raw.slice(1, -1);
+                        var parsed = Number(raw);
+                        return Number.isFinite(parsed) ? parsed : null;
+                    }
                     for (var i = 0; i < rows.length; i++) {
                         var rowText = text(rows[i].innerText || rows[i].textContent);
                         if (/no records found/i.test(rowText)) {
@@ -1813,16 +1917,43 @@ class FBRChecker:
                         }
                         var cells = rows[i].querySelectorAll('td');
                         if (cells.length <= Math.max(statusIndex, invoiceIndex)) continue;
-                        if (key(cells[invoiceIndex].innerText) !== expectedInvoice) continue;
+                        var actualInvoice = text(cells[invoiceIndex].innerText);
+                        var invoiceMatches = grouped
+                            ? groupedPattern.test(actualInvoice)
+                            : key(actualInvoice) === expectedInvoice;
+                        if (!invoiceMatches) continue;
                         if (sellerIndex >= 0 && cells.length > sellerIndex &&
                             key(cells[sellerIndex].innerText) !== expectedSeller) continue;
-                        return {
-                            state: 'found',
-                            status: text(cells[statusIndex].innerText || cells[statusIndex].textContent)
-                        };
+                        foundInvoices.push(actualInvoice);
+                        foundStatuses.push(text(
+                            cells[statusIndex].innerText || cells[statusIndex].textContent
+                        ));
+                        if (grouped) {
+                            if (taxIndex < 0 || cells.length <= taxIndex) {
+                                return {state: 'sales_tax_column_not_found'};
+                            }
+                            var rowTax = numberValue(cells[taxIndex].innerText);
+                            if (rowTax === null) return {state: 'invalid_sales_tax'};
+                            taxSum += rowTax;
+                        }
                     }
-                    return {state: 'not_found'};
-                """, str(invoice_no), str(seller_registration_no))
+                    if (!foundInvoices.length) return {state: 'not_found'};
+                    if (grouped) {
+                        var wantedTax = numberValue(expectedTax);
+                        if (wantedTax === null || Math.abs(taxSum - wantedTax) > 1.0) {
+                            return {
+                                state: 'sales_tax_not_matched', invoices: foundInvoices,
+                                statuses: foundStatuses, fbr_sales_tax: String(taxSum)
+                            };
+                        }
+                    }
+                    return {
+                        state: 'found', status: foundStatuses[0], statuses: foundStatuses,
+                        invoices: foundInvoices,
+                        fbr_sales_tax: grouped ? String(taxSum) : 'N/A'
+                    };
+                """, str(invoice_no), str(seller_registration_no),
+                    bool(group_suffixed_invoices), str(sales_tax_value or ''))
 
             verification = WebDriverWait(self.driver, 30).until(
                 lambda driver: (
@@ -1830,6 +1961,32 @@ class FBRChecker:
                 )(read_matching_status(driver))
             )
             if verification.get('state') == 'found':
+                if group_suffixed_invoices:
+                    statuses = verification.get('statuses', [])
+                    claimed_count = sum(
+                        1 for item in statuses if str(item).strip().lower() == 'claimed'
+                    )
+                    total_count = len(statuses)
+                    if claimed_count == total_count:
+                        status = (
+                            f'Already Claimed - All {total_count} grouped invoices '
+                            'were found with Claimed status in Annex-A'
+                        )
+                    elif claimed_count:
+                        status = (
+                            f'Partially Claimed - {claimed_count} of {total_count} '
+                            'grouped invoices have Claimed status in Annex-A'
+                        )
+                    else:
+                        status = (
+                            f'Not Claimed - {total_count} grouped invoices were found '
+                            'in Annex-A but none has Claimed status'
+                        )
+                    return {
+                        'status': status,
+                        'value_of_purchases': 'N/A',
+                        'fbr_sales_tax': verification.get('fbr_sales_tax', 'N/A'),
+                    }
                 portal_status = verification.get('status', '').strip()
                 if portal_status.lower() == 'claimed':
                     status = (
@@ -1851,6 +2008,28 @@ class FBRChecker:
                 )
                 return {
                     'status': status,
+                    'value_of_purchases': 'N/A',
+                    'fbr_sales_tax': 'N/A',
+                }
+
+            if verification.get('state') == 'sales_tax_not_matched':
+                return {
+                    'status': (
+                        'Grouped invoices found in Annex-A, but their combined '
+                        'Sales Tax/FED did not match Excel within ±1 rupee'
+                    ),
+                    'value_of_purchases': 'N/A',
+                    'fbr_sales_tax': verification.get('fbr_sales_tax', 'N/A'),
+                }
+
+            if verification.get('state') in (
+                'sales_tax_column_not_found', 'invalid_sales_tax'
+            ):
+                return {
+                    'status': (
+                        'Error - Grouped invoices were found in Annex-A, but their '
+                        'Sales Tax/FED values could not be read'
+                    ),
                     'value_of_purchases': 'N/A',
                     'fbr_sales_tax': 'N/A',
                 }
@@ -1877,7 +2056,9 @@ class FBRChecker:
                 'fbr_sales_tax': 'N/A',
             }
 
-    def verify_invoice(self, invoice_number, source_authority=None, invoice_no_field=None, date_field=None, sales_tax_fed_st_mode=None):
+    def verify_invoice(self, invoice_number, source_authority=None, invoice_no_field=None,
+                       date_field=None, sales_tax_fed_st_mode=None,
+                       group_suffixed_invoices=False):
         """
         Verify a single invoice number on the FBR portal.
         
@@ -1887,6 +2068,7 @@ class FBRChecker:
             invoice_no_field (str): Invoice number from 'Number' column in Excel
             date_field (str): Date from 'Date' column in Excel (will be used for both From and To dates)
             sales_tax_fed_st_mode (str): Sales Tax/FED in ST Mode value from Excel to match with FBR data
+            group_suffixed_invoices (bool): Match base-number-N rows using their combined sales tax
             
         Returns:
             dict: Status and details including matched row information
@@ -1986,14 +2168,19 @@ class FBRChecker:
                 logging.info(f"✓ STEP 2 COMPLETED & VERIFIED: Seller NTN = '{entered_value}'")
                 self._random_delay(0.25, 0.5)
             
-            # Step 3: Leave the invoice input blank. The invoice number is matched
-            # against the Number column in the results table after searching.
+            # Normal mode leaves this filter blank. Grouped mode searches with
+            # the base (122... from 122...-1), then validates every suffixed row.
+            invoice_search_value = re.sub(
+                r'-\d+\s*$', '', str(invoice_no_field or '')
+            ).strip()
             logging.info(
                 f"STEP 3: Invoice Number '{invoice_no_field}' will be matched "
-                "in the results table (invoice input left blank)"
+                + (f"using grouped search base '{invoice_search_value}'"
+                   if group_suffixed_invoices else
+                   "in the results table (invoice input left blank)")
             )
-            if False and invoice_no_field:  # Legacy form-entry code intentionally disabled.
-                logging.info(f"STEP 3: Entering Invoice Number: {invoice_no_field}")
+            if group_suffixed_invoices and invoice_search_value:
+                logging.info(f"STEP 3: Entering Invoice Number base: {invoice_search_value}")
                 
                 # Find the Invoice Number input field in Annex-A form
                 invoice_no_input = None
@@ -2029,13 +2216,13 @@ class FBRChecker:
                 
                 # Human-like interaction: move to field and type naturally
                 self._human_like_click(invoice_no_input)
-                self._human_like_type(invoice_no_input, invoice_no_field)
+                self._human_like_type(invoice_no_input, invoice_search_value)
                 self._random_delay(0.1, 0.25)
                 
                 # Verify the value was entered
                 entered_value = invoice_no_input.get_attribute('value')
-                if entered_value != str(invoice_no_field):
-                    logging.error(f"STEP 3 VERIFICATION FAILED: Expected '{invoice_no_field}', got '{entered_value}'")
+                if entered_value != invoice_search_value:
+                    logging.error(f"STEP 3 VERIFICATION FAILED: Expected '{invoice_search_value}', got '{entered_value}'")
                     return {
                         'status': '⚠️ Error - Invoice entry verification failed',
                         'value_of_purchases': 'N/A'
@@ -2399,7 +2586,8 @@ class FBRChecker:
                         if no_records_msg and no_records_msg.is_displayed():
                             logging.info("✓ STEP 5 COMPLETED: No records found message displayed")
                             return self._verify_claimed_status_in_annex_a(
-                                invoice_number, invoice_no_field, date_field
+                                invoice_number, invoice_no_field, date_field,
+                                group_suffixed_invoices, sales_tax_fed_st_mode
                             )
                     except TimeoutException:
                         pass
@@ -2427,7 +2615,8 @@ class FBRChecker:
             """)
             if claim_result_is_empty:
                 return self._verify_claimed_status_in_annex_a(
-                    invoice_number, invoice_no_field, date_field
+                    invoice_number, invoice_no_field, date_field,
+                    group_suffixed_invoices, sales_tax_fed_st_mode
                 )
             
             # The result grid defaults to 10 rows. Expand it before matching so
@@ -2493,14 +2682,28 @@ class FBRChecker:
                     f"STEP 6.1: Matching table Invoice Number '{invoice_no_field}', "
                     f"then Sales Tax/FED '{sales_tax_fed_st_mode}'"
                 )
-                result = self._find_claim_row(invoice_no_field, sales_tax_fed_st_mode)
-                if result and result.get('checkbox'):
-                    matching_checkbox = result['checkbox']
+                result = (
+                    self._find_grouped_claim_rows(invoice_no_field, sales_tax_fed_st_mode)
+                    if group_suffixed_invoices
+                    else self._find_claim_row(invoice_no_field, sales_tax_fed_st_mode)
+                )
+                matching_checkboxes = result.get('checkboxes', []) if result else []
+                if not matching_checkboxes and result and result.get('checkbox'):
+                    matching_checkboxes = [result['checkbox']]
+                if matching_checkboxes:
+                    matching_checkbox = matching_checkboxes[0]
                     matched_row_sales_tax = result.get('fbr_sales_tax', 'N/A')
-                    logging.info(
-                        f"Found exact invoice and sales-tax row: invoice='{invoice_no_field}', "
-                        f"FBR sales tax='{matched_row_sales_tax}'"
-                    )
+                    if group_suffixed_invoices:
+                        logging.info(
+                            f"Found {len(matching_checkboxes)} grouped rows for base "
+                            f"invoice='{result.get('base_invoice')}', combined FBR sales "
+                            f"tax='{matched_row_sales_tax}'"
+                        )
+                    else:
+                        logging.info(
+                            f"Found exact invoice and sales-tax row: invoice='{invoice_no_field}', "
+                            f"FBR sales tax='{matched_row_sales_tax}'"
+                        )
                 else:
                     reason = result.get('reason', 'unknown') if result else 'unknown'
                     if reason == 'invoice_not_matched':
@@ -2509,7 +2712,8 @@ class FBRChecker:
                             "claim results; checking its status in underlying Annex-A"
                         )
                         return self._verify_claimed_status_in_annex_a(
-                            invoice_number, invoice_no_field, date_field
+                            invoice_number, invoice_no_field, date_field,
+                            group_suffixed_invoices, sales_tax_fed_st_mode
                         )
                     status_messages = {
                         'invoice_not_matched': 'Invoice number not found in results table',
@@ -2722,30 +2926,40 @@ class FBRChecker:
                         logging.warning(f"Could not extract Sales Tax/FED in ST Mode from checkbox row: {str(e)}")
                         matched_row_sales_tax = 'N/A'
                 
-                # Human-like click on the matching checkbox
-                if not self._human_like_click(matching_checkbox):
-                    logging.error("STEP 6 FAILED: Could not click the matching row checkbox")
-                    return {
-                        'status': 'Matching row checkbox could not be selected',
-                        'value_of_purchases': 'N/A',
-                        'fbr_sales_tax': matched_row_sales_tax
-                    }
+                # Select every grouped row, or the single exact row in normal mode.
+                for checkbox in matching_checkboxes:
+                    already_checked = self.driver.execute_script("""
+                        var clicked = arguments[0];
+                        var row = clicked && clicked.closest('tr');
+                        var input = row && row.querySelector('input[type="checkbox"]');
+                        var box = row && row.querySelector('.ui-chkbox-box');
+                        return Boolean((input && input.checked) ||
+                            (box && box.classList.contains('ui-state-active')) ||
+                            (box && box.getAttribute('aria-checked') === 'true'));
+                    """, checkbox)
+                    if not already_checked and not self._human_like_click(checkbox):
+                        logging.error("STEP 6 FAILED: Could not click a matching row checkbox")
+                        return {
+                            'status': 'Matching row checkbox could not be selected',
+                            'value_of_purchases': 'N/A',
+                            'fbr_sales_tax': matched_row_sales_tax
+                        }
+                    self._random_delay(0.15, 0.3)
                 self._random_delay(0.25, 0.5)
                 
                 # Verify the checkbox in the matched row (PrimeFaces IDs are
                 # dynamic, so a hard-coded first-row checkbox is not reliable).
                 checkbox_checked = self.driver.execute_script("""
-                    var clicked = arguments[0];
-                    var row = clicked && clicked.closest('tr');
-                    if (!row) return false;
-                    var input = row.querySelector('input[type="checkbox"]');
-                    var box = row.querySelector('.ui-chkbox-box');
-                    return Boolean(
-                        (input && input.checked) ||
-                        (box && box.classList.contains('ui-state-active')) ||
-                        (box && box.getAttribute('aria-checked') === 'true')
-                    );
-                """, matching_checkbox)
+                    return arguments[0].every(function(clicked) {
+                        var row = clicked && clicked.closest('tr');
+                        if (!row) return false;
+                        var input = row.querySelector('input[type="checkbox"]');
+                        var box = row.querySelector('.ui-chkbox-box');
+                        return Boolean((input && input.checked) ||
+                            (box && box.classList.contains('ui-state-active')) ||
+                            (box && box.getAttribute('aria-checked') === 'true'));
+                    });
+                """, matching_checkboxes)
                 
                 if not checkbox_checked:
                     logging.error("STEP 6 FAILED: Matching row checkbox is not checked")
